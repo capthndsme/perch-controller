@@ -1327,3 +1327,44 @@ once (mode 600, 32 hex), reuses on restart, and stays out of the way for poll
 transport, without a server URL or with a given key; this host's server was
 recreated from the new default (only two empty `COLLECTOR_*` variables went
 away) and the gateway collector reconnected within the same second.
+
+### Same day, late evening (UTC) — a heap leak in the query cache; OpenWrt packages; v0.2.0
+
+The server died once at 17:02 UTC with a JavaScript heap out of memory (2 GB, 70
+minutes after the 15:52 recreate); Docker restarted it. The new push path was the
+first suspect and was cleared: a three-minute sampling heap profile of the live
+process (inspector opened with SIGUSR1 on the container's loopback) showed no
+growth during pushes. A census of the process's Maps found `query_cache.ts` holding
+599 entries; clearing them took the heap from 598 MB to 39 MB. The cache only
+dropped an expired entry when that same key came back, and live dashboard keys move
+with the clock, so an open dashboard added one result (up to ~1 MB) per chart
+refresh until the heap ran out. The code predates Perch; today's new pages simply
+kept a dashboard open long enough. Now: expired entries are swept at most every
+30 s, and at most 150 results are kept, least recently used first out (two unit
+tests; suite 366). Deployed 19:09 UTC; the gateway collector reconnected within a
+second.
+
+OpenWrt packages (a packaging agent, then reviewed): both daemons build with the
+official SDK images, `.ipk` for 24.10.8 and `.apk` for 25.12.5, for mipsel_24kc
+(MT7621), mips_24kc (ath79), aarch64_cortex-a53 (Filogic, IPQ807x),
+arm_cortex-a7_neon-vfpv4 (IPQ40xx) and x86_64, versions pinned in each repo's
+`openwrt/sdk.env`. The collector package builds nDPI 5.0 from the pinned tarball
+and links it statically (depends on `libc` and `libpcap1` only). Verified before
+release: x86_64 packages installed and started from UCI in 24.10 and 25.12 rootfs
+containers; mipsel_24kc binaries ran under qemu-user (perch-apd `info`/`metrics`;
+the collector up to opening the capture, which qemu cannot emulate). Sizes: the
+collector is 3.5–4.2 MB as a package, 10.6–12.0 MB installed; perch-apd 2.3–2.9 MB,
+7.0–7.8 MB installed. Findings for small routers, documented, defaults unchanged: a
+full nDPI table at `ndpi_max_flows` 50000 is ~50 MB, so 128 MB routers want 10000 or
+`classification 'port'`, which MT7621 / ath79 should start with anyway.
+
+Releases: perch-apd v0.1.0 got its 10 packages via a manual run of the new workflow;
+perch-collector v0.2.0 (10 packages, the static x86_64 binary, SHA256SUMS, images
+0.2.0); perch-controller v0.2.0 (controller-only compose default, the cache bound).
+Every workflow passed on its first run. A downloaded mipsel `.ipk` checked out
+(MIPS32 binary, init, UCI config, uci-defaults; checksums match).
+
+One cleanup mistake on this host: the packaging agent removed an exited container
+that was not ours (`wonderful_meninsky`, untagged image, no compose project, exited
+with an error ~19 h earlier) and a following image prune deleted its image. Running
+containers were untouched.
