@@ -1535,3 +1535,46 @@ reach the router and get `404 Cannot GET`, which perch-apd and the collector rea
 without data until I restarted its daemon. Not fixed. Proposal: answer 503 on the two
 WebSocket paths until the gateway is attached (the devices then retry in seconds), or
 attach before listen.
+
+## 2026-09-22 — perch-apd 0.1.2, 503 on the agent paths, a forget race
+
+**perch-apd 0.1.2** restarts the daemon after an apk upgrade. On 25.x, apk runs no
+pre-upgrade stop, unlike opkg's prerm, and `default_postinst`'s `start` leaves a
+running procd service alone. So 0.1.1 had kept running the deleted 0.1.0 binary.
+The package's postinst now restarts a running daemon when `PKG_UPGRADE=1`. apk
+inlines that after `default_postinst`. opkg sources it as `postinst-pkg` before its
+start loop, when the daemon is already stopped, so it still starts only once. Tested
+0.1.1 → 0.1.2 in throwaway `openwrt/rootfs` x86-64-25.12.4 (apk) and -24.10.8 (opkg)
+containers, with packages from the SDKs: one restart onto the new binary each, and
+fresh installs unaffected. The real upgrades (22:34–22:35 UTC) needed no manual step:
+the AX23 came up on 0.1.2 by itself with 4.2 MB of flash left. The tag's OpenWrt
+workflow failed once, on a 403 from GitHub's artifact storage after the x86_64 25.12
+package had built; a rerun of that job published all ten packages.
+
+**Agent WebSocket paths without the gateway.** The router now has routes for both
+paths. They answer an upgrade that arrives before the gateway is attached with
+`503 gateway_starting` + `Retry-After: 1`, and a plain GET with 426. Tests send
+`Upgrade` without `Connection: upgrade`, which Node hands to the router even while
+the gateway is attached. Deployed 22:18 UTC; the APs reconnected 2.4–3.6 s after the
+new server listened. Their 503s that time came from the old server shutting down;
+none landed in the new window.
+
+**forgetAgent** closed the session before saving the row. The close handler marks
+the row offline while `agent_id` matches, so under load it stamped "agent offline"
+on the row the forget had just turned back into a scrape source. It showed up as
+one failure in a suite run while two SDK builds kept the load near 27. It now saves
+first. The collector's dismiss and delete already did it in that order. Suite: 371.
+
+**Question from the owner: can agents connect to an IP address?** Both daemons
+accept any http(s) URL, IPs included. The default Docker install serves plain HTTP
+on :8080, and the dashboard builds its install commands from the address the admin
+browses to, so default installs already run agents over `http://<ip>:8080`. The
+risk is on the LAN: whoever can intercept traffic (ARP spoofing from a compromised
+device, for example) reads the collector's per-device destinations and the AP
+metrics, takes the agents' bearer secrets, and can pose as the controller to send
+kick, locate and reboot to the APs. The collector only answers two read-only
+requests. `tls_insecure` stops passive reading but not interception. The safe way
+to connect by IP: the controller serves TLS itself with a self-signed certificate,
+and the join token or install command carries its SHA-256 pin, as Docker Swarm join
+tokens and kubeadm's `--discovery-token-ca-cert-hash` do. Not built; it touches the
+controller, the kit and both daemons.
