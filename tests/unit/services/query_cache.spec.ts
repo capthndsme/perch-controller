@@ -1,4 +1,7 @@
 import {
+  QUERY_CACHE_MAX_ENTRIES,
+  _queryCacheSize,
+  _queryCacheSweepDue,
   _resetQueryCache,
   cacheKey,
   cacheTtlForResolution,
@@ -69,6 +72,42 @@ test.group('query_cache | cachedQuery', (group) => {
     await assert.rejects(() => cachedQuery('k', 5_000, fn))
     await assert.rejects(() => cachedQuery('k', 5_000, fn))
     assert.equal(runs, 2)
+  })
+})
+
+test.group('query_cache | bounds', (group) => {
+  group.each.setup(() => {
+    _resetQueryCache()
+  })
+
+  // An open dashboard asks for a new key every refresh (the window moves), so
+  // entries are rarely hit again after their TTL: the cache must not keep them.
+  test('never holds more than the cap; the least recently used entry goes first', async ({
+    assert,
+  }) => {
+    await cachedQuery('keep', 60_000, async () => 'kept')
+    for (let i = 0; i < QUERY_CACHE_MAX_ENTRIES + 25; i++) {
+      await cachedQuery(`k${i}`, 60_000, async () => i)
+      // A hit moves 'keep' to the young end, so the cap evicts others first.
+      await cachedQuery('keep', 60_000, async () => 'recomputed')
+    }
+    assert.equal(_queryCacheSize(), QUERY_CACHE_MAX_ENTRIES)
+    assert.equal(await cachedQuery('keep', 60_000, async () => 'recomputed'), 'kept')
+    let reran = false
+    await cachedQuery('k0', 60_000, async () => {
+      reran = true
+      return 0
+    })
+    assert.isTrue(reran, 'the oldest entry was evicted')
+  })
+
+  test('expired entries are swept, not only replaced on their next hit', async ({ assert }) => {
+    for (let i = 0; i < 20; i++) await cachedQuery(`old${i}`, 1, async () => i)
+    assert.equal(_queryCacheSize(), 20)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    _queryCacheSweepDue()
+    await cachedQuery('fresh', 60_000, async () => 'x')
+    assert.equal(_queryCacheSize(), 1, 'only the fresh entry is left')
   })
 })
 

@@ -11,9 +11,42 @@ type CacheEntry = {
   expiresAt: number
 }
 
-/** Resolved entries and promises for keys still being fetched. */
+/**
+ * Resolved entries (in least-recently-used order: a hit moves its entry to
+ * the end) and promises for keys still being fetched.
+ */
 const cache = new Map<string, CacheEntry>()
 const inFlight = new Map<string, Promise<unknown>>()
+
+/**
+ * Upper bound on cached results. Live dashboard keys move with the clock
+ * (`windowSegment`), so an entry is usually never asked for again after its
+ * TTL: without a bound and a sweep, an open dashboard grew the cache by one
+ * result (up to ~1 MB) per chart refresh until the heap ran out (2026-09-21,
+ * 599 entries held 560 MB). The least recently used entry goes first.
+ */
+export const QUERY_CACHE_MAX_ENTRIES = 150
+/** Expired entries are swept at most this often, on the way into the cache. */
+const SWEEP_INTERVAL_MS = 30_000
+let lastSweepAt = 0
+
+function sweepExpired(now: number): void {
+  if (now - lastSweepAt < SWEEP_INTERVAL_MS) return
+  lastSweepAt = now
+  for (const [key, entry] of cache) {
+    if (entry.expiresAt <= now) cache.delete(key)
+  }
+}
+
+function remember(key: string, entry: CacheEntry): void {
+  cache.delete(key)
+  cache.set(key, entry)
+  while (cache.size > QUERY_CACHE_MAX_ENTRIES) {
+    const oldest = cache.keys().next()
+    if (oldest.done) break
+    cache.delete(oldest.value)
+  }
+}
 
 /**
  * TTL for cached query results, scaled to the requested chart resolution.
@@ -103,6 +136,9 @@ export async function cachedQuery<T>(key: string, ttlMs: number, fn: () => Promi
   const now = Date.now()
   const hit = cache.get(key)
   if (hit && hit.expiresAt > now) {
+    // Refresh its place in the least-recently-used order.
+    cache.delete(key)
+    cache.set(key, hit)
     return hit.value as T
   }
 
@@ -117,7 +153,9 @@ export async function cachedQuery<T>(key: string, ttlMs: number, fn: () => Promi
 
   const promise = fn()
     .then((value) => {
-      cache.set(key, { value, expiresAt: Date.now() + ttlMs })
+      const settledAt = Date.now()
+      sweepExpired(settledAt)
+      remember(key, { value, expiresAt: settledAt + ttlMs })
       inFlight.delete(key)
       return value
     })
@@ -134,4 +172,15 @@ export async function cachedQuery<T>(key: string, ttlMs: number, fn: () => Promi
 export function _resetQueryCache() {
   cache.clear()
   inFlight.clear()
+  lastSweepAt = 0
+}
+
+/** Test-only: how many results are cached. */
+export function _queryCacheSize(): number {
+  return cache.size
+}
+
+/** Test-only: make the next insert sweep expired entries. */
+export function _queryCacheSweepDue(): void {
+  lastSweepAt = 0
 }
