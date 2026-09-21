@@ -325,12 +325,16 @@ export async function markAgentDisconnected(
  * URL is disabled rather than left polling nothing.
  */
 export async function forgetAgent(ap: WifiAccessPoint): Promise<WifiAccessPoint> {
-  hub.disconnect(ap.id, CLOSE_CODES.REVOKED, 'agent forgotten')
   ap.agentId = null
   ap.agentSecretHash = null
   ap.transport = 'scrape'
   if (!ap.metricsUrl) ap.enabled = false
   await ap.save()
+  // Close only once the row no longer names the agent: the session's close
+  // handler marks the row offline while agent_id still matches, and closing
+  // first let that land on what is now a scrape row whenever the save was
+  // slower than the close.
+  hub.disconnect(ap.id, CLOSE_CODES.REVOKED, 'agent forgotten')
   return ap
 }
 
