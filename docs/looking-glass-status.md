@@ -1368,3 +1368,89 @@ One cleanup mistake on this host: the packaging agent removed an exited containe
 that was not ours (`wonderful_meninsky`, untagged image, no compose project, exited
 with an error ~19 h earlier) and a following image prune deleted its image. Running
 containers were untouched.
+
+## 2026-09-22 — The access points move to perch-apd; a performance snapshot
+
+All three APs now push over the socket; nothing on this network is scraped any more.
+WRX36 and RAX3000M (24.10, aarch64_cortex-a53) got the release `.ipk`, the Archer
+AX23 (25.12, MT7621) the `.apk`, both checked against `openwrt-packages.sha256`. One
+join token (three uses, three hours) served all three; every join came back `linked`
+to its existing row (#2, #3, #4), so history is kept, and each row flipped to
+`transport=agent` with 5 s pushes. The per-AP throughput series runs through the
+three switch times without a gap or a spike, and an RPC `ping` over each socket
+answers in 1–3 ms.
+
+**What blocked the first attempt: DNS rebind protection on the APs.** OpenWrt's
+dnsmasq drops upstream answers that point at private addresses. The gateway answers
+the controller's name with its LAN address, so on the APs the name did not resolve
+at all ("possible DNS-rebind attack" in the log). Fix on each AP: add the controller's
+host name to `dhcp.@dnsmasq[0].rebind_domain` and reload dnsmasq. It lives in
+`/etc/config/dhcp`, so it survives upgrades. This belongs in perch-apd's
+troubleshooting notes; any setup with split-horizon DNS will hit it.
+
+**Metric coverage.** The server reads 32 families from an AP; perch-apd emits all of
+them. Expected throughput appears only where the driver reports it (mt76 on the AX23
+does, ath11k on the WRX36 does not, and node_exporter behaved the same). A push
+carries 82 families against the old scrape's 337: netstat and thermal are gone, and
+the server reads neither.
+
+**node_exporter removed.** First checked that nothing else read it: once Perch
+stopped scraping, its process used 0.00 s of CPU in two minutes on every AP. The
+one-liners in perch-apd's README and in the `join` hint do not work as written:
+`opkg remove prometheus-node-exporter-lua --autoremove` and `apk del
+prometheus-node-exporter-lua` both refuse while the collector sub-packages are
+installed. What worked: `opkg remove` the `prometheus-node-exporter-lua-*` packages,
+then `opkg remove --autoremove prometheus-node-exporter-lua` (luasocket and lua went as
+orphans), or one `apk del` naming all of them (11 packages including lua and
+uhttpd-mod-lua). Port 9100 is closed and LuCI still answers.
+
+| | WRX36 | RAX3000M | AX23 |
+|---|---|---|---|
+| node_exporter CPU per scrape (10 manual scrapes) | 5 ms | 19 ms | 23 ms |
+| node_exporter bytes per scrape (plain HTTP) | 66 KB | 56 KB | 54 KB |
+| perch-apd CPU per push (2 min window) | 12 ms | 17 ms | 100 ms |
+| perch-apd bytes per push (TLS, uncompressed) | 35–37 KB | ~26 KB | 23 KB |
+| perch-apd RSS | 13.0 MB | 12.9 MB | 14.0 MB |
+| flash left | 47.8 MB | 77.7 MB | 4.2 MB (JFFS2; the binary took 3.1 MB) |
+
+The AX23's 100 ms is not in the collectors perch-apd runs for the server (their
+cached steady state is roughly 15–25 ms). The rest is probably TLS, JSON-escaping
+the text and GC on a 32-bit MIPS core. Not profiled yet; it is 2% of one core.
+
+**AP pushes are uncompressed.** The server enables permessage-deflate only on the
+collector endpoint, and perch-apd does not offer it. Deflate level 1 turns a push
+into 3.4 KB (AX23) to 5.1 KB (WRX36), about 7× less, at some CPU cost on MIPS.
+
+**How an AP keeps its configuration.** The join writes `agent_id` and `agent_secret`
+to `/etc/config/perch-apd`, on the flash overlay, so reboots are a non-event. The
+packages declare that file a conffile, so a package upgrade keeps it (the new default
+lands beside it as `-opkg` / `.apk-new`). A firmware upgrade that keeps settings
+keeps all of `/etc/config/` (base-files' keep.d; `sysupgrade -l` lists
+`perch-apd` on all three), but not the package: reinstall it afterwards, and it
+reconnects with the same credentials, no new join. owut/ASU cannot bake it in, since
+it is not in the official feeds. The `/opt` install from `install.sh` writes
+`/lib/upgrade/keep.d/perch-apd` so its binary, init script and rc.d links survive a
+firmware upgrade, but that list does not name itself: it is gone after the first
+upgrade and the daemon after the second. One missing line.
+
+**Collector push at steady state.** The warm-up figure (14.6 KB per push, 23 kbit/s)
+was nine times low. With 39 devices known, a push is 650 KB of compact JSON, 125 KB
+after the socket's deflate (level 1), so about 216 kbit/s (~2.3 GB a day) from the
+gateway to the server. 83% of it is `destinations`: every device's cumulative table
+(3,466 entries), re-sent in full every 5 s. Two snapshots 5 s apart: 10 of 39 devices
+changed at all, and a changed-entries-only push would be 28 KB deflated (~45
+kbit/s). On the gateway the collector takes 5.8% of a core (capture and nDPI
+included) with 44 MB RSS (54 MB peak). The server sat at 144 MiB 40 minutes after
+the query-cache fix (136 MiB at deploy), using 4.8% of a core over a minute of
+ingesting the collector and three APs.
+
+**Footprint and TLS (question only, no code).** perch-apd for MIPS is 7.86 MB
+stripped. A local build matches the release asset to the byte. `-tags
+nethttpomithttp2` (a stock Go tag that leaves out net/http's bundled HTTP/2, which a
+WebSocket client never uses) makes it 7.41 MB. Attributed by ELF section, the TLS
+stack (crypto primitives with math/big, `crypto/tls`, certificates) is 1.4 MB of the
+5.0 MB of code and data, roughly 2 MB of the file with its metadata. A build without
+TLS would also have to drop net/http, which imports `crypto/tls` unconditionally,
+and so replace the WebSocket client's handshake. Go 1.26's FIPS module also reserves
+a 32 MiB zero-filled region (`crypto/internal/fips140/drbg.memory`), which costs
+address space, not RAM.
