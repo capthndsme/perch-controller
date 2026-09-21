@@ -1474,3 +1474,64 @@ TLS would also have to drop net/http, which imports `crypto/tls` unconditionally
 and so replace the WebSocket client's handshake. Go 1.26's FIPS module also reserves
 a 32 MiB zero-filled region (`crypto/internal/fips140/drbg.memory`), which costs
 address space, not RAM.
+
+## 2026-09-22 — perch-apd 0.1.1: one thread on 32-bit, one-pass pushes, compression
+
+The owner approved, after the MIPS profile: the four open perch-apd fixes, one Go
+thread on 32-bit CPUs, and encoding the push in one pass. Also proposed, not named,
+so not done: caching the channel survey, and `GOGC=200`.
+
+perch-apd 0.1.1 (tag `v0.1.1`; CI green on Go 1.22 and stable; ten OpenWrt packages;
+release notes by hand):
+- `GOMAXPROCS=1` when `strconv.IntSize == 32` and `GOMAXPROCS` is unset. The
+  "starting" log line reports it.
+- `metrics.push` params come from `pushParams`: one pass into a reused buffer, sent
+  with `NotifyRaw`. The escaper matches encoding/json (invalid UTF-8 becomes U+FFFD,
+  U+2028/2029 are escaped), checked by a table test, 2000 random inputs, a fuzz
+  target (1.5 M inputs, clean) and a zero-allocation test. One of four fuzz runs
+  failed without saving an input; a mismatch always saves one, so that was the
+  fuzzing engine, and the reruns were clean.
+- permessage-deflate is offered (the kit's option, no context takeover). A test
+  counts the bytes the fake controller reads.
+- The `/opt` install's keep.d list names itself and `/etc/config/perch-apd`.
+- The node_exporter removal hint is per package manager. A name that doesn't
+  resolve gets a DNS rebind hint, both in `describe()` (the daemon's log) and in
+  the join output. README troubleshooting covers it.
+- PROTOCOL.md documents the compression offer. Its examples had this setup's real
+  AP hostname; they now use `ap-garage` (the v0.1.0 commit still has it).
+- README (follow-up commit): apk upgrades need a restart, see below; the package
+  architecture comes from `DISTRIB_ARCH`, because `apk --print-arch` prints only
+  `mipsel` on 25.12.
+
+Controller: the AP endpoint enables permessage-deflate with the collector's settings.
+A functional test covers a compressed push; the suite has 367 tests. Deployed
+20:45 UTC and pushed (image rebuilt), no tag.
+
+Measured. Before tagging, a 0.1.1 build ran on the AX23 in place of the packaged
+daemon for two minutes. After the upgrade, all three APs were measured together:
+
+| | WRX36 | RAX3000M | AX23 |
+|---|---|---|---|
+| CPU per push, 0.1.0 → 0.1.1 | 12 → 14 ms | 17 → 19 ms | ~100 → 52 ms |
+| bytes per push | ~35 → 5.8 KB | ~26 → 4.5 KB | 23 → 3.9 KB |
+| RSS | 13.0 → 15.5 MB | 12.9 → 13.8 MB | 14.0 → 13.2 MB |
+
+On the 64-bit APs, compression costs ~2 ms and the pooled 1.2 MB flate writer.
+perch-apd's own collection time on the AX23 went 28 → 21 ms (29 in the latest
+push).
+
+Upgrades 21:01–21:03 UTC; credentials were kept everywhere. opkg restarted the
+daemon itself, since the old package's prerm stops it. apk on 25.12 did not: its
+post-upgrade only runs `start`, which is a no-op for a running procd service. The AX23
+kept running the deleted 0.1.0 binary, and its flash fell to 1.2 MB with both copies
+held. `/etc/init.d/perch-apd restart` fixed both (4.2 MB again). The proper fix is a
+package postinst that restarts on upgrade; not done yet. RPC ping 1–3 ms on all three.
+The throughput series shows no spikes at the upgrades.
+
+Found during the controller deploy: `AgentGatewayProvider.ready()` attaches the
+upgrade listener after the server listens. For about a second, WebSocket upgrades
+reach the router and get `404 Cannot GET`, which perch-apd and the collector read as
+"no support here" and back off for 5 minutes. The RAX3000M hit it: AP #3 went ~2 min
+without data until I restarted its daemon. Not fixed. Proposal: answer 503 on the two
+WebSocket paths until the gateway is attached (the devices then retry in seconds), or
+attach before listen.
