@@ -1406,16 +1406,36 @@ uhttpd-mod-lua). Port 9100 is closed and LuCI still answers.
 
 | | WRX36 | RAX3000M | AX23 |
 |---|---|---|---|
-| node_exporter CPU per scrape (10 manual scrapes) | 5 ms | 19 ms | 23 ms |
+| uhttpd's own CPU per scrape, NOT the exporter's (see below) | 5 ms | 19 ms | 23 ms |
 | node_exporter bytes per scrape (plain HTTP) | 66 KB | 56 KB | 54 KB |
 | perch-apd CPU per push (2 min window) | 12 ms | 17 ms | 100 ms |
 | perch-apd bytes per push (TLS, uncompressed) | 35–37 KB | ~26 KB | 23 KB |
 | perch-apd RSS | 13.0 MB | 12.9 MB | 14.0 MB |
 | flash left | 47.8 MB | 77.7 MB | 4.2 MB (JFFS2; the binary took 3.1 MB) |
 
-The AX23's 100 ms is not in the collectors perch-apd runs for the server (their
-cached steady state is roughly 15–25 ms). The rest is probably TLS, JSON-escaping
-the text and GC on a 32-bit MIPS core. Not profiled yet; it is 2% of one core.
+The node_exporter row undercounts: uhttpd runs a `-L` Lua handler in a child it forks
+per request, and only the parent's CPU was counted (on the gateway, 10 scrapes: parent
+6 ms, forked children 11 ms per scrape). The fair comparison is the exporters' own
+`node_scrape_collector_duration_seconds` (perch-apd reports 28 / 8 / 10 ms of
+collection on AX23 / WRX36 / RAX3000M), but no Lua scrape from the APs was saved
+before the removal.
+
+Why perch-apd costs ~100 ms per push on the AX23 (profiled with a throwaway harness
+in the scratchpad that runs the push work from /tmp: the nine collectors,
+`rpc.Notification`, a TLS 1.3 write, 60 pushes): about half is Go's runtime on a
+32-bit MIPS rather than work. 64-bit atomics are emulated with locks (17% of samples
+land in `_LostSIGPROFDuringAtomic64`), the scheduler spins across the four hardware
+threads (15%), and GC and allocation take 17% (646 KB allocated per push, a GC every
+1.7 pushes). The real work: collection 34% (nl80211 station dump 8%, per-channel
+survey dump for the noise floor 7%), TLS with ChaCha20-Poly1305 in pure Go, and JSON
+encoded twice (`rpc.Notification` marshals the params, then compacts them again as
+a RawMessage). The Lua exporter does its netlink work in C (libiwinfo, libubus) and
+writes plain text to plain HTTP. `GOMAXPROCS=1` took the harness from 92 to 62 ms of
+CPU per push, and with `GOGC=200` 59 ms (GCs per 60 pushes 16 → 5, heap 2.4 → 4.9
+MB). The atomic and scheduler shares dropped to 4% and 5%. Left after that: survey
+14%, JSON 12%, stations 11%, TLS 10%. Candidates, not done: GOMAXPROCS=1 (and
+GOGC=200) on 32-bit targets, caching the survey like the ubus status (30 s), and one
+JSON pass (NotifyRaw with the text escaped once).
 
 **AP pushes are uncompressed.** The server enables permessage-deflate only on the
 collector endpoint, and perch-apd does not offer it. Deflate level 1 turns a push
