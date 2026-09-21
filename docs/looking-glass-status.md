@@ -1301,3 +1301,29 @@ restart re-baselined each device once), the first gateway sample landed at
 node_exporter sample said 0.8 / 16.6), and 465 protocol categories synced over
 the socket. No warnings or errors. The router still runs
 `prometheus-node-exporter-lua`; Perch no longer reads it.
+
+### Same day, evening — public repositories, first releases, a controller-only Docker default
+
+The four repositories went public (MIT) once the deploy above was verified:
+`perch-controller`, `perch-collector`, `perch-apd`, `perch-agentkit` (tag v0.1.0,
+pinned in both daemons' `go.sum`; they build with `GOWORK=off` against it). Each
+started as one initial commit after a scrub of tree and history (the unpublished
+pre-Perch commits were folded in; one still named the gateway's container). First
+push: all CI green; both Docker images built for amd64 and arm64 and are pullable
+anonymously from GHCR. Releases: `perch-apd` v0.1.0 (six static binaries,
+`install.sh`, checksums; the dashboard's AP install commands resolve now) and
+`perch-controller` v0.1.0 (pinned images, release notes). The collector's first
+release waits for the OpenWrt package workflow (.ipk for 24.10, .apk for 25.12,
+MIPS included), which a packaging agent is building.
+
+The owner then made the Docker default the controller only (amendment B2 in
+`docs/collector-agent.md`): `docker compose up -d` starts MariaDB and the server;
+a collector on the Docker host is the `collector` profile and dials the server
+over the host's loopback like any other collector, with an API key its image
+entrypoint generates once and keeps (with the instance id) in the
+`collector-data` volume. Checked: every compose variant renders as intended
+(default, profile, external database, host network); the entrypoint generates
+once (mode 600, 32 hex), reuses on restart, and stays out of the way for poll
+transport, without a server URL or with a given key; this host's server was
+recreated from the new default (only two empty `COLLECTOR_*` variables went
+away) and the gateway collector reconnected within the same second.
