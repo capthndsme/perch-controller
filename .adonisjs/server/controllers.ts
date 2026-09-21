@@ -5,6 +5,7 @@
 
 export const controllers = {
   AccessTokens: () => import('#controllers/access_tokens_controller'),
+  AgentSockets: () => import('#controllers/agent_sockets_controller'),
   ApAgents: () => import('#controllers/ap_agents_controller'),
   ApJoinTokens: () => import('#controllers/ap_join_tokens_controller'),
   Collectors: () => import('#controllers/collectors_controller'),

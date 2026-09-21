@@ -182,6 +182,7 @@ The server answers before upgrading (JSON body `{error, message}` like the AP en
 | Status | `error` | When |
 |---|---|---|
 | 503 | `shutting_down` | server stopping |
+| 503 + `Retry-After: 1` | `gateway_starting` | the server just started and the gateway is not attached yet (answered by the router; amendment 2026-09-22) |
 | 429 + `Retry-After` | `rate_limited` | the address used up its failed-attempt budget (the AP gateway's budget, shared) |
 | 400 | `unsupported_protocol` | subprotocol offered but not ours |
 | 400 | `invalid_request` | missing/invalid instance id header or bearer |

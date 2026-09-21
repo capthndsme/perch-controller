@@ -45,6 +45,7 @@ const DeviceLabelsController = () => import('#controllers/device_labels_controll
 const CollectorsController = () => import('#controllers/collectors_controller')
 const ApAgentsController = () => import('#controllers/ap_agents_controller')
 const ApJoinTokensController = () => import('#controllers/ap_join_tokens_controller')
+const AgentSocketsController = () => import('#controllers/agent_sockets_controller')
 
 /**
  * Setup wizard endpoints. INTENTIONALLY outside the requireSetupComplete
@@ -97,11 +98,21 @@ router
 /**
  * ap-controller join (docs/ap-controller.md section 2.1). Outside `auth` and
  * the setup gate for the same reason as the announce: the join token in the
- * body is the credential. The agent's WebSocket (`/api/v1/ap-agent/ws`)
- * never reaches the router — providers/ap_agent_provider.ts handles the
- * upgrade on the Node server.
+ * body is the credential.
  */
 router.post('/api/v1/ap-agent/join', [ApAgentsController, 'join']).as('apAgent.join')
+
+/**
+ * The device agents' WebSockets. providers/agent_gateway_provider.ts handles
+ * the upgrades on the Node server; these routes only see what it does not:
+ * an upgrade in the moment after start, before it is attached (503, so the
+ * agent retries in seconds instead of backing off for minutes on a 404), and
+ * plain GETs (426).
+ */
+router.get('/api/v1/ap-agent/ws', [AgentSocketsController, 'fallback']).as('apAgent.wsFallback')
+router
+  .get('/api/v1/collector-agent/ws', [AgentSocketsController, 'fallback'])
+  .as('collectorAgent.wsFallback')
 
 /**
  * Normal API surface. Gated behind requireSetupComplete so /auth/login and
