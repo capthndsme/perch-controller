@@ -171,6 +171,26 @@ test.group('perch-apd metrics push', (group) => {
     await agent.close()
   })
 
+  test('a push over a compressed session (perch-apd 0.1.1) is ingested', async ({ assert }) => {
+    const { agentId, agentSecret } = await seedAgentAp()
+    const agent = await FakeAgent.connect({ agentId, agentSecret, perMessageDeflate: true })
+    assert.include(String(agent.socket.extensions), 'permessage-deflate')
+    await agent.waitFor('system.info')
+
+    // Comment lines pad the frame far past the deflate threshold, so the push
+    // is compressed on the way in, like a real 20-40 KB one.
+    const params = pushParams(1)
+    params.text = '# padding past the compression threshold\n'.repeat(300) + params.text
+    agent.notifyServer('metrics.push', params)
+    await eventually(
+      () => countRows('wifi_station_snapshots'),
+      (count) => count === 1
+    )
+    const station = await db.from('wifi_station_snapshots').firstOrFail()
+    assert.equal(Number(station.rx_bytes), 7_366_133_107)
+    await agent.close()
+  })
+
   test('two accepted pushes write interface deltas', async ({ assert }) => {
     const { ap } = await seedAgentAp()
     await setPollInterval(ap.id, 1)

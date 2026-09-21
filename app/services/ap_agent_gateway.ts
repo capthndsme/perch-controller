@@ -32,6 +32,15 @@ export function apAgentEndpoint(): AgentEndpoint<WifiAccessPoint> {
     path: AP_AGENT_WS_PATH,
     subprotocol: AP_AGENT_SUBPROTOCOL,
     maxPayload: AP_AGENT_MAX_PAYLOAD,
+    // A push is 20–40 KB of Prometheus text that deflates about 7×; perch-apd
+    // offers permessage-deflate since 0.1.1 (older agents do not, and stay
+    // uncompressed). Same settings as the collector endpoint: no context
+    // takeover keeps per-session memory flat.
+    perMessageDeflate: {
+      serverNoContextTakeover: true,
+      clientNoContextTakeover: true,
+      threshold: 1024,
+    },
 
     attach() {
       // Pushed metrics (docs/ap-controller.md section 3.1).

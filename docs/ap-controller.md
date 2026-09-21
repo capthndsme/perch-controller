@@ -129,6 +129,10 @@ sees it), by `ws`'s `WebSocketServer({ noServer: true, maxPayload: 4 MiB })`.
   offers none. A client that offers only other protocols (a future
   `perch-ap.v2`-only agent) gets `400 {"error":"unsupported_protocol"}`
   before the upgrade.
+- Compression (amendment 2026-09-22): permessage-deflate is enabled like on
+  the collector endpoint (no context takeover either way, server threshold
+  1 KB). perch-apd offers it since 0.1.1; a push of 20–40 KB of text goes out
+  about 7× smaller. Agents that do not offer it stay uncompressed.
 - Client address: the socket's remote address, or the right-most untrusted
   hop of `X-Forwarded-For` when the remote address is trusted by the same
   `TRUST_PROXY` predicate `config/app.ts` compiles (`#services/trust_proxy`).

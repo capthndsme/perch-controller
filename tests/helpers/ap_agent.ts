@@ -104,9 +104,12 @@ export class FakeAgent {
     agentId: string
     agentSecret: string
     handlers?: Record<string, Handler>
+    /** Offer permessage-deflate, as perch-apd does since 0.1.1. */
+    perMessageDeflate?: boolean
   }): Promise<FakeAgent> {
     const socket = new WebSocket(await agentWsUrl(), AGENT_SUBPROTOCOL, {
       headers: { Authorization: `Bearer ${options.agentId}.${options.agentSecret}` },
+      perMessageDeflate: options.perMessageDeflate ?? false,
     })
     const agent = new FakeAgent(socket, options.handlers ?? {})
     await new Promise<void>((resolve, reject) => {
