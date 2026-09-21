@@ -473,3 +473,31 @@ building section 5; nothing in sections 3–4 changed shape.
   polled row, last poll ok.
 - A first frame that is a request other than `collector.hello` gets `-32600`
   before the 1008 close.
+
+### B2 (2026-09-21, owner): the default Docker install is the controller only
+
+`docker compose up -d` starts MariaDB and the server, nothing else: collectors
+and access points join afterwards, like devices joining a UniFi controller. The
+bundled collector only ever saw useful traffic when the Docker host was the
+router, a bridge or a mirror port, and it ran with host networking plus
+NET_RAW/NET_ADMIN by default.
+
+- The collector service moved behind the `collector` profile in
+  `docker-compose.yml`, `docker-compose.external-db.yml` and
+  `docker-compose.host.yml`; `docker-compose.no-collector.yml` is gone (it is
+  the default now).
+- An opted-in collector is a socket collector like any other:
+  `PERCH_COLLECTOR_SERVER_URL` defaults to the server's published port on the
+  host's loopback, `PERCH_COLLECTOR_TRANSPORT=websocket`, its API answers on
+  127.0.0.1 only, and it appears under Pending adoption.
+- The collector image's entrypoint (`docker/entrypoint.sh` in perch-collector)
+  generates the API key on first start when a server URL is set and no key is
+  given, and keeps it with the instance id in `/var/lib/perch-collector` (the
+  `collector-data` volume): an adopted collector presents the same key after
+  every restart, as the OpenWrt package does with UCI. The image's API now
+  listens on 127.0.0.1 by default.
+- The compose files no longer set `COLLECTOR_URL`; the server still honours it
+  (a `source=env` polled row) when an operator sets it.
+- Upgrading from 0.1.0: the old bundled collector's `env` row keeps its
+  history; start the profile, adopt the new pending row and fold the old one in
+  with `collectors:merge`, or disable the old row.

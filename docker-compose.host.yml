@@ -11,9 +11,12 @@
 # read-only for AP control and SSH hostname enrichment (known_hosts must
 # already contain the targets; BatchMode never prompts).
 #
-# The collector uses ../go-collector/collector.yaml verbatim and, like the
-# server, sits on the host network, so `listen: 127.0.0.1:9800` in that file
-# is enough.
+# The collector is opt-in (profile `collector`): it uses
+# ../go-collector/collector.yaml verbatim, sits on the host network like the
+# server and dials it at 127.0.0.1:PORT over the WebSocket
+# (PERCH_COLLECTOR_SERVER_URL overrides the yaml's server_url); adopt it in
+# Settings → Collectors. Its key and instance id persist in collector-data.
+#   docker compose -f docker-compose.host.yml --profile collector up -d
 #
 # Optional bundled MariaDB (profile `db`): serves exactly what .env points at
 # (DB_DATABASE, root with DB_PASSWORD) on 127.0.0.1:DB_PORT, so .env needs
@@ -71,7 +74,6 @@ services:
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
-      COLLECTOR_URL: http://127.0.0.1:9800
     volumes:
       - server-data:/data
       - ${HOME}/.ssh:/root/.ssh:ro
@@ -79,6 +81,7 @@ services:
   collector:
     image: ghcr.io/capthndsme/perch-collector:latest
     build: ../go-collector
+    profiles: ["collector"]
     restart: unless-stopped
     logging:
       driver: json-file
@@ -91,10 +94,14 @@ services:
       - NET_ADMIN
     environment:
       PERCH_COLLECTOR_LISTEN: 127.0.0.1:9800
+      PERCH_COLLECTOR_SERVER_URL: ${PERCH_COLLECTOR_SERVER_URL:-http://127.0.0.1:${PORT:-3333}}
+      PERCH_COLLECTOR_TRANSPORT: websocket
     volumes:
       - ../go-collector/collector.yaml:/etc/perch-collector/collector.yaml:ro
+      - collector-data:/var/lib/perch-collector
     command: ["-config", "/etc/perch-collector/collector.yaml"]
 
 volumes:
   server-data:
   db-data:
+  collector-data:

@@ -17,47 +17,67 @@ OpenWrt access point).
 
 ## Run with Docker
 
-Three compose files, one per situation. All of them run the collector on the
-host network with capture capabilities and pull the images from GHCR (or
+Three compose files, one per situation. They pull the images from GHCR (or
 build them with `docker-compose.build.yml` and the collector checkout next to
 this one).
 
-**Everything bundled** (default): MariaDB, server, collector.
+**The controller with its database** (default): MariaDB and the server, which
+serves the dashboard. Collectors and access points join it afterwards, like
+devices joining a UniFi controller.
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/capthndsme/perch-controller/main/docker-compose.yml
 docker compose up -d          # http://<host>:8080 → create the admin account, done
 ```
 
+Then add a collector. Best is the `perch-collector` OpenWrt package on your
+router: it sees all of the traffic and reports the gateway's stats too. Any
+Linux box that sees the LAN traffic (a bridge, a mirror port) works as well.
+Collectors dial this server over a WebSocket and show up under Settings →
+Collectors → Pending adoption; the setup wizard lists them too, and can be
+finished without one. Access points join from Settings → Wi-Fi sources.
+
+**A collector on this host** (profile `collector`): only useful when this host
+is where the LAN traffic passes (the router, a bridge, a mirror port). It runs
+on the host network with capture capabilities, generates its API key on first
+start (kept, with its instance id, in the `collector-data` volume) and dials
+the server like any other collector, over the host's loopback
+(`PERCH_COLLECTOR_SERVER_URL` overrides that address). Adopt it in Settings →
+Collectors.
+
+```bash
+docker compose --profile collector up -d
+```
+
 One `.env` next to the compose file configures the whole stack; it is the
 same file the server reads (`.env.example` lists everything). The knobs the
 compose file adds are listed at its top: `PERCH_HTTP_PORT` (8080) and
-`PERCH_HTTP_BIND`, `PERCH_CAPTURE_INTERFACE` (empty = default route),
-`PERCH_GATEWAY_MACS`, `PERCH_DB_BUFFER_POOL` (512M), `PERCH_SSH_DIR` (a
+`PERCH_HTTP_BIND`, `PERCH_DB_BUFFER_POOL` (512M), `PERCH_SSH_DIR` (a
 `~/.ssh` for AP control and SSH hostname enrichment), `PERCH_NET_SUBNET` /
 `_GATEWAY` (172.28.0.0/24, change on a clash), `DB_PASSWORD` / `DB_DATABASE`
-(the bundled MariaDB is used as root). The compose project is named `perch`;
+(the bundled MariaDB is used as root); for the `collector` profile,
+`PERCH_CAPTURE_INTERFACE` (empty = default route), `PERCH_GATEWAY_MACS`,
+`PERCH_COLLECTOR_GATEWAY_STATS` (`on` when this host is the router) and
+`PERCH_COLLECTOR_SERVER_URL`. The compose project is named `perch`;
 an install that started under another name pins it with
 `COMPOSE_PROJECT_NAME` in `.env`, or its database volume would look empty.
 
 Networking: the database has no published port and is reachable only inside
-the stack's private network; the collector runs on the host network (it has
-to see the LAN) but listens on that network's gateway address only, so
-neither is exposed to the LAN. To reach the database from the host for
+the stack's private network; the optional collector runs on the host network
+(it has to see the LAN), dials out to the server and answers its own API on
+127.0.0.1 only, so neither is exposed to the LAN. To reach the database from the host for
 `npm test` or ace commands, add the loopback add-on:
 `COMPOSE_FILE=docker-compose.yml:docker-compose.db-port.yml` in `.env`
 publishes it on `127.0.0.1:DB_PORT`. The server generates and keeps `APP_KEY`
-in the `server-data` volume unless `.env` provides one, runs migrations at
-every start, and registers the collector so the wizard skips that step. Data
-lives in the `db-data` volume.
+in the `server-data` volume unless `.env` provides one and runs migrations at
+every start. Data lives in the `db-data` volume.
 
-**No bundled collector** (`docker-compose.no-collector.yml`): for a server whose
-collectors run elsewhere, such as an OpenWrt router running the
-`perch-collector` package (which dials in over a WebSocket, see below). Added to
-`COMPOSE_FILE`, it puts the collector behind the `collector` profile and
-registers no `COLLECTOR_URL` row at boot; `docker compose --profile collector
-up -d collector` brings it back. A row the bundled collector created earlier
-keeps its history: disable it under Settings → Collectors, do not delete it.
+Upgrading from 0.1.0, whose default compose file bundled a collector that the
+server registered through `COLLECTOR_URL` and polled: that row keeps its
+history. To keep collecting on this host, start the profile, adopt the new
+pending collector and fold the old row into it with
+`node ace collectors:merge --from=<old id> --into=<new id> --dry-run` (then
+without `--dry-run`); otherwise disable the old row, do not delete it.
 
 **Your own database**: same, minus the bundled MariaDB.
 
@@ -71,13 +91,14 @@ database, which must exist with full rights; the server creates the tables. A
 MariaDB on the same host must listen beyond 127.0.0.1 for a container to reach
 it (`PERCH_DB_HOST=host.docker.internal`), otherwise use the next option.
 
-**Host network** (`docker-compose.host.yml`): server and collector share the
-host's network stack, so an existing reverse proxy to `PORT` and a MariaDB on
-127.0.0.1 keep working unchanged. It reads the same `.env` /
-`.env.production` as the non-Docker install, mounts `~/.ssh` read-only for
-AP control and SSH hostname enrichment (no `lxc` inside a container), and runs
-the collector from `../go-collector/collector.yaml` (the perch-collector
-checkout next to this one). Add `--profile db` to
+**Host network** (`docker-compose.host.yml`): the server (and, with
+`--profile collector`, a collector) share the host's network stack, so an
+existing reverse proxy to `PORT` and a MariaDB on 127.0.0.1 keep working
+unchanged. It reads the same `.env` / `.env.production` as the non-Docker
+install, mounts `~/.ssh` read-only for AP control and SSH hostname enrichment
+(no `lxc` inside a container), and runs the optional collector from
+`../go-collector/collector.yaml` (the perch-collector checkout next to this
+one), dialing the server at `127.0.0.1:PORT`. Add `--profile db` to
 also run a bundled MariaDB that serves exactly what `.env` points at
 (`DB_DATABASE`, root with `DB_PASSWORD`, published on
 `127.0.0.1:DB_PORT`); `PERCH_DB_BUFFER_POOL` sizes it.
@@ -173,8 +194,9 @@ own traffic, a reverse proxy) therefore shows up with the wrong address; the car
 says "reached at X, says Y". Edit the address once: the row becomes
 `manual` and announces keep updating its details without moving it again.
 
-`COLLECTOR_URL` / `COLLECTOR_API_KEY` register the bundled collector at boot
-and own that one row (`source=env`); the compose stack relies on it. Behind a
+`COLLECTOR_URL` / `COLLECTOR_API_KEY`, when set, register a polled collector at
+boot and own that one row (`source=env`); nothing in the compose files sets them
+any more. Behind a
 reverse proxy set `TRUST_PROXY` so the announce source address is the real one
 (the compose file sets it to the stack subnet). Removing a collector that has
 history is refused because every per-device table cascades on it; disable it
