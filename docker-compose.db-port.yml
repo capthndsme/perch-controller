@@ -1,0 +1,8 @@
+# Add-on: publish the bundled MariaDB on the host's loopback so local tooling
+# (npm test, node ace, a SQL client) can reach it at 127.0.0.1:DB_PORT.
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.db-port.yml   (in .env)
+# The port is bound to 127.0.0.1 only; the LAN still cannot see the database.
+services:
+  db:
+    ports:
+      - "127.0.0.1:${DB_PORT:-3306}:3306"

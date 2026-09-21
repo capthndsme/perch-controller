@@ -1,0 +1,99 @@
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { apiFetch } from '@/lib/api'
+import {
+  applyWindowToParams,
+  shouldAutoRefresh,
+  windowKey,
+  type RefreshInterval,
+  type TimeWindow,
+} from '@/lib/time-window'
+import type {
+  UsageIntervalRequest,
+  UsageIntervalsResponse,
+  UsagePeriod,
+  UsageResponse,
+  UsageScope,
+} from '@/types/api'
+
+/**
+ * vnstat-style usage buckets (per local day / week / month) with the
+ * active-device count, Wi-Fi client avg/peak and top protocols in each.
+ * Without a window the API applies its own default look-back per period
+ * (day → 30d, week → 182d, month → 365d).
+ */
+export function useUsage(options: {
+  period: UsagePeriod
+  window?: TimeWindow
+  scope?: UsageScope
+  collectorId?: number
+  protocols?: number
+  refreshInterval?: RefreshInterval
+  enabled?: boolean
+}) {
+  const params = new URLSearchParams({ period: options.period })
+  if (options.window) applyWindowToParams(params, options.window)
+  if (options.scope) params.set('scope', options.scope)
+  if (options.collectorId) params.set('collectorId', String(options.collectorId))
+  if (options.protocols) params.set('protocols', String(options.protocols))
+
+  const autoRefresh = options.window ? shouldAutoRefresh(options.window) : true
+  const refetchInterval =
+    !autoRefresh || options.refreshInterval === null
+      ? false
+      : Math.max(options.refreshInterval ?? 60_000, 60_000)
+
+  return useQuery({
+    placeholderData: keepPreviousData,
+    queryKey: [
+      'usage',
+      options.period,
+      options.window ? windowKey(options.window) : 'default',
+      options.scope ?? 'all',
+      options.collectorId ?? 'all',
+      options.protocols ?? 'default',
+    ] as const,
+    queryFn: () => apiFetch<UsageResponse>(`/api/v1/usage?${params}`),
+    // Buckets only move as the hourly rollup lands; a minute is plenty.
+    refetchInterval,
+    enabled: options.enabled ?? true,
+  })
+}
+
+/**
+ * Sub-day slots for the hourly breakdown under the daily view (1 h / 4 h /
+ * 8 h / 12 h, aligned to local midnight). `auto` lets the API pick by span
+ * (1 h up to a week, then coarser); read `data.interval` for the result.
+ */
+export function useUsageIntervals(options: {
+  window: TimeWindow
+  scope?: UsageScope
+  interval?: UsageIntervalRequest
+  collectorId?: number
+  refreshInterval?: RefreshInterval
+  enabled?: boolean
+}) {
+  const params = new URLSearchParams({ interval: options.interval ?? 'auto' })
+  applyWindowToParams(params, options.window)
+  if (options.scope) params.set('scope', options.scope)
+  if (options.collectorId) params.set('collectorId', String(options.collectorId))
+
+  const refetchInterval =
+    !shouldAutoRefresh(options.window) || options.refreshInterval === null
+      ? false
+      : Math.max(options.refreshInterval ?? 60_000, 60_000)
+
+  return useQuery({
+    placeholderData: keepPreviousData,
+    queryKey: [
+      'usage',
+      'intervals',
+      windowKey(options.window),
+      options.interval ?? 'auto',
+      options.scope ?? 'all',
+      options.collectorId ?? 'all',
+    ] as const,
+    queryFn: () => apiFetch<UsageIntervalsResponse>(`/api/v1/usage/intervals?${params}`),
+    refetchInterval,
+    enabled: options.enabled ?? true,
+  })
+}

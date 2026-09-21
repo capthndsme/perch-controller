@@ -1,0 +1,24 @@
+# Perch without the bundled collector: for a server whose collectors run
+# elsewhere (an OpenWrt router with the perch-collector package, which dials
+# in over a WebSocket; a mirror-port box it polls). Add it to COMPOSE_FILE
+# next to the main file:
+#
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.no-collector.yml
+#
+# The bundled collector moves behind the `collector` profile, so a plain
+# `docker compose up -d` no longer starts it, and the server registers no
+# COLLECTOR_URL row at boot. It stays one command away:
+#
+#   docker compose --profile collector up -d collector     # bring it back
+#   docker compose --profile collector stop collector      # and away again
+#
+# A row the bundled collector created earlier keeps its history: disable it
+# under Settings → Collectors rather than deleting it, and re-enable it there
+# when the collector comes back.
+services:
+  server:
+    environment:
+      COLLECTOR_URL: ""
+      COLLECTOR_API_KEY: ""
+  collector:
+    profiles: ["collector"]

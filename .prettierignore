@@ -1,0 +1,5 @@
+.adonisjs
+node_modules
+build
+dashboard
+public

@@ -1,0 +1,139 @@
+# Perch Network Controller (API + dashboard) with its database and a bundled
+# Perch Network Collector: the home-network looking glass in one stack.
+#
+#   docker compose up -d
+#   open http://<this host>:8080  →  create the admin account, done.
+#
+# Everything is optional and lives in a .env file next to this file. It is
+# the same .env the server reads (see .env.example), so one file configures
+# the whole stack:
+#   PERCH_HTTP_PORT=8080             port the dashboard listens on
+#   PERCH_HTTP_BIND=0.0.0.0          bind address (127.0.0.1 behind a reverse proxy)
+#   PERCH_CAPTURE_INTERFACE=         interface to capture on (empty = default route)
+#   PERCH_GATEWAY_MACS=              comma-separated upstream gateway MACs (empty = auto)
+#   PERCH_COLLECTOR_API_KEY=         shared secret server ↔ collector (optional, see below)
+#   PERCH_DB_BUFFER_POOL=512M        InnoDB buffer pool of the bundled MariaDB
+#   PERCH_SSH_DIR=                   a ~/.ssh to mount read-only (AP control, SSH hostname enrichment)
+#   PERCH_NET_SUBNET=172.28.0.0/24   the stack's private network; change both on a clash
+#   PERCH_NET_GATEWAY=172.28.0.1     its gateway address = where the collector listens
+#   TRUST_PROXY=loopback,172.28.0.1  whose X-Forwarded-For to believe (set below)
+#   DB_PASSWORD / DB_DATABASE        bundled MariaDB root password / database (metricslite)
+#   APP_KEY, TZ, retention knobs …   as in .env.example
+#
+# The project is named `perch` (container and volume names). An install that
+# started under an older name keeps it with COMPOSE_PROJECT_NAME in .env, or
+# its database volume would look empty.
+#
+# Networking: MariaDB has no published port, it is reachable only inside the
+# stack's network. The collector runs on the host network (it has to see the
+# LAN) but listens on the stack's gateway address only, so neither is exposed
+# to the LAN; the API key is a second lock, not the only one. To reach the
+# database from the host (tests, ace commands), add docker-compose.db-port.yml
+# (COMPOSE_FILE=docker-compose.yml:docker-compose.db-port.yml in .env).
+#
+# Bring your own database: docker-compose.external-db.yml (no db service).
+# Collectors elsewhere only (the perch-collector OpenWrt package, which dials
+# this server over a WebSocket): docker-compose.no-collector.yml.
+# Existing MariaDB on 127.0.0.1 plus a reverse proxy: docker-compose.host.yml.
+name: perch
+
+services:
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_PASSWORD:-metricslite}
+      MARIADB_DATABASE: ${DB_DATABASE:-metricslite}
+      MARIADB_AUTO_UPGRADE: "1"
+    command:
+      - --innodb-buffer-pool-size=${PERCH_DB_BUFFER_POOL:-512M}
+      - --innodb-buffer-pool-size-max=${PERCH_DB_BUFFER_POOL_MAX:-4G}
+      - --innodb-flush-log-at-trx-commit=2
+      - --innodb-log-file-size=256M
+      - --default-time-zone=+00:00
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+
+  server:
+    image: ghcr.io/capthndsme/perch-controller:latest
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${PERCH_HTTP_BIND:-0.0.0.0}:${PERCH_HTTP_PORT:-8080}:3333"
+    env_file:
+      - path: .env
+        required: false
+      - path: .env.production
+        required: false
+    environment:
+      # Fixed for the container; .env values for these are for host tooling.
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3333"
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD:-metricslite}
+      DB_DATABASE: ${DB_DATABASE:-metricslite}
+      TZ: ${TZ:-UTC}
+      # Registered automatically at first boot; the wizard skips that step.
+      COLLECTOR_URL: http://${PERCH_NET_GATEWAY:-172.28.0.1}:9800
+      COLLECTOR_API_KEY: ${PERCH_COLLECTOR_API_KEY:-}
+      # Requests forwarded by a reverse proxy on the host reach the container
+      # from the stack's GATEWAY, so that one address has to be trusted for
+      # X-Forwarded-For — otherwise a collector announce would record the
+      # gateway as the collector's address. Deliberately the gateway and not
+      # the whole subnet: every sibling container sits on that subnet and
+      # would otherwise be able to forge the header.
+      TRUST_PROXY: loopback,${PERCH_NET_GATEWAY:-172.28.0.1}
+    volumes:
+      - server-data:/data
+      - ${PERCH_SSH_DIR:-ssh-keys}:/root/.ssh:ro
+
+  collector:
+    image: ghcr.io/capthndsme/perch-collector:latest
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    network_mode: host
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    environment:
+      PERCH_COLLECTOR_LISTEN: ${PERCH_NET_GATEWAY:-172.28.0.1}:9800
+      PERCH_COLLECTOR_API_KEY: ${PERCH_COLLECTOR_API_KEY:-}
+      PERCH_COLLECTOR_INTERFACE: ${PERCH_CAPTURE_INTERFACE:-}
+      PERCH_COLLECTOR_GATEWAY_MACS: ${PERCH_GATEWAY_MACS:-}
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${PERCH_NET_SUBNET:-172.28.0.0/24}
+          gateway: ${PERCH_NET_GATEWAY:-172.28.0.1}
+
+volumes:
+  db-data:
+  server-data:
+  # Placeholder mounted at /root/.ssh when PERCH_SSH_DIR is unset.
+  ssh-keys:

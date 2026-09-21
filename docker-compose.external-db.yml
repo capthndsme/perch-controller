@@ -1,0 +1,42 @@
+# Perch with a database you already run: docker-compose.yml minus the
+# bundled MariaDB. Set PERCH_DB_HOST (required) and PERCH_DB_PORT
+# (3306), plus DB_USER / DB_PASSWORD / DB_DATABASE for that database, in a
+# .env next to this file, then:
+#
+#   docker compose -f docker-compose.external-db.yml up -d
+#
+# The database must be reachable from a container: a MariaDB on this same host
+# has to listen on more than 127.0.0.1 (then PERCH_DB_HOST=host.docker.internal
+# works with the extra_hosts entry below), or use docker-compose.host.yml,
+# which puts the server on the host network. The server creates its tables at
+# first start; the database and a user with full rights on it are all it needs.
+name: perch
+
+services:
+  server:
+    extends:
+      file: docker-compose.yml
+      service: server
+    depends_on: !reset []
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      DB_HOST: ${PERCH_DB_HOST:?set PERCH_DB_HOST to your MariaDB host}
+      DB_PORT: ${PERCH_DB_PORT:-3306}
+      DB_USER: ${DB_USER:-metricslite}
+
+  collector:
+    extends:
+      file: docker-compose.yml
+      service: collector
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${PERCH_NET_SUBNET:-172.28.0.0/24}
+          gateway: ${PERCH_NET_GATEWAY:-172.28.0.1}
+
+volumes:
+  server-data:
+  ssh-keys:

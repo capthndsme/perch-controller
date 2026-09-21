@@ -1,0 +1,32 @@
+# MariaDB tuning for the Perch workload.
+#
+# Install (needs root):
+#   sudo cp docs/ops/mariadb-perch.cnf /etc/mysql/mariadb.conf.d/60-perch.cnf
+#   sudo systemctl restart mariadb
+#
+# Until that is done, the controller applies the two dynamic settings below at
+# boot via SET GLOBAL (DB_TUNE_* in build/.env) — but a MariaDB restart
+# before the app comes back up would revert them, and innodb_log_file_size
+# can only be set here.
+
+[mariadb]
+# The whole hot set (recent native buckets + every rollup tier) should live in
+# RAM. The default is 128 MB on a 14 GB host; 4 GB leaves plenty for the rest.
+innodb_buffer_pool_size = 4G
+# MariaDB 11.7+ only allows runtime resizes up to this ceiling (it defaults
+# to the startup size, which is why SET GLOBAL could not grow the 128 MB
+# default). Leave headroom so DB_TUNE_BUFFER_POOL_BYTES can adjust it later.
+innodb_buffer_pool_size_max = 8G
+
+# The poller commits dozens of small transactions every 5 s. Flushing the redo
+# log once a second instead of on every commit removes most of that fsync
+# load; the worst case on a power loss is one second of metrics.
+innodb_flush_log_at_trx_commit = 2
+
+# Larger redo log = fewer checkpoint stalls during the nightly retention
+# sweep (batched DELETEs) and the minute-ly rollup INSERT…SELECTs.
+innodb_log_file_size = 512M
+
+# Session time zone. The controller pins its own connections to UTC, but making
+# the server default UTC too keeps ad-hoc queries consistent with the data.
+default_time_zone = '+00:00'

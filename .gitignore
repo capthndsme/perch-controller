@@ -1,0 +1,33 @@
+# Dependencies and AdonisJS build
+node_modules
+build
+tmp/*
+!tmp/.gitkeep
+
+# Secrets
+.env
+.env.bak*
+.env.local
+.env.production.local
+.env.development.local
+
+# Frontend assets compiled code
+public/assets
+
+# Build tools specific
+npm-debug.log
+yarn-error.log
+
+# Editors specific
+.fleet
+.idea
+.vscode
+
+# Platform specific
+.DS_Store
+
+# Site-specific production overrides (template: .env.production.example)
+.env.production
+
+# Built dashboard (dashboard/ builds into public/, node ace build copies it into build/public)
+public/

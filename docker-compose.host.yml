@@ -1,0 +1,100 @@
+# Perch on the HOST network, using a MariaDB (and reverse proxy) you
+# already run. docker-compose.yml is the batteries-included variant; this one
+# is for a box that has the database and wants the app in containers.
+#
+#   docker compose -f docker-compose.host.yml up -d --build
+#
+# The server reads the same .env (+ .env.production overrides) as the
+# non-Docker install: PORT, APP_KEY, DB_* pointing at 127.0.0.1, retention.
+# It listens on PORT on every host interface, so an
+# existing reverse proxy to that port keeps working. ~/.ssh is mounted
+# read-only for AP control and SSH hostname enrichment (known_hosts must
+# already contain the targets; BatchMode never prompts).
+#
+# The collector uses ../go-collector/collector.yaml verbatim and, like the
+# server, sits on the host network, so `listen: 127.0.0.1:9800` in that file
+# is enough.
+#
+# Optional bundled MariaDB (profile `db`): serves exactly what .env points at
+# (DB_DATABASE, root with DB_PASSWORD) on 127.0.0.1:DB_PORT, so .env needs
+# DB_HOST=127.0.0.1 and DB_USER=root. Start it with
+#   docker compose -f docker-compose.host.yml --profile db up -d
+# Tuning: PERCH_DB_BUFFER_POOL (default 512M), PERCH_DB_BIND
+# (default 127.0.0.1).
+name: perch
+
+services:
+  db:
+    image: mariadb:11
+    profiles: ["db"]
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      MARIADB_DATABASE: ${DB_DATABASE:?DB_DATABASE in .env}
+      MARIADB_ROOT_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD in .env}
+      MARIADB_AUTO_UPGRADE: "1"
+    command:
+      - --innodb-buffer-pool-size=${PERCH_DB_BUFFER_POOL:-512M}
+      - --innodb-buffer-pool-size-max=${PERCH_DB_BUFFER_POOL_MAX:-4G}
+      - --innodb-flush-log-at-trx-commit=2
+      - --innodb-log-file-size=512M
+      - --default-time-zone=+00:00
+    ports:
+      - "${PERCH_DB_BIND:-127.0.0.1}:${DB_PORT:-3306}:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+
+  server:
+    image: ghcr.io/capthndsme/perch-controller:latest
+    build: .
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    network_mode: host
+    env_file:
+      - path: .env
+        required: true
+      - path: .env.production
+        required: false
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      COLLECTOR_URL: http://127.0.0.1:9800
+    volumes:
+      - server-data:/data
+      - ${HOME}/.ssh:/root/.ssh:ro
+
+  collector:
+    image: ghcr.io/capthndsme/perch-collector:latest
+    build: ../go-collector
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    network_mode: host
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    environment:
+      PERCH_COLLECTOR_LISTEN: 127.0.0.1:9800
+    volumes:
+      - ../go-collector/collector.yaml:/etc/perch-collector/collector.yaml:ro
+    command: ["-config", "/etc/perch-collector/collector.yaml"]
+
+volumes:
+  server-data:
+  db-data:
