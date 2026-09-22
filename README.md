@@ -112,6 +112,43 @@ Moving an existing database into the bundled container is a
 `mariadb-dump | mysql` into it, then `DB_PORT` in `.env`; a 1.8 GB database
 took about half a minute to dump and a few minutes to restore.
 
+## Plain HTTP and a management VLAN
+
+The default install serves the dashboard and the agents' endpoints over plain
+HTTP on port 8080, and that is a supported way to run Perch: collectors and
+access points connect to `http://<controller address>:8080`, which is what the
+dashboard's install commands show when you open it at that address.
+
+Plain HTTP encrypts nothing. Anyone who can intercept traffic between the
+devices and the controller (on an ordinary home LAN, a compromised camera or TV
+redirecting traffic is enough) can:
+
+- read what the agents report: which sites every device visits (the
+  collector) and which devices are on which access point;
+- copy the agents' credentials and push false data or keep knocking them off;
+- pose as the controller to the access points and make them kick clients,
+  blink or reboot (a collector only answers read-only requests);
+- read your dashboard password when you log in.
+
+**Put the controller on a management VLAN.** Give the controller, the router's
+and the access points' management addresses a VLAN of their own that your
+household's and guests' devices cannot reach: a VLAN plus a firewall zone that
+nothing forwards into from the client networks. The access points keep serving
+their SSIDs on the client networks; only their own address moves. Then the only
+devices that can see Perch's traffic are the ones Perch manages. The dashboard
+helps: it marks every agent that is connected over plain HTTP as
+"Unencrypted", warns when the install commands it shows use `http://`, and
+shows a notice while the dashboard itself is on plain HTTP.
+
+**Or serve the controller over HTTPS**, with a reverse proxy and a certificate
+for a host name ([`docs/ops/apache-perch.conf`](docs/ops/apache-perch.conf)
+for Apache), `PERCH_HTTP_BIND=127.0.0.1`, and agents pointed at
+`https://<name>`. The proxy has to send `X-Forwarded-Proto: https`: without it
+the controller cannot tell, its install commands show `http://`, and the
+dashboard cannot say which agents are encrypted. An agent's `tls_insecure`
+(accept any certificate) is no substitute: it hides the traffic from passive
+listeners, not from someone who intercepts it.
+
 ## Run from source
 
 ```bash

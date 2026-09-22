@@ -69,10 +69,13 @@ export class FakeCollector {
       instanceId?: string
       apiKey?: string
       handlers?: Record<string, Handler>
+      /** Extra upgrade headers, e.g. what a reverse proxy adds. */
+      headers?: Record<string, string>
     } = {}
   ): Promise<FakeCollector> {
     const socket = new WebSocket(await collectorWsUrl(), COLLECTOR_SUBPROTOCOL, {
       headers: {
+        ...options.headers,
         'Authorization': `Bearer ${options.apiKey ?? TEST_API_KEY}`,
         'X-Perch-Instance-Id': options.instanceId ?? TEST_INSTANCE_ID,
       },

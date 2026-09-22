@@ -71,7 +71,7 @@ export function apAgentEndpoint(): AgentEndpoint<WifiAccessPoint> {
       return { ok: true, principal: ap }
     },
 
-    onConnection(ws, ap, { address }) {
+    onConnection(ws, ap, { address, secure }) {
       // The credentials this session proved; every write it causes is scoped to them.
       const agentId = ap.agentId!
 
@@ -86,6 +86,7 @@ export function apAgentEndpoint(): AgentEndpoint<WifiAccessPoint> {
         connectedAt: DateTime.utc(),
         address: address === 'unknown' ? null : address,
         protocol: ws.protocol || AP_AGENT_SUBPROTOCOL,
+        secure,
       })
       // First frame of every session: the push schedule. Then system.info.
       hub.notify(ap.id, 'agent.configure', agentConfigureParams(ap))

@@ -49,6 +49,7 @@ export default class CollectorTransformer extends BaseTransformer<Collector> {
               online: session !== null,
               connectedAt: session ? session.connectedAt.toISO() : null,
               address: session?.address ?? null,
+              secure: session?.secure ?? null,
             }
           : null,
       gateway: gateway

@@ -117,6 +117,41 @@ test.group('ap-agent WebSocket gateway', (group) => {
     assert.isFalse(hub.isOnline(ap.id))
   })
 
+  test('the settings API says whether the live session came in over TLS', async ({
+    client,
+    assert,
+  }) => {
+    const { adminToken } = await seedSetupComplete()
+    const { ap, agentId, agentSecret } = await seedAgentAp()
+    const secureOf = async () => {
+      const list = await client.get('/api/v1/settings/wifi-sources').bearerToken(adminToken)
+      return (list.body().data as any[]).find((row) => row.id === ap.id).agent.secure
+    }
+
+    // The test client is on loopback, which TRUST_PROXY trusts like the Apache
+    // in front of the stack: its X-Forwarded-Proto decides, and without one
+    // the controller cannot tell.
+    for (const [proto, expected] of [
+      [null, null],
+      ['https', true],
+      ['http', false],
+    ] as const) {
+      const agent = await FakeAgent.connect({
+        agentId,
+        agentSecret,
+        headers: proto ? { 'X-Forwarded-Proto': proto } : {},
+      })
+      await agent.waitFor('system.info')
+      assert.strictEqual(await secureOf(), expected, `X-Forwarded-Proto: ${proto}`)
+      await agent.close()
+      await eventually(
+        async () => hub.isOnline(ap.id),
+        (online) => !online
+      )
+    }
+    assert.isNull(await secureOf(), 'offline: nothing to say')
+  })
+
   test('a second session with the same credentials replaces the first (4002)', async ({
     assert,
   }) => {

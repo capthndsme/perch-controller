@@ -44,6 +44,8 @@ export default class WifiAccessPointTransformer extends BaseTransformer<WifiAcce
             connectedAt: iso(this.resource.agentConnectedAt),
             disconnectedAt: iso(this.resource.agentDisconnectedAt),
             lastAddress: this.resource.agentLastAddress ?? null,
+            // The live session's transport (null offline or when a proxy does not say).
+            secure: hub.session(this.resource.id)?.secure ?? null,
           }
         : null,
       createdAt: this.resource.createdAt,

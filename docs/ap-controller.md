@@ -129,6 +129,14 @@ sees it), by `ws`'s `WebSocketServer({ noServer: true, maxPayload: 4 MiB })`.
   offers none. A client that offers only other protocols (a future
   `perch-ap.v2`-only agent) gets `400 {"error":"unsupported_protocol"}`
   before the upgrade.
+- Transport security (amendment 2026-09-22): plain HTTP is a documented way
+  to run Perch (README: "Plain HTTP and a management VLAN"). The gateway
+  records per session whether it came in over TLS (`transport_security.ts`:
+  a TLS socket, or a trusted proxy's `X-Forwarded-Proto`; a direct plain
+  connection is false and cannot claim otherwise; a trusted proxy without the
+  header is null), and `GET /api/v1/settings/wifi-sources` returns it as
+  `agent.secure` (null while offline). The dashboard marks `false` as
+  "Unencrypted" and warns on `http://` install commands.
 - Startup (amendment 2026-09-22): the gateway attaches in the provider's
   `ready()`, after the server listens. An upgrade in that moment reaches the
   router, whose routes for both agent paths answer `503 {"error":

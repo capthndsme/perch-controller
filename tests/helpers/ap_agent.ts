@@ -106,9 +106,14 @@ export class FakeAgent {
     handlers?: Record<string, Handler>
     /** Offer permessage-deflate, as perch-apd does since 0.1.1. */
     perMessageDeflate?: boolean
+    /** Extra upgrade headers, e.g. what a reverse proxy adds. */
+    headers?: Record<string, string>
   }): Promise<FakeAgent> {
     const socket = new WebSocket(await agentWsUrl(), AGENT_SUBPROTOCOL, {
-      headers: { Authorization: `Bearer ${options.agentId}.${options.agentSecret}` },
+      headers: {
+        ...options.headers,
+        Authorization: `Bearer ${options.agentId}.${options.agentSecret}`,
+      },
       perMessageDeflate: options.perMessageDeflate ?? false,
     })
     const agent = new FakeAgent(socket, options.handlers ?? {})

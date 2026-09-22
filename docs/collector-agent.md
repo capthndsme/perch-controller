@@ -183,6 +183,11 @@ The server answers before upgrading (JSON body `{error, message}` like the AP en
 |---|---|---|
 | 503 | `shutting_down` | server stopping |
 | 503 + `Retry-After: 1` | `gateway_starting` | the server just started and the gateway is not attached yet (answered by the router; amendment 2026-09-22) |
+
+Transport security (amendment 2026-09-22): the session records whether it came
+in over TLS, as for AP agents (docs/ap-controller.md section 2.2), and
+`GET /api/v1/settings/collectors` returns it as `connection.secure`. A polled
+collector is always plain HTTP (its API has no TLS); the dashboard marks both.
 | 429 + `Retry-After` | `rate_limited` | the address used up its failed-attempt budget (the AP gateway's budget, shared) |
 | 400 | `unsupported_protocol` | subprotocol offered but not ours |
 | 400 | `invalid_request` | missing/invalid instance id header or bearer |

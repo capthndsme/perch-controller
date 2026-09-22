@@ -168,7 +168,7 @@ export function collectorAgentEndpoint(): AgentEndpoint<CollectorPrincipal> {
       return { ok: true, principal: { instanceId, bearer } }
     },
 
-    onConnection(ws, principal, { address }) {
+    onConnection(ws, principal, { address, secure }) {
       let session: AgentSession | null = null
       let helloSeen = false
 
@@ -195,7 +195,7 @@ export function collectorAgentEndpoint(): AgentEndpoint<CollectorPrincipal> {
         clearTimeout(helloTimer)
         // The session is bound the moment it is registered, so a close that
         // races the end of the hello still unregisters it.
-        handleHello(ws, principal, address, raw, (registered) => {
+        handleHello(ws, principal, address, secure, raw, (registered) => {
           session = registered
         }).catch((error) => {
           logger.error(
@@ -253,6 +253,7 @@ async function handleHello(
   ws: WebSocket,
   principal: CollectorPrincipal,
   address: string,
+  secure: boolean | null,
   raw: string,
   bind: (session: AgentSession) => void
 ): Promise<void> {
@@ -361,6 +362,7 @@ async function handleHello(
     connectedAt: DateTime.utc(),
     address: address === 'unknown' ? null : address,
     protocol: ws.protocol || COLLECTOR_AGENT_SUBPROTOCOL,
+    secure,
   })
   bind(session)
   rememberSessionKey(row.id, principal.bearer)

@@ -80,9 +80,12 @@ export type AgentSessionInfo = {
   connectedAt: DateTime
   address: string | null
   protocol: string
+  /** Whether the session came in over TLS; null when the gateway cannot tell. */
+  secure: boolean | null
 }
 
-export type AgentSessionInit = AgentSessionInfo & {
+export type AgentSessionInit = Omit<AgentSessionInfo, 'secure'> & {
+  secure?: boolean | null
   /** Row id the session belongs to (`wifi_access_points.id` or `collectors.id`). */
   id: number
   connection: AgentConnection
@@ -117,6 +120,7 @@ export class AgentSession {
       connectedAt: init.connectedAt,
       address: init.address,
       protocol: init.protocol,
+      secure: init.secure ?? null,
     }
   }
 

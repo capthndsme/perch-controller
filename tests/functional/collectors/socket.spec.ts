@@ -255,6 +255,8 @@ test.group('collector socket | session', (group) => {
     assert.isTrue(entry.connection.online)
     assert.isString(entry.connection.connectedAt)
     assert.match(entry.connection.address, /^(127\.0\.0\.1|::1)$/)
+    // Loopback is a trusted proxy that did not send X-Forwarded-Proto: unknown.
+    assert.isNull(entry.connection.secure)
     assert.isNull(entry.gateway)
 
     const adopt = await client
@@ -282,6 +284,21 @@ test.group('collector socket | session', (group) => {
     // The announced key was stored at hello time; the adopted row keeps it.
     const adopted = await Collector.findOrFail(row.id)
     assert.equal(adopted.apiKey, TEST_API_KEY)
+    await collector.close()
+  })
+
+  test('a socket collector behind a proxy that says https is reported secure', async ({
+    client,
+    assert,
+  }) => {
+    const { adminToken } = await seedSetupComplete()
+    const collector = await FakeCollector.connect({ headers: { 'X-Forwarded-Proto': 'https' } })
+    const reply = await collector.hello()
+    const { collectorId } = reply.result as { collectorId: number }
+
+    const listed = await client.get(SETTINGS).bearerToken(adminToken)
+    const entry = listed.body().data.find((c: { id: number }) => c.id === collectorId)
+    assert.isTrue(entry.connection.secure)
     await collector.close()
   })
 

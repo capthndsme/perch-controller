@@ -1,6 +1,7 @@
 import type { AgentConnection } from '#services/agent_hub'
 import { agentAuthBudget } from '#services/ap_agent_rate_limit'
 import { deriveClientAddress } from '#services/client_address'
+import { transportSecurity } from '#services/transport_security'
 import {
   DEFAULT_TRUST_PROXY,
   compileTrustProxy,
@@ -41,6 +42,8 @@ export type UpgradeRefusal = {
 export type UpgradeContext = {
   /** Client address after the trusted-proxy walk, or 'unknown'. */
   address: string
+  /** Reached over TLS (see transport_security.ts); null when a proxy does not say. */
+  secure: boolean | null
 }
 
 export type AuthenticateResult<P> =
@@ -197,7 +200,7 @@ export function mountAgentGateway(
       return
     }
 
-    const context: UpgradeContext = { address }
+    const context: UpgradeContext = { address, secure: transportSecurity(request, trust) }
     const verdict = await endpoint.authenticate(request, context)
     if (!verdict.ok) {
       abortHandshake(socket, verdict.refusal.status, verdict.refusal.body, verdict.refusal.headers)
