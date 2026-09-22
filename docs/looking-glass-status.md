@@ -1578,3 +1578,38 @@ to connect by IP: the controller serves TLS itself with a self-signed certificat
 and the join token or install command carries its SHA-256 pin, as Docker Swarm join
 tokens and kubeadm's `--discovery-token-ca-cert-hash` do. Not built; it touches the
 controller, the kit and both daemons.
+
+## 2026-09-22 — Plain HTTP documented, a management VLAN, dashboard warnings
+
+The owner decided that plain HTTP is a documented way to run Perch: the default
+install is `http://<host>:8080` for the dashboard and the agents alike. The docs
+strongly recommend a management VLAN, and the dashboard warns.
+
+- **Controller:** `transport_security.ts` decides, per agent session, whether it
+  came in over TLS: a TLS socket, or a trusted proxy's `X-Forwarded-Proto`. A
+  direct plain connection is false, and the header cannot fake it; a trusted proxy
+  that sends no header is null, never a guess. The flag travels in the upgrade
+  context and the hub's session info. The settings APIs return it as
+  `agent.secure` (wifi-sources) and `connection.secure` (collectors), null while
+  offline. A unit test covers the rules, forged header included; functional tests
+  cover both endpoints. Suite: 377.
+- **Dashboard** (fork, reviewed):
+  - An "Unencrypted connection" notice above `http://` install commands (the AP
+    join-token dialog, the setup wizard's router instructions).
+  - An "Unencrypted" badge on APs and collectors whose live session is plain, and
+    on active polled collectors with an `http://` base URL; nothing for null.
+  - While the dashboard itself is on plain HTTP: a dismissible notice on the
+    Settings pages (localStorage) and a line under the sign-in and setup forms.
+  - The fork checked it in headless Firefox: light, dark and narrow.
+- **Docs:** the controller README gains a "Plain HTTP and a management VLAN"
+  section: what plain HTTP exposes; a VLAN whatever the transport; for the
+  dashboard, browse from the VLAN or use HTTPS, because the VLAN protects the
+  agents, not the admin's browser; HTTPS through a proxy that sends
+  `X-Forwarded-Proto`; `tls_insecure` is no substitute. Also a note at the top of
+  the compose file. The perch-apd and perch-collector docs now use
+  `http://192.168.1.10:8080` as the example controller URL, with the same advice.
+- **This box:** its Apache HTTPS vhosts send no `X-Forwarded-Proto`, so the
+  controller builds `http://` install commands and every flag reads null (no false
+  badges). The fix (sudo, the owner's): `RequestHeader set X-Forwarded-Proto
+  "https"` after `ProxyPreserveHost On` in both `-le-ssl` vhosts, then a reload.
+  Deployed 11:14 UTC; all four devices online, `secure` null for now.
