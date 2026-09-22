@@ -5,12 +5,14 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { UnencryptedBadge } from '@/components/security/plain-http'
 import { AgentStatusBadge, TransportBadge } from '@/components/wifi/ap-agent-badges'
 import { useForgetApAgent, usePingApAgent } from '@/hooks/use-ap-agents'
 import { useDeleteWifiSource, useProbeWifiSource, useUpdateWifiSource } from '@/hooks/use-wifi'
 import { ApiError } from '@/lib/api'
 import { agentCapabilityLabel, apiErrorCode } from '@/lib/ap-agents'
 import { formatLastSeen } from '@/lib/collectors'
+import { isApAgentUnencrypted } from '@/lib/transport-security'
 import type { WifiSource, WifiSourceAgent } from '@/types/api'
 
 function Fact({ label, mono, children }: { label: string; mono?: boolean; children: ReactNode }) {
@@ -140,6 +142,9 @@ export function WifiSourceCard({ source }: { source: WifiSource }) {
                 {source.lastStatus?.ok === false ? 'offline' : 'online'}
               </Badge>
             )}
+            {isApAgentUnencrypted(agent) ? (
+              <UnencryptedBadge title="Plain HTTP: keep the controller and this AP on a management VLAN." />
+            ) : null}
             <Badge variant="outline">{source.pollIntervalSeconds}s</Badge>
             <TransportBadge transport={source.transport} />
           </div>

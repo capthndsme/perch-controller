@@ -42,6 +42,12 @@ export type CollectorConnection = {
   connectedAt: string | null
   /** The address the socket came from. */
   address: string | null
+  /**
+   * true: the live session reached the controller over TLS; false: plain,
+   * unencrypted HTTP/WebSocket; null (or absent, older servers): offline, or
+   * behind a proxy that does not say (X-Forwarded-Proto).
+   */
+  secure?: boolean | null
 }
 
 /** The last gateway report of a collector that runs on the router. */
@@ -563,6 +569,12 @@ export type WifiSourceAgent = {
   connectedAt: string | null
   disconnectedAt: string | null
   lastAddress: string | null
+  /**
+   * true: the live session reached the controller over TLS; false: plain,
+   * unencrypted HTTP/WebSocket; null (or absent, older servers): offline, or
+   * behind a proxy that does not say (X-Forwarded-Proto).
+   */
+  secure?: boolean | null
 }
 
 export type WifiSource = {

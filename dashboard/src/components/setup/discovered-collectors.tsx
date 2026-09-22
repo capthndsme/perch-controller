@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Broadcast, CaretDown, CaretRight, PlugsConnected, Prohibit, WarningCircle } from '@phosphor-icons/react'
 import { Fact } from '@/components/collectors/fact'
+import { PlainHttpNotice } from '@/components/security/plain-http'
 import { Field, FormError } from '@/components/setup/form-field'
 import type { CollectorStepResult } from '@/components/setup/collector-step-result'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -19,6 +20,7 @@ import {
   formatKeyFingerprint,
   formatLastSeen,
 } from '@/lib/collectors'
+import { isPlainHttpUrl } from '@/lib/transport-security'
 import type { Collector } from '@/types/api'
 import type { SetupAdoptPayload } from '@/types/setup'
 
@@ -127,6 +129,14 @@ function ServerUrlInstructions() {
         To add an OpenWrt router, install the perch-collector package, then run this on the
         router:
       </p>
+      {isPlainHttpUrl(controllerUrl) ? (
+        <PlainHttpNotice>
+          The router will talk to the controller over plain HTTP. Anyone who can intercept traffic
+          on this network could read what it reports, copy its credentials and pose as the
+          controller. Put the controller and the router&apos;s management interface on a management
+          VLAN that client devices can&apos;t reach, or serve the controller over HTTPS.
+        </PlainHttpNotice>
+      ) : null}
       <pre className="overflow-x-auto rounded-md border bg-muted/40 p-3 font-mono text-[11px] leading-relaxed">
         {commands}
       </pre>

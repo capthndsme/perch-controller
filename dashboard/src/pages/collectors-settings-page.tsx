@@ -15,6 +15,7 @@ import {
   WarningCircle,
   Waves,
 } from '@phosphor-icons/react'
+import { UnencryptedBadge } from '@/components/security/plain-http'
 import { Field, FormError, formClassName } from '@/components/setup/form-field'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -38,6 +39,7 @@ import {
   type UpsertCollectorPayload,
 } from '@/hooks/use-collectors'
 import { ApiError, apiErrorCode, fieldErrorsFromApi } from '@/lib/api'
+import { collectorUnencryptedReason } from '@/lib/transport-security'
 import { Fact } from '@/components/collectors/fact'
 import {
   announcedAddressDiffers,
@@ -128,6 +130,21 @@ function TransportBadge({ transport }: { transport: CollectorTransport }) {
       <Icon aria-hidden className="size-3" />
       {collectorTransportLabel(transport)}
     </Badge>
+  )
+}
+
+/** Plain HTTP between this collector and the controller, if it is. */
+function CollectorUnencryptedBadge({ collector }: { collector: Collector }) {
+  const reason = collectorUnencryptedReason(collector)
+  if (reason === null) return null
+  return (
+    <UnencryptedBadge
+      title={
+        reason === 'poll'
+          ? 'Polled over plain HTTP: keep the controller and this collector on a management VLAN.'
+          : 'Plain HTTP: keep the controller and this collector on a management VLAN.'
+      }
+    />
   )
 }
 
@@ -677,6 +694,7 @@ function PendingCollectorCard({
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">{collectorLifecycleLabel(collector.lifecycle)}</Badge>
             <TransportBadge transport={collector.transport} />
+            <CollectorUnencryptedBadge collector={collector} />
             <Badge variant="outline">{collectorSourceLabel(collector.source)}</Badge>
           </div>
         </div>
@@ -1051,6 +1069,7 @@ function RegisteredCollectorCard({
           <div className="flex flex-wrap items-center gap-2">
             <HealthBadge health={health} />
             <TransportBadge transport={collector.transport} />
+            <CollectorUnencryptedBadge collector={collector} />
             <Badge variant="outline">{collector.pollIntervalSeconds}s</Badge>
             <Badge variant="outline">{collectorSourceLabel(collector.source)}</Badge>
           </div>

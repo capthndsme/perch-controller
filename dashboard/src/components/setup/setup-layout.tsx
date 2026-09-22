@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { PlainHttpPageNote } from '@/components/security/plain-http'
 import { useThemeEffect } from '@/hooks/use-theme'
 
 type SetupLayoutProps = {
@@ -29,6 +30,7 @@ export function SetupLayout({ children }: SetupLayoutProps) {
           </p>
         </div>
         {children}
+        <PlainHttpPageNote className="mt-4" />
       </div>
     </div>
   )

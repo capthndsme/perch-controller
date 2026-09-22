@@ -1,6 +1,8 @@
 import { useState } from 'react'
+import { PlainHttpNotice } from '@/components/security/plain-http'
 import { CopyButton } from '@/components/ui/copy-button'
 import { buildInstallCommands } from '@/lib/ap-agents'
+import { isPlainHttpUrl } from '@/lib/transport-security'
 import type { ApAgentInstallInfo } from '@/types/api'
 
 const SELECT_CLASS =
@@ -65,6 +67,7 @@ export function InstallCommands({ token, info, infoLoading, infoError }: Install
 
       {commands ? (
         <>
+          {isPlainHttpUrl(info?.controllerUrl) ? <PlainHttpNotice /> : null}
           <CommandBlock
             title="One-liner"
             hint="Picks the right binary for the AP and checks its checksum."

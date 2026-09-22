@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { Sidebar } from '@/components/layout/sidebar'
+import { DashboardPlainHttpNotice } from '@/components/security/plain-http'
 import { Topbar } from '@/components/layout/topbar'
 import { cn } from '@/lib/utils'
 
@@ -21,6 +22,7 @@ function readCollapsed(): boolean {
  */
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(readCollapsed)
+  const { pathname } = useLocation()
   // The drawer closes itself on every nav link click (see Sidebar).
   const [mobileOpen, setMobileOpen] = useState(false)
 
@@ -53,6 +55,7 @@ export function AppLayout() {
       >
         <Topbar onOpenMobileNav={() => setMobileOpen(true)} />
         <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col gap-5 px-4 py-5">
+          {pathname.startsWith('/settings') ? <DashboardPlainHttpNotice /> : null}
           <Outlet />
         </main>
       </div>
