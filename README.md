@@ -130,13 +130,23 @@ redirecting traffic is enough) can:
   blink or reboot (a collector only answers read-only requests);
 - read your dashboard password when you log in.
 
-**Put the controller on a management VLAN.** Give the controller, the router's
-and the access points' management addresses a VLAN of their own that your
-household's and guests' devices cannot reach: a VLAN plus a firewall zone that
-nothing forwards into from the client networks. The access points keep serving
-their SSIDs on the client networks; only their own address moves. Then the only
-devices that can see Perch's traffic are the ones Perch manages. The dashboard
-helps: it marks every agent that is connected over plain HTTP as
+**Put Perch on a management VLAN, whatever the transport.** Give the
+controller, the router's and the access points' management addresses a VLAN of
+their own that your household's and guests' devices cannot reach: a VLAN plus a
+firewall zone that nothing forwards into from the client networks. The access
+points keep serving their SSIDs on the client networks; only their own address
+moves, and the collector on the router still captures the client networks as
+before. With plain HTTP this is what keeps the agents' traffic away from anyone
+who could intercept it. With HTTPS it is still worth doing: it limits who can
+reach the controller at all.
+
+**The dashboard needs one more step on plain HTTP.** The VLAN protects the
+agents, not your browser: from a laptop or phone on the client network, your
+sign-in and every page you open still cross that network in the clear. Open the
+dashboard from a device on the management VLAN (or over a VPN into it), or
+serve the controller over HTTPS.
+
+The dashboard helps: it marks every agent that is connected over plain HTTP as
 "Unencrypted", warns when the install commands it shows use `http://`, and
 shows a notice while the dashboard itself is on plain HTTP.
 

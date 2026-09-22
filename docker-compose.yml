@@ -7,8 +7,8 @@
 #
 # That is plain HTTP, for the dashboard and for the agents alike: keep this
 # host, the router and the access points on a management VLAN that client
-# devices cannot reach, or put the controller behind HTTPS (README: "Plain
-# HTTP and a management VLAN").
+# devices cannot reach, and open the dashboard from there (or put the
+# controller behind HTTPS). README: "Plain HTTP and a management VLAN".
 #
 # Then add collectors: the perch-collector OpenWrt package on your router
 # (recommended: it sees all traffic and reports the gateway's stats), or a
