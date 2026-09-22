@@ -1613,3 +1613,8 @@ strongly recommend a management VLAN, and the dashboard warns.
   badges). The fix (sudo, the owner's): `RequestHeader set X-Forwarded-Proto
   "https"` after `ProxyPreserveHost On` in both `-le-ssl` vhosts, then a reload.
   Deployed 11:14 UTC; all four devices online, `secure` null for now.
+- **Later the same day:** the owner added the header. Install commands through Apache
+  now say `https://`. Since the flag is set at connect time and a graceful reload
+  keeps the old tunnels, the controller was restarted (11:57 UTC): all four devices
+  were back within 16 s, reporting `secure: true`, so no badges or install warnings
+  show on this box.
