@@ -679,6 +679,22 @@ export function reconcile(
     if (revokedAt !== null && revokedAt <= at) {
       apply(w, { type: 'end', reason: 'revoked', at: now }, now, 'revoked')
     }
+    // Slots (decision 23): the router evicted the voucher's first holders to
+    // make room. A live evictee is journaled `grant_ended moved`, a queued
+    // one it simply dropped: end every holder beyond the voucher's devices
+    // here, the one that joined first leaving first, so a queued grant the
+    // router no longer has is never promoted later.
+    const maxDevices = Math.max(1, v.limits.maxDevices)
+    const holders = [...byId.values(), ...grantInserts.values()]
+      .filter((x) => x !== w && x.groupKey === w.groupKey && x.lc.state !== 'ended')
+      .sort(
+        (a, b) =>
+          (a.lc.startedAt ?? a.createdAt) - (b.lc.startedAt ?? b.createdAt) ||
+          (a.id ?? Number.MAX_SAFE_INTEGER) - (b.id ?? Number.MAX_SAFE_INTEGER)
+      )
+    for (const x of holders.slice(0, Math.max(0, holders.length + 1 - maxDevices))) {
+      apply(x, { type: 'end', reason: 'moved', at }, at, 'moved')
+    }
   }
 
   // --- 2. usage snapshot ------------------------------------------------------
