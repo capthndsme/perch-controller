@@ -308,6 +308,41 @@ test.group('qos | plane writers (fake gateway)', (group) => {
     assert.equal(newest.author.email, 'admin@example.com')
   })
 
+  test('a router edit a collector mislabels as Perch’s own echo is still read', async ({
+    client,
+    assert,
+  }) => {
+    const env = await setup()
+    await toManaged(client, env)
+    const created = bodyOf(
+      await client
+        .post('/api/v1/qos/wan-queues')
+        .bearerToken(env.adminToken)
+        .json({ gatewayId: env.gatewayId, device: 'wan2', downloadKbit: 50000, uploadKbit: 10000 })
+    ).data
+    await confirmed(created.apply.id)
+    await idle(env.gatewayId)
+    // The router's admin edits the queue; the collector (a pre-rc.3 bug)
+    // reports it as the echo of Perch's own apply.
+    const queue = routerSection(env.gw, 'sqm', created.queue.uciSection)!
+    queue.options.download = '30000'
+    env.gw.collector!.notifyServer('gateway.config.changed', {
+      hashes: env.gw.hashes(),
+      changed: ['sqm'],
+      origin: 'perch',
+      applyId: created.apply.id,
+      author: { kind: 'perch' },
+      at: new Date().toISOString(),
+      uncommitted: [],
+    })
+    const row = await eventually(
+      () => QosWanQueue.find(created.queue.id),
+      (q) => q?.options.download === '30000',
+      5000
+    )
+    assert.equal(row!.options.download, '30000')
+  })
+
   test('a router refusal (sqm_below_floor) answers in words and leaves no draft', async ({
     client,
     assert,

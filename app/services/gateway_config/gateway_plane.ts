@@ -1,5 +1,6 @@
 import type Collector from '#models/collector'
 import Gateway from '#models/gateway'
+import GatewayApply from '#models/gateway_apply'
 import {
   applyResult,
   onAgentReconnected,
@@ -141,16 +142,21 @@ export async function onConfigChanged(collectorId: number, params: unknown): Pro
   const p = (typeof params === 'object' && params !== null ? params : {}) as Record<string, unknown>
   try {
     if (p.origin === 'perch') {
-      await gatewayQueue.run(gateway.id, async () => {
+      const echo = await gatewayQueue.run(gateway.id, async () => {
         await gateway.refresh()
         const hashes = p.hashes as Record<string, unknown> | undefined
-        if (hashes && typeof hashes === 'object') {
+        const trusted = await ownEchoMatches(gateway.id, p)
+        if (trusted && hashes && typeof hashes === 'object') {
           const next: Record<string, string> = { ...(gateway.observedHashes ?? {}) }
           for (const [k, v] of Object.entries(hashes)) if (typeof v === 'string') next[k] = v
           gateway.observedHashes = next
           await gateway.save()
         }
+        return trusted
       })
+      // Not what that apply wrote (a collector that mistook a router edit
+      // for its own echo, as perch-collector before 1.0.0-rc.3 could): read.
+      if (!echo) await readAndReconcile(gateway.id, { reason: 'changed' })
       return
     }
     const author = authorOf(p.author) ?? { kind: 'unknown' as const }
@@ -161,6 +167,30 @@ export async function onConfigChanged(collectorId: number, params: unknown): Pro
       'gateway_plane: change notification not merged'
     )
   }
+}
+
+/**
+ * Is an `origin: "perch"` change what the named apply wrote? True while the
+ * apply is open (its rows are deferred anyway), or when every changed
+ * config's hash is the one the apply's outcome recorded.
+ */
+async function ownEchoMatches(gatewayId: number, p: Record<string, unknown>): Promise<boolean> {
+  if (typeof p.applyId !== 'string') return false
+  const apply = await GatewayApply.query()
+    .where('gateway_id', gatewayId)
+    .where('apply_key', p.applyId)
+    .first()
+  if (!apply) return false
+  if (apply.state === 'sending' || apply.state === 'pending_confirm') return true
+  const recorded = (apply.outcome?.hashes ?? {}) as Record<string, string>
+  const hashes = (p.hashes ?? {}) as Record<string, unknown>
+  const changed = Array.isArray(p.changed)
+    ? p.changed.filter((c): c is string => typeof c === 'string')
+    : Object.keys(hashes)
+  return (
+    changed.length > 0 &&
+    changed.every((c) => recorded[c] !== undefined && recorded[c] === hashes[c])
+  )
 }
 
 /** `gateway.config.result` (section 4): an apply's outcome, acked afterwards. */
