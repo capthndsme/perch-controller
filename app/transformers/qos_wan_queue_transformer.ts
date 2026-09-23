@@ -1,10 +1,12 @@
+import { qosLive, wanQueueLive } from '#services/qos_live'
 import type { WanQueueRecord } from '#services/qos_wan_queues'
 import { BaseTransformer } from '@adonisjs/core/transformers'
 
 /**
  * `QosWanQueue` (docs/gateway/qos.md section 5): the typed view of a queue
  * (`sqm_mapping.ts`), its full UCI option map, where it came from, flags,
- * the sync state and live counters (null until the live ingest, WP-D).
+ * the sync state and the router's live qdisc counters (`qos_live.ts`; null
+ * until the router reports the device in its `qos` push section).
  *
  * Readable by every signed-in user (owner decision 16: operators see every
  * cap); the options carry no secrets (sqm has none).
@@ -43,7 +45,7 @@ export default class QosWanQueueTransformer extends BaseTransformer<WanQueueReco
       flags: view.flags,
       pausedByRouter: queue.routerPausedAt ? { at: queue.routerPausedAt.toUTC().toISO() } : null,
       sync,
-      live: null,
+      live: wanQueueLive(qosLive(this.resource.collectorId), view.device),
       routerUpdatedAt: queue.routerUpdatedAt ? queue.routerUpdatedAt.toUTC().toISO() : null,
       updatedAt: (queue.updatedAt ?? queue.createdAt).toUTC().toISO(),
     }

@@ -23,5 +23,6 @@ export const updateQosSettingsValidator = vine.compile(
     applyDebounceSeconds: setting('applyDebounceSeconds'),
     quotaPersistSeconds: setting('quotaPersistSeconds'),
     maxBucketDepth: setting('maxBucketDepth'),
+    expiredKeepMinutes: setting('expiredKeepMinutes'),
   })
 )

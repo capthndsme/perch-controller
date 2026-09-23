@@ -17,6 +17,9 @@ function reads(gatewayId: number): Array<[Method, string]> {
     ['get', `/api/v1/qos/groups?gatewayId=${gatewayId}`],
     ['get', `/api/v1/qos/assignments?gatewayId=${gatewayId}`],
     ['get', `/api/v1/qos/schedules?gatewayId=${gatewayId}`],
+    ['get', `/api/v1/qos?gatewayId=${gatewayId}`],
+    ['get', `/api/v1/qos/devices?gatewayId=${gatewayId}`],
+    ['get', '/api/v1/devices/02:00:00:00:00:21/shaping'],
   ]
 }
 
@@ -34,6 +37,33 @@ function writes(
     ['patch', `/api/v1/qos/wan-queues/${queueId}`, { downloadKbit: 900000 }],
     ['delete', `/api/v1/qos/wan-queues/${queueId}`, {}],
     ['patch', '/api/v1/settings/qos', { minWanKbit: 2000 }],
+    [
+      'post',
+      '/api/v1/qos/policies',
+      { gatewayId, name: 'P', each: { downloadKbit: 1000, uploadKbit: 1000 } },
+    ],
+    ['patch', '/api/v1/qos/policies/1', { notes: 'x' }],
+    ['delete', '/api/v1/qos/policies/1', {}],
+    ['post', '/api/v1/qos/groups', { gatewayId, name: 'G' }],
+    ['patch', '/api/v1/qos/groups/1', { notes: 'x' }],
+    ['delete', '/api/v1/qos/groups/1', {}],
+    [
+      'post',
+      '/api/v1/qos/assignments',
+      {
+        gatewayId,
+        target: { type: 'network', network: 'guest' },
+        rate: { downloadKbit: 1000, uploadKbit: 1000 },
+      },
+    ],
+    ['patch', '/api/v1/qos/assignments/1', { expiresAt: null }],
+    ['delete', '/api/v1/qos/assignments/1', {}],
+    ['post', '/api/v1/qos/assignments/1/quota/reset', {}],
+    ['post', '/api/v1/qos/schedules', { gatewayId, name: 'S' }],
+    ['patch', '/api/v1/qos/schedules/1', { enabled: false }],
+    ['delete', '/api/v1/qos/schedules/1', {}],
+    ['post', '/api/v1/qos/pause', { gatewayId }],
+    ['post', '/api/v1/qos/resume', { gatewayId }],
   ]
 }
 

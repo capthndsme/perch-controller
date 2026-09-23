@@ -1,6 +1,7 @@
 import {
   allocateClassMinor,
   bucketClassOption,
+  checkPolicyTree,
   bucketSectionName,
   daySpec,
   MAX_DEVICE_ENTRIES,
@@ -948,5 +949,136 @@ test.group('qos_plan | schedules (decision 16, run by the router)', () => {
       each_down_kbit: '2000',
       each_up_kbit: '',
     })
+  })
+})
+
+test.group('qos_plan | origins, fingerprints and quota resets (WP-C)', () => {
+  test('origins tell device from group level; network origins are listed', ({ assert }) => {
+    const p = plan({
+      policies: [policy(1, { each: rate(1000, 1000) }), policy(2, { shared: rate(9000, 9000) })],
+      groups: [{ id: 5, members: [MAC1, MAC2] }],
+      assignments: [
+        group(1, 5, { policyId: 1 }),
+        device(2, MAC2, { rate: rate(500, 500) }),
+        network(3, 'guest', { policyId: 2 }),
+      ],
+    })
+    assert.deepEqual(p.origins, {
+      [MAC1]: { assignmentId: 1, policyId: 1, via: 'group' },
+      [MAC2]: { assignmentId: 2, policyId: null, via: 'device' },
+    })
+    assert.deepEqual(p.networkOrigins, { guest: { assignmentId: 3, policyId: 2 } })
+  })
+
+  test('the devices fingerprint ignores quota usage; a reset rides as resetAt', ({ assert }) => {
+    const quota = (usedBytes: number, resetAt: Date | null = null) => ({
+      limitBytes: 1000,
+      usedBytes,
+      onExhausted: 'block' as const,
+      throttle: null,
+      resetAt,
+    })
+    const a = plan({ assignments: [device(1, MAC1, { quota: quota(10) })] })
+    const b = plan({ assignments: [device(1, MAC1, { quota: quota(900) })] })
+    assert.equal(a.fingerprints.devices, b.fingerprints.devices)
+    assert.equal(b.devices[0].quota!.usedBytes, 900)
+    assert.notProperty(a.devices[0].quota!, 'resetAt')
+    const reset = new Date('2026-09-23T03:00:00Z')
+    const c = plan({ assignments: [device(1, MAC1, { quota: quota(0, reset) })] })
+    assert.equal(c.devices[0].quota!.resetAt, reset.toISOString())
+    assert.notEqual(c.fingerprints.devices, a.fingerprints.devices)
+  })
+})
+
+test.group('qos_plan | checkPolicyTree (every policy, referenced or not)', () => {
+  const codesOf = (issues: Array<{ code: string; policyId?: number }>) =>
+    issues.map((i) => `${i.code}:${i.policyId}`)
+
+  test('a valid tree has no issues', ({ assert }) => {
+    const tree = [
+      policy(1, { shared: rate(10000, 10000) }),
+      policy(2, { shared: rate(6000, 6000), parentId: 1 }),
+      policy(3, { shared: rate(4000, 4000), parentId: 1 }),
+      policy(4, { shared: rate(2000, 2000), parentId: 2 }),
+    ]
+    assert.deepEqual(checkPolicyTree(tree, 4), [])
+  })
+
+  test('each rule, reported on the policy it concerns', ({ assert }) => {
+    assert.deepEqual(
+      codesOf(checkPolicyTree([policy(2, { shared: rate(1, 1), parentId: 9 })], 4)),
+      ['qos_parent_missing:2']
+    )
+    assert.deepEqual(
+      codesOf(
+        checkPolicyTree(
+          [
+            policy(1, { shared: rate(5, 5), parentId: 2 }),
+            policy(2, { shared: rate(5, 5), parentId: 1 }),
+          ],
+          4
+        )
+      ),
+      ['qos_parent_cycle:1', 'qos_parent_cycle:2']
+    )
+    assert.deepEqual(
+      codesOf(
+        checkPolicyTree(
+          [policy(1, { each: rate(5, 5) }), policy(2, { shared: rate(5, 5), parentId: 1 })],
+          4
+        )
+      ),
+      ['qos_parent_not_bucket:2']
+    )
+    assert.deepEqual(
+      codesOf(
+        checkPolicyTree(
+          [policy(1, { shared: rate(5, 5) }), policy(2, { each: rate(5, 5), parentId: 1 })],
+          4
+        )
+      ),
+      ['qos_child_not_bucket:2']
+    )
+    assert.deepEqual(
+      codesOf(
+        checkPolicyTree(
+          [policy(1, { shared: rate(5, 5) }), policy(2, { shared: rate(0, 5), parentId: 1 })],
+          4
+        )
+      ),
+      ['qos_child_exceeds_parent:2', 'qos_children_exceed_parent:1']
+    )
+    const chain = [
+      policy(1, { shared: rate(100, 100) }),
+      policy(2, { shared: rate(50, 50), parentId: 1 }),
+      policy(3, { shared: rate(20, 20), parentId: 2 }),
+    ]
+    assert.deepEqual(codesOf(checkPolicyTree(chain, 2)), ['qos_bucket_too_deep:3'])
+    assert.deepEqual(checkPolicyTree(chain, 8), [], 'the limit is capped at 4, 3 levels pass')
+    assert.deepEqual(
+      codesOf(
+        checkPolicyTree(
+          [
+            policy(1, { shared: rate(10, 10) }),
+            policy(2, { shared: rate(6, 6), parentId: 1 }),
+            policy(3, { shared: rate(6, 1), parentId: 1 }),
+            policy(4, { shared: rate(6, 1), parentId: 1, enabled: false }),
+          ],
+          4
+        )
+      ),
+      ['qos_children_exceed_parent:1']
+    )
+    const disabled = checkPolicyTree(
+      [
+        policy(1, { shared: rate(5, 5), enabled: false }),
+        policy(2, { shared: rate(5, 5), parentId: 1 }),
+      ],
+      4
+    )
+    assert.deepEqual(
+      disabled.map((i) => [i.severity, i.code]),
+      [['warning', 'qos_parent_disabled']]
+    )
   })
 })

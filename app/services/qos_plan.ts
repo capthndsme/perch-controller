@@ -145,6 +145,8 @@ export interface PlanQuota {
   usedBytes: number
   onExhausted: 'block' | 'throttle'
   throttle: PlanRate | null
+  /** When an admin last reset the quota (the agent starts over from `usedBytes` after it). */
+  resetAt?: Date | null
 }
 
 export type PlanTarget =
@@ -220,6 +222,12 @@ export interface DeviceEntry {
     onExhausted: 'block' | 'throttle'
     throttleDownKbit: number | null
     throttleUpKbit: number | null
+    /**
+     * Present after an admin reset: the agent normally keeps the larger of
+     * its own count and `usedBytes`; a `resetAt` newer than the one it holds
+     * makes it start over from `usedBytes`.
+     */
+    resetAt?: string
   } | null
   expiresAt: string | null
   /** Decision 13: also shape LAN-to-LAN traffic of this MAC (absent = internet only). */
@@ -249,15 +257,30 @@ export interface PlanIssue {
   network?: string
 }
 
+/** Which assignment shapes a MAC with its own entry (device level or group level). */
+export interface PlanOrigin {
+  assignmentId: number
+  policyId: number | null
+  via: 'device' | 'group'
+}
+
 export interface QosPlan {
   sections: PlanSection[]
   devices: DeviceEntry[]
+  /** Per MAC with an entry: where the entry came from (the read side's `via`). */
+  origins: Record<string, PlanOrigin>
+  /** Per network with a default: the assignment and policy behind it. */
+  networkOrigins: Record<string, { assignmentId: number; policyId: number | null }>
   issues: PlanIssue[]
   /** Preview: rendered schedules whose window covers `at` in `timezone`, by id. */
   activeSchedules: number[]
   /** Preview: the next window edge or expiry after `at`, ISO UTC. */
   nextChangeAt: string | null
-  /** sha256 of the sections and of the device entries: a sender sends only on change. */
+  /**
+   * sha256 of the sections and of the device entries: a sender sends only on
+   * change. The devices fingerprint leaves out `quota.usedBytes` (persisting
+   * the router's own count must not trigger a resend).
+   */
   fingerprints: { config: string; devices: string }
 }
 
@@ -363,6 +386,7 @@ type Resolution =
 interface Origin {
   assignmentId: number
   policyId: number | null
+  via: 'device' | 'group' | 'network'
   /** The cap comes from the policy's `each` (not the assignment's own rate). */
   capFromPolicy: boolean
 }
@@ -397,6 +421,15 @@ function exceeds(child: PlanRate, parent: PlanRate): boolean {
 
 function sha256(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
+}
+
+/** The device entries' fingerprint, blind to `quota.usedBytes` (see `QosPlan.fingerprints`). */
+export function devicesFingerprint(devices: DeviceEntry[]): string {
+  return sha256(
+    devices.map((entry) =>
+      entry.quota ? { ...entry, quota: { ...entry.quota, usedBytes: 0 } } : entry
+    )
+  )
 }
 
 function optionKbit(value: number | null | undefined): string {
@@ -598,6 +631,7 @@ export function planQos(input: PlanInput): QosPlan {
         throttleDownKbit: q.throttle ? kbitOrNull(q.throttle.downKbit) : null,
         throttleUpKbit: q.throttle ? kbitOrNull(q.throttle.upKbit) : null,
       }
+      if (q.resetAt) quota.resetAt = q.resetAt.toISOString()
     }
     if (!bucket && !caps && !quota) {
       issue({
@@ -620,6 +654,7 @@ export function planQos(input: PlanInput): QosPlan {
     entryOrigin.set(mac, {
       assignmentId: assignment.id,
       policyId: policy?.id ?? null,
+      via: assignment.target.type === 'device' ? 'device' : 'group',
       capFromPolicy: resolution.rate === null && Boolean(policy?.each),
     })
     return entry
@@ -775,6 +810,7 @@ export function planQos(input: PlanInput): QosPlan {
     networkOrigin.set(network, {
       assignmentId: assignment.id,
       policyId: policy?.id ?? null,
+      via: 'network',
       capFromPolicy: resolution.rate === null && Boolean(policy?.each),
     })
   }
@@ -1062,12 +1098,148 @@ export function planQos(input: PlanInput): QosPlan {
   }
 
   const sections = [globals, ...bucketSections, ...networkSections, ...scheduleSections]
+  const origins: Record<string, PlanOrigin> = {}
+  for (const entry of devices) {
+    const origin = entryOrigin.get(entry.mac)
+    if (origin && origin.via !== 'network') {
+      origins[entry.mac] = {
+        assignmentId: origin.assignmentId,
+        policyId: origin.policyId,
+        via: origin.via,
+      }
+    }
+  }
+  const networkOrigins: QosPlan['networkOrigins'] = {}
+  for (const section of networkSections) {
+    const origin = networkOrigin.get(section.name)
+    if (origin) {
+      networkOrigins[section.name] = {
+        assignmentId: origin.assignmentId,
+        policyId: origin.policyId,
+      }
+    }
+  }
   return {
     sections,
     devices,
+    origins,
+    networkOrigins,
     issues,
     activeSchedules,
     nextChangeAt: next === null ? null : new Date(next).toISOString(),
-    fingerprints: { config: sha256(sections), devices: sha256(devices) },
+    fingerprints: { config: sha256(sections), devices: devicesFingerprint(devices) },
   }
+}
+
+/**
+ * The bucket tree's rules over every policy of a gateway, referenced or not
+ * (`planQos` only checks the buckets it renders): the write endpoints refuse
+ * a change that adds one of these errors (amendment section 5).
+ *
+ * - `qos_parent_missing`, `qos_parent_cycle`, `qos_parent_not_bucket`
+ *   (the parent has no shared bucket), `qos_child_not_bucket` (only a
+ *   policy with a shared bucket can nest), `qos_child_exceeds_parent`,
+ *   `qos_bucket_too_deep` (depth > `maxDepth`), and on the parent
+ *   `qos_children_exceed_parent` (its enabled children's rates add up to
+ *   more than its own: HTB's guarantee).
+ * - Warning `qos_parent_disabled`.
+ */
+export function checkPolicyTree(policies: PlanPolicy[], maxDepth: number): PlanIssue[] {
+  const limit = Math.min(MAX_BUCKET_DEPTH, Math.max(1, maxDepth))
+  const byId = new Map(policies.map((p) => [p.id, p]))
+  const issues: PlanIssue[] = []
+  const refuse = (policyId: number, code: string, message: string) =>
+    issues.push({ severity: 'error', code, message, policyId })
+
+  const depth = (policy: PlanPolicy): number | null => {
+    const seen = new Set<number>([policy.id])
+    let levels = 1
+    let cursor = policy.parentId
+    while (cursor !== null) {
+      if (seen.has(cursor)) return null
+      seen.add(cursor)
+      const parent = byId.get(cursor)
+      if (!parent) return levels
+      levels++
+      cursor = parent.parentId
+    }
+    return levels
+  }
+
+  for (const policy of [...policies].sort((a, b) => a.id - b.id)) {
+    if (policy.parentId === null) continue
+    const parent = byId.get(policy.parentId)
+    if (!parent) {
+      refuse(policy.id, 'qos_parent_missing', `Parent policy ${policy.parentId} does not exist.`)
+      continue
+    }
+    const levels = depth(policy)
+    if (levels === null) {
+      refuse(policy.id, 'qos_parent_cycle', `Policy ${policy.id}: its parents form a cycle.`)
+      continue
+    }
+    if (!policy.shared) {
+      refuse(
+        policy.id,
+        'qos_child_not_bucket',
+        'Only a policy with a shared bucket can sit inside another bucket.'
+      )
+      continue
+    }
+    if (!parent.shared) {
+      refuse(
+        policy.id,
+        'qos_parent_not_bucket',
+        `Parent policy ${parent.id} has no shared bucket to nest in.`
+      )
+      continue
+    }
+    if (exceeds(policy.shared, parent.shared)) {
+      refuse(
+        policy.id,
+        'qos_child_exceeds_parent',
+        `Policy ${policy.id}: its bucket allows more than its parent's.`
+      )
+    }
+    if (levels > limit) {
+      refuse(
+        policy.id,
+        'qos_bucket_too_deep',
+        `Policy ${policy.id}: nesting ${levels} deep, the limit is ${limit}.`
+      )
+    }
+    if (!parent.enabled) {
+      issues.push({
+        severity: 'warning',
+        code: 'qos_parent_disabled',
+        message: `Policy ${policy.id}: parent policy ${parent.id} is disabled; its bucket stands alone.`,
+        policyId: policy.id,
+      })
+    }
+  }
+
+  for (const parent of policies) {
+    if (!parent.shared) continue
+    const children = policies.filter((c) => c.parentId === parent.id && c.enabled && c.shared)
+    if (children.length === 0) continue
+    const over = (pick: (r: PlanRate) => number) => {
+      const own = pick(parent.shared!)
+      if (own === 0) return false
+      let sum = 0
+      for (const child of children) {
+        const value = pick(child.shared!)
+        if (value === 0) return true
+        sum += value
+      }
+      return sum > own
+    }
+    if (over((r) => r.downKbit) || over((r) => r.upKbit)) {
+      refuse(
+        parent.id,
+        'qos_children_exceed_parent',
+        `Policy ${parent.id}: its nested buckets add up to more than its own rate.`
+      )
+    }
+  }
+  return issues
 }

@@ -338,6 +338,7 @@ router
         router.get(':mac/destinations', [DestinationsController, 'device']).as('destinations')
         router.get(':mac/overview', [DevicesController, 'overview']).as('overview')
         router.get(':mac/presence', [DevicesController, 'presence']).as('presence')
+        router.get(':mac/shaping', [DevicesController, 'shaping']).as('shaping')
         router.get(':mac/protocols', [DevicesController, 'protocols']).as('protocols')
         router.get(':mac/network', [GatewayObservationsController, 'deviceNetwork']).as('network')
         /**
@@ -604,6 +605,8 @@ router
      */
     router
       .group(() => {
+        router.get('', [QosController, 'overview']).as('overview')
+        router.get('devices', [QosController, 'devices']).as('devices.index')
         router.get('wan-queues', [QosController, 'wanQueues']).as('wanQueues.index')
         router.get('policies', [QosController, 'policies']).as('policies.index')
         router.get('groups', [QosController, 'groups']).as('groups.index')
@@ -620,6 +623,28 @@ router
               .delete('wan-queues/:id', [QosController, 'destroyWanQueue'])
               .as('wanQueues.destroy')
               .where('id', router.matchers.number())
+            for (const [path, name, controller] of [
+              ['policies', 'policies', 'Policy'],
+              ['groups', 'groups', 'Group'],
+              ['assignments', 'assignments', 'Assignment'],
+              ['schedules', 'schedules', 'Schedule'],
+            ] as const) {
+              router.post(path, [QosController, `create${controller}`]).as(`${name}.store`)
+              router
+                .patch(`${path}/:id`, [QosController, `update${controller}`])
+                .as(`${name}.update`)
+                .where('id', router.matchers.number())
+              router
+                .delete(`${path}/:id`, [QosController, `destroy${controller}`])
+                .as(`${name}.destroy`)
+                .where('id', router.matchers.number())
+            }
+            router
+              .post('assignments/:id/quota/reset', [QosController, 'resetQuota'])
+              .as('assignments.resetQuota')
+              .where('id', router.matchers.number())
+            router.post('pause', [QosController, 'pause']).as('pause')
+            router.post('resume', [QosController, 'resume']).as('resume')
           })
           .use(middleware.requireAdmin())
       })

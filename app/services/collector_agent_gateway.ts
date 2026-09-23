@@ -32,6 +32,8 @@ import {
   onGatewaySessionClosed,
   prepareGatewayHello,
 } from '#services/gateway_config/gateway_plane'
+import { handleQosEvent } from '#services/qos_live'
+import { onCollectorConnected } from '#services/qos_sync'
 import { INSTANCE_ID_REGEX, collectorHelloValidator } from '#validators/collectors'
 import logger from '@adonisjs/core/services/logger'
 import db from '@adonisjs/lucid/services/db'
@@ -108,6 +110,10 @@ export function collectorAgentEndpoint(): AgentEndpoint<CollectorPrincipal> {
     },
 
     attach() {
+      // Traffic shaping events (docs/gateway/qos.md section 7.3).
+      collectorHub.onNotification('qos.event', async (collectorId, params) => {
+        await handleQosEvent(collectorId, params)
+      })
       collectorHub.onNotification('collector.push', async (collectorId, params) => {
         const outcome = await handleCollectorPush(collectorId, params)
         // The agent half of a config apply's confirm (config-plane.md 5.6).
@@ -407,4 +413,6 @@ async function handleHello(
     'collector_agent_gateway: collector connected'
   )
   if (outcome.lifecycle === 'adopted') void syncCollectorProtocols(row.id)
+  // A managed gateway's shaper: probe it and send the device entries.
+  if (outcome.lifecycle === 'adopted') void onCollectorConnected(row.id)
 }

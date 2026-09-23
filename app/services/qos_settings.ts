@@ -34,6 +34,11 @@ export interface QosSettings {
    * 8 levels; the kernel spike amendment caps buckets at 4.
    */
   maxBucketDepth: number
+  /**
+   * An expired assignment stays listed (inert) this long before
+   * `qos_expire.task.ts` deletes it; 0 = at once.
+   */
+  expiredKeepMinutes: number
 }
 
 export const QOS_DEFAULTS: Readonly<QosSettings> = Object.freeze({
@@ -48,6 +53,7 @@ export const QOS_DEFAULTS: Readonly<QosSettings> = Object.freeze({
   applyDebounceSeconds: 2,
   quotaPersistSeconds: 60,
   maxBucketDepth: 4,
+  expiredKeepMinutes: 60,
 })
 
 export type QosLimits = Record<keyof QosSettings, { min: number; max: number }>
@@ -65,6 +71,7 @@ export const QOS_LIMITS: Readonly<QosLimits> = Object.freeze({
   applyDebounceSeconds: { min: 0, max: 30 },
   quotaPersistSeconds: { min: 10, max: 3600 },
   maxBucketDepth: { min: 1, max: 4 },
+  expiredKeepMinutes: { min: 0, max: 10080 },
 })
 
 export const QOS_SETTING_KEYS = Object.keys(QOS_DEFAULTS) as Array<keyof QosSettings>

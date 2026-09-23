@@ -203,6 +203,7 @@ type PushParams = {
   devices?: unknown
   gateway?: unknown
   observe?: unknown
+  qos?: unknown
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -219,6 +220,7 @@ function snapshotOf(params: unknown): CollectorSnapshot | null {
     meta: isObject(push.meta) ? (push.meta as CollectorSnapshot['meta']) : null,
     devices: push.devices as CollectorSnapshot['devices'],
     gateway: isObject(push.gateway) ? (push.gateway as CollectorSnapshot['gateway']) : null,
+    ...(isObject(push.qos) ? { qos: push.qos } : {}),
   }
 }
 
