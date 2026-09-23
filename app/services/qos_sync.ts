@@ -549,7 +549,12 @@ export async function sweepQosSync(): Promise<number[]> {
     ) {
       await runProbe(state, gateway.collectorId)
     }
-    requestQosSync(gateway.id, { immediate: true })
+    // What the sweep submits (an expiry) is Perch's own change, unless an
+    // admin's write still waits in the debounce.
+    requestQosSync(gateway.id, {
+      immediate: true,
+      ...(state.timers.config ? {} : { userId: null }),
+    })
     swept.push(gateway.id)
   }
   return swept
