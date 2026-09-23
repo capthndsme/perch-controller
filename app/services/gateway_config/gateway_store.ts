@@ -2,6 +2,7 @@ import type Gateway from '#models/gateway'
 import GatewayApply from '#models/gateway_apply'
 import GatewayRevision from '#models/gateway_revision'
 import GatewaySection from '#models/gateway_section'
+import GatewaySectionOrder from '#models/gateway_section_order'
 import { contentsEqual, DEFAULT_RULES } from '#services/gateway_config/canonical'
 import { domainRegistry } from '#services/gateway_config/domains/index'
 import { buildSnapshot, summarizeDiff } from '#services/gateway_config/revisions'
@@ -207,13 +208,16 @@ export async function hasOpenApply(gatewayId: number): Promise<boolean> {
 
 /** Recomputes `gateways.sync_state` from the rows (section 5.6 rollup). */
 export async function refreshSyncState(gateway: Gateway): Promise<void> {
-  const [statuses, flight] = await Promise.all([
+  const [sectionStatuses, orderStatuses, flight] = await Promise.all([
     GatewaySection.query()
       .where('gateway_id', gateway.id)
       .where('scope', 'synced')
       .select('status'),
+    // An order out of line counts like a section (docs/gateway/firewall.md 3).
+    GatewaySectionOrder.query().where('gateway_id', gateway.id).select('status'),
     inFlightApply(gateway.id),
   ])
+  const statuses = [...sectionStatuses, ...orderStatuses]
   const next = rollupSyncState({
     mode: gateway.mode as GatewayMode,
     observedAt: gateway.observedAt ? gateway.observedAt.toISO() : null,

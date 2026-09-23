@@ -18,6 +18,7 @@ import {
 } from '#services/gateway_config/gateway_registry'
 import { signParams } from '#services/gateway_config/rpc_signing'
 import { rejoinOffer } from '#services/gateway_config/revisions'
+import { refreshOrders } from '#services/gateway_config/order_store'
 import { gatewayQueue } from '#services/gateway_config/serial_queue'
 import { reconcileRead, type InFlight } from '#services/gateway_config/sync_engine'
 import type {
@@ -393,6 +394,9 @@ export async function mergeRead(
 
   if (reset) await offerRejoin(gateway, 'ledger_reset', offered)
 
+  // Section orders (docs/gateway/firewall.md section 3), except in configs
+  // an apply in flight is rewriting.
+  await refreshOrders(gateway, after, { frozen: flight?.configs ?? [] })
   await refreshSyncState(gateway)
   const changedConfigs = [
     ...new Set(

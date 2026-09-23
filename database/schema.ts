@@ -775,7 +775,7 @@ export class GatewayConfigEventSchema extends BaseModel {
 }
 
 export class GatewayHostSchema extends BaseModel {
-  static $columns = ['collectorId', 'firstSeenAt', 'hostname', 'id', 'ipv4', 'ipv6', 'leaseExpiresAt', 'leaseInfinite', 'mac', 'staticName', 'updatedAt'] as const
+  static $columns = ['collectorId', 'firstSeenAt', 'hostname', 'id', 'leaseExpiresAt', 'leaseInfinite', 'mac', 'staticName', 'updatedAt'] as const
   $columns = GatewayHostSchema.$columns
   @column()
   declare collectorId: number
@@ -785,10 +785,6 @@ export class GatewayHostSchema extends BaseModel {
   declare hostname: string | null
   @column({ isPrimary: true })
   declare id: number
-  @column()
-  declare ipv4: string | null
-  @column()
-  declare ipv6: string | null
   @column.dateTime()
   declare leaseExpiresAt: DateTime | null
   @column()
@@ -939,6 +935,50 @@ export class GatewaySectionSchema extends BaseModel {
   declare updatedAt: DateTime | null
   @column()
   declare updatedByUserId: number | null
+}
+
+export class GatewaySectionOrderSchema extends BaseModel {
+  static $columns = ['config', 'createdAt', 'driftSince', 'gatewayId', 'id', 'sectionType', 'status', 'updatedAt', 'updatedByUserId'] as const
+  $columns = GatewaySectionOrderSchema.$columns
+  @column()
+  declare config: string
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column.dateTime()
+  declare driftSince: DateTime | null
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare sectionType: string
+  @column()
+  declare status: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+  @column()
+  declare updatedByUserId: number | null
+}
+
+export class GatewayWanBlockSchema extends BaseModel {
+  static $columns = ['blockedAt', 'blockedByUserId', 'createdAt', 'gatewayId', 'id', 'mac', 'note', 'updatedAt'] as const
+  $columns = GatewayWanBlockSchema.$columns
+  @column.dateTime()
+  declare blockedAt: DateTime
+  @column()
+  declare blockedByUserId: number | null
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare mac: string
+  @column()
+  declare note: string | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
 }
 
 export class InfraLinkSchema extends BaseModel {

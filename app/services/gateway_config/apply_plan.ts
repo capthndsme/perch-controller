@@ -27,6 +27,7 @@ import type {
   LedgerChange,
   LedgerEntry,
   ManagementPath,
+  OpPosition,
   SectionContent,
 } from '#services/gateway_config/types'
 
@@ -95,8 +96,25 @@ export interface PlanApplyInput {
   hashes: Record<string, string>
   management: ManagementPath | null
   registry: DomainRegistry | null
-  /** Desired order of ordered types, by perchId (from domain `order` edits). */
-  orders?: Array<{ config: string; type: string; perchIds: string[] }>
+  /**
+   * Desired order of ordered types, by perchId (C of `gateway_section_orders`,
+   * docs/gateway/firewall.md section 3). An order is planned when the request
+   * covers one of its members (or has no filter), or when `force` (an
+   * Authoritative revert of order drift). Created members are placed with a
+   * `position` next to their neighbour in C; when the router's order still
+   * differs, an `order` op lists the members, and members the ledger does
+   * not hold yet are adopted in the same job. `reorder: false` (an order in
+   * conflict) only places created members.
+   */
+  orders?: PlannedOrder[]
+}
+
+export interface PlannedOrder {
+  config: string
+  type: string
+  perchIds: string[]
+  force?: boolean
+  reorder?: boolean
 }
 
 type SectionWork = {
@@ -146,16 +164,27 @@ export function planApply(input: PlanApplyInput): ApplyPlan {
   const synced = new Set(input.sections.filter((s) => s.scope === 'synced').map((s) => s.perchId))
   const stale = input.ledger.map((e) => e.perchId).filter((id) => !synced.has(id))
 
-  const groups: Array<{ kind: ApplyKind; protected: boolean; works: SectionWork[] }> = []
+  const orderPlan = planOrders(input, works, ledgerByPerch, wanted)
+  works.push(...orderPlan.adoptions)
+
+  const groups: Array<{
+    kind: ApplyKind
+    protected: boolean
+    works: SectionWork[]
+    extra?: OrderPlan
+  }> = []
   const adoptOnly = works.filter((w) => w.adoptOnly)
   const normal = works.filter((w) => !w.adoptOnly && !w.protected)
   const guarded = works.filter((w) => !w.adoptOnly && w.protected)
+  const ordersToGo = orderPlan.ops.length > 0
   if (adoptOnly.length > 0) groups.push({ kind: 'adopt', protected: false, works: adoptOnly })
-  if (normal.length > 0) groups.push({ kind: input.kind, protected: false, works: normal })
+  if (normal.length > 0 || ordersToGo) {
+    groups.push({ kind: input.kind, protected: false, works: normal, extra: orderPlan })
+  }
   if (guarded.length > 0) groups.push({ kind: input.kind, protected: true, works: guarded })
 
   const jobs = groups.map((g, i) =>
-    buildJob(g.kind, g.protected, g.works, i === 0 ? stale : [], input)
+    buildJob(g.kind, g.protected, g.works, i === 0 ? stale : [], input, g.extra)
   )
   if (jobs.length === 0 && stale.length > 0) {
     jobs.push(buildJob('adopt', false, [], stale, input))
@@ -274,7 +303,8 @@ function buildJob(
   guarded: boolean,
   works: SectionWork[],
   staleLedger: string[],
-  input: PlanApplyInput
+  input: PlanApplyInput,
+  orders?: OrderPlan
 ): PlannedJob {
   const sorted = [...works].sort(
     (a, b) =>
@@ -292,19 +322,8 @@ function buildJob(
     )
     .map((x) => x.op)
 
-  // Order ops for ordered types whose members are in this job.
-  for (const order of input.orders ?? []) {
-    const inJob = sorted.some((w) => w.state.config === order.config && w.state.type === order.type)
-    if (!inJob) continue
-    const names = order.perchIds
-      .map((id) => {
-        const w = sorted.find((x) => x.state.perchId === id)
-        if (w) return nameAfter(w)
-        return input.sections.find((s) => s.perchId === id)?.name ?? null
-      })
-      .filter((n): n is string => n !== null)
-    ops.push({ op: 'order', config: order.config, type: order.type, sections: names })
-  }
+  // Order ops of ordered types (planOrders) go with the ordinary job.
+  ops.push(...(orders?.ops ?? []))
   ops.sort((a, b) => compareConfigs(a.config, b.config) || OP_RANK[a.op] - OP_RANK[b.op])
 
   const configs = [...new Set(ops.map((op) => op.config))].sort(compareConfigs)
@@ -324,10 +343,176 @@ function buildJob(
     },
     perchIds: sorted.map((w) => w.state.perchId),
     secretRefs: [...new Set(sorted.flatMap((w) => w.refs))],
-    changes: sorted.map((w) => w.change).filter((c): c is ConfigDiffEntry => c !== null),
+    changes: [
+      ...sorted.map((w) => w.change).filter((c): c is ConfigDiffEntry => c !== null),
+      ...(orders?.changes ?? []),
+    ],
     written: Object.fromEntries(sorted.map((w) => [w.state.perchId, w.written])),
     replaced: Object.fromEntries(sorted.map((w) => [w.state.perchId, w.state.router])),
   }
+}
+
+interface OrderPlan {
+  ops: ApplyOp[]
+  changes: ConfigDiffEntry[]
+  /** Members the ledger does not hold yet, adopted for the order op. */
+  adoptions: SectionWork[]
+}
+
+function byRouterPosition(a: SectionState, b: SectionState): number {
+  const pa = a.position ?? Number.MAX_SAFE_INTEGER
+  const pb = b.position ?? Number.MAX_SAFE_INTEGER
+  return pa - pb || a.perchId.localeCompare(b.perchId)
+}
+
+/**
+ * The order half of a plan (docs/gateway/firewall.md section 3): places
+ * created members next to their neighbour in C (a `position` on their put),
+ * and when the router's order after the job would still differ from C, an
+ * `order` op over the members (the agent permutes them inside the slots
+ * they occupy together). Members not in the ledger are adopted in the same
+ * job: the agent orders owned sections only.
+ */
+function planOrders(
+  input: PlanApplyInput,
+  works: SectionWork[],
+  ledgerByPerch: Map<string, LedgerEntry>,
+  wanted: Set<string> | null
+): OrderPlan {
+  const plan: OrderPlan = { ops: [], changes: [], adoptions: [] }
+  if (!input.orders || input.orders.length === 0) return plan
+  const workOf = new Map(works.map((w) => [w.state.perchId, w]))
+  const rowOf = new Map(input.sections.map((s) => [s.perchId, s]))
+  const nameOf = (id: string) => {
+    const w = workOf.get(id)
+    return w ? nameAfter(w) : rowOf.get(id)!.name
+  }
+  for (const order of input.orders) {
+    const members = order.perchIds.filter((id) => {
+      const r = rowOf.get(id)
+      return (
+        r !== undefined &&
+        r.scope === 'synced' &&
+        r.config === order.config &&
+        r.desired !== null &&
+        r.desired.type === order.type &&
+        !r.conflict
+      )
+    })
+    const inScope =
+      order.force === true ||
+      wanted === null ||
+      members.some((id) => wanted.has(id) || workOf.has(id))
+    if (!inScope || members.length === 0) continue
+    const deleted = (id: string) => workOf.get(id)?.ops.some((op) => op.op === 'delete') ?? false
+    const created = (id: string) => {
+      const w = workOf.get(id)
+      return (
+        rowOf.get(id)!.router === null &&
+        w !== undefined &&
+        !w.protected &&
+        w.ops.some((op) => op.op === 'put')
+      )
+    }
+    const routerNow = input.sections
+      .filter(
+        (s) =>
+          s.scope === 'synced' &&
+          s.config === order.config &&
+          s.router !== null &&
+          s.router.type === order.type
+      )
+      .sort(byRouterPosition)
+      .map((s) => s.perchId)
+    const after = routerNow.filter((id) => members.includes(id) && !deleted(id))
+    const before = after.map(nameOf)
+    for (let i = 0; i < members.length; i++) {
+      const id = members[i]
+      if (!created(id)) continue
+      let position: OpPosition | undefined
+      let at = -1
+      for (let j = i - 1; j >= 0 && !position; j--) {
+        const k = after.indexOf(members[j])
+        if (k !== -1) {
+          position = { after: nameOf(members[j]) }
+          at = k + 1
+        }
+      }
+      for (let j = i + 1; j < members.length && !position; j++) {
+        const k = after.indexOf(members[j])
+        if (k !== -1) {
+          position = { before: nameOf(members[j]) }
+          at = k
+        }
+      }
+      const put = workOf.get(id)!.ops.find((op) => op.op === 'put')
+      if (position && put && put.op === 'put') {
+        put.position = position
+        after.splice(at, 0, id)
+      } else {
+        after.push(id)
+      }
+    }
+    const target = members.filter((id) => after.includes(id))
+    if (order.reorder === false || sameList(after, target)) continue
+
+    for (const id of target) {
+      const w = workOf.get(id)
+      if (w) {
+        if (w.adoptOnly) w.adoptOnly = false
+        continue
+      }
+      const r = rowOf.get(id)!
+      const entry = ledgerByPerch.get(id)
+      if (entry && entry.config === r.config && entry.section === r.name) continue
+      const renameTo = r.anonymous ? `perch_${id}` : undefined
+      const adoption: SectionWork = {
+        state: r,
+        ops: [
+          {
+            op: 'adopt',
+            config: r.config,
+            section: r.name,
+            perchId: id,
+            ...(renameTo ? { renameTo } : {}),
+          },
+        ],
+        ledgerSet: [],
+        ledgerRemove: [],
+        written: r.router,
+        refs: [],
+        adoptOnly: false,
+        protected: false,
+        change: {
+          perchId: id,
+          config: r.config,
+          section: renameTo ?? r.name,
+          type: r.type,
+          domain: r.domain,
+          action: 'adopt',
+          options: [],
+        },
+      }
+      plan.adoptions.push(adoption)
+      workOf.set(id, adoption)
+    }
+    const names = target.map(nameOf)
+    plan.ops.push({ op: 'order', config: order.config, type: order.type, sections: names })
+    plan.changes.push({
+      perchId: null,
+      config: order.config,
+      section: '',
+      type: order.type,
+      domain: rowOf.get(target[0])?.domain ?? null,
+      action: 'order',
+      options: [{ name: '.order', before, after: names }],
+    })
+  }
+  return plan
+}
+
+function sameList(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((x, i) => x === b[i])
 }
 
 function nameAfter(w: SectionWork): string {

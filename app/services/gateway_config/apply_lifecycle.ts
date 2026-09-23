@@ -1,8 +1,8 @@
 import Gateway from '#models/gateway'
-import GatewayApply from '#models/gateway_apply'
+import GatewayApply, { type GatewayApplyPostActions } from '#models/gateway_apply'
 import GatewaySecret from '#models/gateway_secret'
 import { AgentOfflineError, AgentTimeoutError } from '#services/collector_agent_hub'
-import { planApply, type PlannedJob } from '#services/gateway_config/apply_plan'
+import { planApply, type PlannedJob, type PlannedOrder } from '#services/gateway_config/apply_plan'
 import { contentOf, validateDesired, type SyncedSection } from '#services/gateway_config/domain'
 import { domainRegistry } from '#services/gateway_config/domains/index'
 import { planeError } from '#services/gateway_config/errors'
@@ -34,6 +34,13 @@ import {
   saveStates,
   writeRevision,
 } from '#services/gateway_config/gateway_store'
+import { loadOrders, refreshOrders } from '#services/gateway_config/order_store'
+import { runPostActions } from '#services/gateway_config/post_actions'
+import {
+  ordersDueForRevert,
+  positionsAfterOps,
+  type OrderState,
+} from '#services/gateway_config/section_order'
 import { gatewayQueue } from '#services/gateway_config/serial_queue'
 import {
   enforcementAfterFailure,
@@ -101,6 +108,8 @@ export type ApplyRequest = {
   dryRun?: boolean
   confirmMode?: ConfirmMode
   note?: string | null
+  /** Work for once the job is live (the WAN block's conntrack flush). */
+  postActions?: GatewayApplyPostActions | null
 }
 
 export type DryRunResult = {
@@ -130,6 +139,7 @@ export function validationInput(states: SectionState[]) {
       options: { ...s.desired!.options },
       ...(s.desired!.secrets ? { secrets: { ...s.desired!.secrets } } : {}),
       domain: s.domain,
+      position: s.position,
     }))
   const unmanaged: SyncedSection[] = states
     .filter((s) => s.scope !== 'synced' && s.router !== null)
@@ -140,6 +150,7 @@ export function validationInput(states: SectionState[]) {
       type: s.router!.type,
       anonymous: s.anonymous,
       options: { ...s.router!.options },
+      position: s.position,
     }))
   return { desired, unmanaged }
 }
@@ -180,15 +191,41 @@ export function validateStates(gateway: Gateway, states: SectionState[]): Issue[
   })
 }
 
-function planFor(gateway: Gateway, states: SectionState[], request: ApplyRequest) {
+/**
+ * The orders a plan carries (docs/gateway/firewall.md section 3): every
+ * order's C for an apply (one in conflict only places created members), the
+ * drifted ones for a revert.
+ */
+export function plannedOrders(orders: OrderState[], kind: 'apply' | 'revert'): PlannedOrder[] {
+  if (kind === 'revert') {
+    return orders
+      .filter((o) => o.status === 'drift')
+      .map((o) => ({ config: o.config, type: o.type, perchIds: o.desired, force: true }))
+  }
+  return orders.map((o) => ({
+    config: o.config,
+    type: o.type,
+    perchIds: o.desired,
+    reorder: o.status !== 'conflict',
+  }))
+}
+
+function planFor(
+  gateway: Gateway,
+  states: SectionState[],
+  request: ApplyRequest,
+  orders: OrderState[] = []
+) {
+  const kind = request.kind ?? 'apply'
   return planApply({
     sections: states,
     perchIds: request.perchIds,
-    kind: request.kind ?? 'apply',
+    kind,
     ledger: gateway.observedLedger ?? [],
     hashes: gateway.observedHashes ?? {},
     management: gateway.managementPath,
     registry: domainRegistry(),
+    orders: plannedOrders(orders, kind),
   })
 }
 
@@ -227,7 +264,7 @@ export async function requestApply(
       }
     }
     const kind = request.kind ?? 'apply'
-    const plan = planFor(gateway, states, request)
+    const plan = planFor(gateway, states, request, await loadOrders(gateway.id))
     // Errors block only the sections this request changes: an odd section
     // imported from the router does not freeze every other edit.
     const planned = new Set(plan.jobs.flatMap((j) => j.perchIds))
@@ -292,6 +329,10 @@ export async function requestApply(
       queued: !access.writable,
       chainStep: 0,
     })
+    if (request.postActions) {
+      apply.postActions = request.postActions
+      await apply.save()
+    }
     await recordGatewayEvent(gateway.id, 'apply_requested', {
       userId: request.userId,
       applyId: Number(apply.id),
@@ -467,11 +508,16 @@ export async function sendApply(gateway: Gateway, apply: GatewayApply): Promise<
   const access = writeAccess(gateway, settings)
   if (!access.writable) return
   const { states } = await loadSections(gateway.id)
-  const plan = planFor(gateway, states, {
-    userId: null,
-    kind: apply.kind === 'revert' ? 'revert' : 'apply',
-    perchIds: apply.chainPerchIds ?? (apply.kind === 'revert' ? apply.perchIds : undefined),
-  })
+  const plan = planFor(
+    gateway,
+    states,
+    {
+      userId: null,
+      kind: apply.kind === 'revert' ? 'revert' : 'apply',
+      perchIds: apply.chainPerchIds ?? (apply.kind === 'revert' ? apply.perchIds : undefined),
+    },
+    await loadOrders(gateway.id)
+  )
   const job = plan.jobs[0]
   if (!job) {
     const conflicted = plan.blocked.filter((b) => b.reason === 'conflict').map((b) => b.perchId)
@@ -695,6 +741,8 @@ export async function onPushAccepted(gateway: Gateway): Promise<void> {
   if (!apply || !apply.agentReconnectedAt || apply.agentConfirmedAt) return
   apply.agentConfirmedAt = DateTime.utc()
   await apply.save()
+  // The job is live on the router (fw4 reloaded): the WAN block's flush.
+  await runPostActions(gateway, apply)
   await tryConfirm(gateway, apply)
 }
 
@@ -808,6 +856,32 @@ async function finishConfirmed(
     if (next) after.set(s.perchId, next)
     else after.delete(s.perchId)
   }
+  // Positions as the router has them now (creates, deletes, order ops),
+  // so the orders stay right until the next read (firewall.md section 3).
+  const created = new Map<string, string>()
+  for (const s of loaded.states) {
+    if (s.router === null && apply.perchIds.includes(s.perchId)) created.set(s.name, s.perchId)
+  }
+  const positions = positionsAfterOps(
+    loaded.states.map((s) => ({
+      perchId: s.perchId,
+      config: s.config,
+      name: s.name,
+      position: s.position,
+      onRouter: s.router !== null,
+    })),
+    apply.ops,
+    created
+  )
+  for (const [perchId, position] of positions) {
+    const state = after.get(perchId)
+    if (!state || state.position === position) continue
+    const moved = { ...state, position }
+    after.set(perchId, moved)
+    const change = changes.find((c) => c.perchId === perchId)
+    if (change) change.after = moved
+    else changes.push({ perchId, after: moved })
+  }
   await saveStates(gateway.id, loaded.rows, changes, {
     now,
     routerAuthor: { kind: 'perch', applyId: apply.applyKey },
@@ -846,6 +920,8 @@ async function finishConfirmed(
   gateway.observedHashes = { ...(gateway.observedHashes ?? {}), ...hashes }
   if (apply.kind === 'revert') gateway.pinnedHashes = gateway.observedHashes
   await gateway.save()
+  await refreshOrders(gateway, [...after.values()])
+  await runPostActions(gateway, apply)
   await recordGatewayEvent(gateway.id, 'confirmed', {
     applyId: Number(apply.id),
     revision,
@@ -871,7 +947,7 @@ async function chainNext(gateway: Gateway, apply: GatewayApply): Promise<void> {
   }
   // Only the sections the request covered: without a filter, the ones the
   // first job and its siblings carried are the whole draft of that moment.
-  const plan = planFor(gateway, states, request)
+  const plan = planFor(gateway, states, request, await loadOrders(gateway.id))
   const job = plan.jobs[0]
   if (!job) return
   if (
@@ -889,6 +965,11 @@ async function chainNext(gateway: Gateway, apply: GatewayApply): Promise<void> {
     queued: false,
     chainStep: apply.chainStep + 1,
   })
+  // Post actions whose sections were not in this job go with the next one.
+  if (apply.postActions?.conntrackFlush && !apply.postActions.conntrackFlush.done) {
+    next.postActions = apply.postActions
+    await next.save()
+  }
   await recordGatewayEvent(gateway.id, 'apply_requested', {
     userId: apply.requestedByUserId,
     applyId: Number(next.id),
@@ -1226,7 +1307,11 @@ async function enforce(gateway: Gateway, settings: GatewayConfigSettings, now: D
     enforcement: 'active',
     authoritative: true,
   })
-  if (due.length === 0) return
+  const dueOrders = ordersDueForRevert(await loadOrders(gateway.id), {
+    now: now.toISO()!,
+    delaySeconds: settings.authoritativeRevertDelaySeconds,
+  })
+  if (due.length === 0 && dueOrders.length === 0) return
   const last = await GatewayApply.query()
     .where('gateway_id', gateway.id)
     .where('kind', 'revert')
@@ -1251,7 +1336,12 @@ export async function startRevert(
 ): Promise<GatewayApply | null> {
   const settings = await getGatewayConfigSettings()
   const { states } = await loadSections(gateway.id)
-  const plan = planFor(gateway, states, { userId, kind: 'revert', perchIds })
+  const plan = planFor(
+    gateway,
+    states,
+    { userId, kind: 'revert', perchIds },
+    await loadOrders(gateway.id)
+  )
   const job = plan.jobs.find((j) => j.kind === 'revert') ?? plan.jobs[0]
   if (!job) return null
   const apply = await createApply(gateway, settings, job, {

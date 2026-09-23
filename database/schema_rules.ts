@@ -49,8 +49,20 @@ export default {
     gateway_secrets: {
       skipColumns: ['value'],
     },
+    // `ipv4`/`ipv6`: the snake-case naming strategy would map them to
+    // `ipv_4`/`ipv_6`; the model names the columns explicitly.
+    gateway_hosts: {
+      skipColumns: ['ipv4', 'ipv6'],
+    },
+    gateway_section_orders: {
+      skipColumns: ['base_order', 'desired_order', 'conflict'],
+    },
+    gateway_wan_blocks: {
+      skipColumns: ['last_flush'],
+    },
     gateway_applies: {
       skipColumns: [
+        'post_actions',
         'ops',
         'base_hashes',
         'perch_ids',

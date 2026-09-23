@@ -228,6 +228,17 @@ export const GATEWAY_EVENTS = [
   'pairing_failed',
   'pairing_lost',
   'unpaired',
+  // Ordered types (docs/gateway/firewall.md section 3).
+  'order_imported',
+  'order_conflict',
+  'order_drift',
+  'order_drift_cleared',
+  'order_changed',
+  'order_resolved',
+  // Per-device WAN block (docs/gateway/firewall.md section 5).
+  'wan_blocked',
+  'wan_unblocked',
+  'conntrack_flushed',
 ] as const
 export type GatewayEventName = (typeof GATEWAY_EVENTS)[number]
 
