@@ -186,7 +186,8 @@ type DhcpPoolView = { network: string; perchId: string; section: string; subnet:
   management: boolean; sync: SyncInfo }
 type DhcpTagView = { perchId: string; name: string; options: DhcpOptionsView; force: boolean
   reservations: string[]; sync: SyncInfo }
-type DhcpReservationRow = DhcpReservation /* config-plane.md 10.3 */ & { tags: string[]; network: string | null }
+type DhcpReservationRow = DhcpReservation /* config-plane.md 10.3 */ & { tags: string[]; network: string | null
+  sync: SyncInfo }
 type DnsInstanceSettings = { domain: string | null; local: string | null; rebindProtection: boolean
   noresolv: boolean; port: number | null; interfaces: string[]; notInterfaces: string[]
   upstreams: { value: string; owner: 'perch' | 'router' }[]

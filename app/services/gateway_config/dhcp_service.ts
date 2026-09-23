@@ -227,6 +227,7 @@ export type DhcpTagView = {
 export type DhcpReservationRow = NonNullable<ReturnType<typeof reservationView>> & {
   tags: string[]
   network: string | null
+  sync: SyncInfo
 }
 
 function num(value: string | null): number | null {
@@ -287,7 +288,7 @@ function reservationRow(s: SectionState, states: SectionState[]): DhcpReservatio
             return p !== null && prefixContains(p, ip)
           })
         )?.name ?? null)
-  return { ...view, tags: hostTags(contentOf(s)!.options), network }
+  return { ...view, tags: hostTags(contentOf(s)!.options), network, sync: syncOf(s) }
 }
 
 /** `GET /gateways/:id/dhcp`. */
