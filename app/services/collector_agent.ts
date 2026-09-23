@@ -11,6 +11,7 @@ import {
   type PollOutcome,
 } from '#services/collector_poller'
 import { keysMatch } from '#services/collector_announce'
+import { recordDhcpObservationSerial } from '#services/gateway_dhcp'
 import { upsertProtocolCategories, type ProtocolCategoryInput } from '#services/protocol_categories'
 import logger from '@adonisjs/core/services/logger'
 import { DateTime } from 'luxon'
@@ -164,6 +165,7 @@ type PushParams = {
   meta?: unknown
   devices?: unknown
   gateway?: unknown
+  observe?: unknown
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -201,14 +203,47 @@ export function handleCollectorPush(
     return Promise.resolve({ status: 'dropped', reason: 'invalid' })
   }
 
+  // The DHCP observation rides in only the pushes where it changed, so it
+  // is recorded beside the traffic, whose pushes may be coalesced or dropped
+  // as too early (docs/collector-agent.md section 4.3).
+  const push = params as PushParams
+  const dhcp = isObject(push.observe) ? push.observe.dhcp : undefined
+  const observed =
+    dhcp === undefined ? null : recordPushedObservation(collectorId, dhcp, receivedAt)
+
   const state = stateFor(collectorId)
+  let traffic: Promise<CollectorPushOutcome>
   if (state.running) {
     state.queued?.resolve({ status: 'dropped', reason: 'superseded' })
-    return new Promise((resolve) => {
+    traffic = new Promise((resolve) => {
       state.queued = { snapshot, receivedAt, resolve }
     })
+  } else {
+    traffic = runPush(collectorId, state, snapshot, receivedAt)
   }
-  return runPush(collectorId, state, snapshot, receivedAt)
+  return observed ? Promise.all([traffic, observed]).then(([outcome]) => outcome) : traffic
+}
+
+/** Records a pushed `observe.dhcp` for an adopted, enabled agent row. Never throws. */
+async function recordPushedObservation(
+  collectorId: number,
+  dhcp: unknown,
+  receivedAt: DateTime
+): Promise<void> {
+  try {
+    const collector = await Collector.find(collectorId)
+    if (
+      !collector ||
+      collector.lifecycle !== 'adopted' ||
+      !collector.enabled ||
+      collector.transport !== 'agent'
+    ) {
+      return
+    }
+    await recordDhcpObservationSerial(collectorId, dhcp, receivedAt)
+  } catch (error) {
+    logger.warn({ collectorId, error: String(error) }, 'collector_agent: observation dropped')
+  }
 }
 
 async function runPush(

@@ -372,6 +372,9 @@ test.group('infra | devices on the map', (group) => {
       await seedLink(node.ports.eth0, farPortId)
     }
     await place(macs[0], apNode.ports.lan1)
+    // Warm the hostname lookup's gateway-agent cache (one query a minute at
+    // most), so both measured calls see the same per-request statements.
+    await loadDeviceAttachments(macs, thresholds)
     const one = await queriesDuring(() => loadDeviceAttachments(macs, thresholds))
     const placedOne = await loadDeviceAttachments(macs, thresholds)
     assert.equal(placedOne.get(macs[0])?.attachment.uplink?.nodeName, 'ap-attic')

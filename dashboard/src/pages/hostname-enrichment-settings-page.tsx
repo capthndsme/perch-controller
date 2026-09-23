@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
-import { CheckCircle, WarningCircle } from '@phosphor-icons/react'
+import { CheckCircle, Network, WarningCircle } from '@phosphor-icons/react'
 import { Field, FormError, formClassName } from '@/components/setup/form-field'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -10,12 +11,15 @@ import { Switch } from '@/components/ui/switch'
 import {
   fieldErrorsFromApi,
   useHostnameEnrichmentSettings,
+  useHostnameEnrichmentSources,
   useUpdateHostnameEnrichmentSettings,
 } from '@/hooks/use-settings'
 import { ApiError } from '@/lib/api'
+import { formatLastSeen } from '@/lib/collectors'
 import {
   HOSTNAME_ENRICHMENT_MODE,
   type HostnameEnrichmentSettings,
+  type HostnameEnrichmentSources,
   type HostnameEnrichmentTransport,
 } from '@/types/settings'
 
@@ -110,12 +114,78 @@ export function HostnameEnrichmentSettingsPage() {
   return <HostnameEnrichmentSettingsForm initialSettings={query.data} />
 }
 
+/**
+ * Where device names come from right now: a gateway agent (perch-collector on
+ * the router, zero configuration) or the command-execution fallback below.
+ * Renders nothing while loading or when the sources call fails.
+ */
+function GatewayAgentStatus({ sources }: { sources: HostnameEnrichmentSources | undefined }) {
+  if (!sources) return null
+  const active = sources.agents.filter((agent) => agent.active)
+
+  if (sources.agentActive && active.length > 0) {
+    return (
+      <Alert className="rounded-lg border-primary/20 bg-primary/5">
+        <Network className="size-4 text-primary" />
+        <AlertTitle>Gateway agent</AlertTitle>
+        <AlertDescription className="space-y-1.5">
+          <p>
+            Hostnames are provided by the gateway agent (collector{' '}
+            {active.map((agent) => agent.name).join(', ')}) — no transport setup needed.
+          </p>
+          <ul className="space-y-1">
+            {active.map((agent) => (
+              <li key={agent.collectorId} className="flex flex-wrap items-center gap-1.5 text-xs">
+                <span className="font-medium text-foreground">{agent.name}</span>
+                <Badge variant={agent.online ? 'secondary' : 'outline'}>
+                  {agent.online ? 'online' : 'offline'}
+                </Badge>
+                <span className="tabular-nums">
+                  {agent.leases4} IPv4 leases · {agent.leases6} DHCPv6 leases · {agent.staticHosts}{' '}
+                  static hosts · {agent.namedDevices} named devices · last report{' '}
+                  {formatLastSeen(agent.reportedAt)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {sources.commandPath === 'standby' ? (
+            <p className="text-xs">
+              The LXC/SSH settings below are a fallback: they only run when no gateway agent reports.
+            </p>
+          ) : null}
+        </AlertDescription>
+      </Alert>
+    )
+  }
+
+  const last = sources.agents[0]
+  return (
+    <Alert className="rounded-lg border-border bg-muted/20">
+      <Network className="size-4" />
+      <AlertTitle>Gateway agent</AlertTitle>
+      <AlertDescription className="space-y-1">
+        <p>
+          A Perch collector running on the OpenWrt router provides hostnames automatically (its{' '}
+          <code className="rounded-sm bg-muted px-1 py-0.5 font-mono text-xs">dhcp_leases</code>{' '}
+          option is on by default). Otherwise, configure command execution below.
+        </p>
+        {last ? (
+          <p className="text-xs">
+            Last report from a gateway agent: {last.name}, {formatLastSeen(last.reportedAt)}.
+          </p>
+        ) : null}
+      </AlertDescription>
+    </Alert>
+  )
+}
+
 function HostnameEnrichmentSettingsForm({
   initialSettings,
 }: {
   initialSettings: HostnameEnrichmentSettings
 }) {
   const update = useUpdateHostnameEnrichmentSettings()
+  const sources = useHostnameEnrichmentSources()
   const [form, setForm] = useState<FormState>(() => toFormState(initialSettings))
   const [formError, setFormError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
@@ -162,11 +232,13 @@ function HostnameEnrichmentSettingsForm({
         <CardHeader className="border-b">
           <CardTitle className="text-lg">Hostname enrichment</CardTitle>
           <CardDescription>
-            Configure how Perch resolves MAC addresses to hostnames from DHCP leases and OpenWrt static host mappings.
+            How Perch names devices from DHCP leases and OpenWrt static host mappings: from the
+            gateway agent when a collector runs on the router, else by running commands on it.
           </CardDescription>
         </CardHeader>
         <form onSubmit={onSubmit}>
           <CardContent className="space-y-4 pt-6">
+            <GatewayAgentStatus sources={sources.data} />
             {formError ? <FormError message={formError} /> : null}
             {successMessage ? (
               <Alert className="rounded-lg border-primary/20 bg-primary/5">
@@ -178,9 +250,10 @@ function HostnameEnrichmentSettingsForm({
 
             <div className="flex items-start justify-between gap-3 rounded-lg border bg-muted/20 px-3 py-2.5">
               <div className="space-y-0.5">
-                <p className="text-sm font-medium">Enable hostname enrichment</p>
+                <p className="text-sm font-medium">Command execution (fallback)</p>
                 <p className="text-xs text-muted-foreground">
-                  Runs command-based hostname lookups on your configured schedule.
+                  For gateways without the agent: reads the leases over LXC or SSH on your
+                  configured schedule. Not needed when a gateway agent reports.
                 </p>
                 {fieldErrors.enabled ? (
                   <p className="text-xs text-destructive">{fieldErrors.enabled}</p>

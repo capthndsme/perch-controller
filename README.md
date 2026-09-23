@@ -396,7 +396,10 @@ Ace commands (`commands/`): `dev:token` (bearer token for curl),
   router (conntrack, established TCP, load, memory, WAN counters and the rate
   derived per interface).
 - **Identity**: `device_identities` (IPs seen per MAC), hostnames resolved at
-  read time from the configured sources (Settings → Hostname enrichment), and
+  read time from the router's DHCP leases and static hosts: reported by the
+  collector on the router (`observe.dhcp` into `gateway_hosts`, nothing to set
+  up), else read over LXC or SSH as configured under Settings → Hostname
+  enrichment, and
   `device_labels` — the operator's own name, device type, tags and notes for a
   MAC, and whether it is an Ethernet device (then it reads "Ethernet" rather
   than "Wired / unknown" while no AP lists it). Labels are keyed by MAC alone (not per collector) so they survive a
@@ -428,7 +431,7 @@ admin role. Full list: `node ace list:routes`.
 |---|---|
 | Setup & auth | `GET setup/status`, `POST setup/admin`, `POST setup/instance` *admin*, `POST setup/collector` *admin*, `POST auth/login`, `POST auth/signup` (locked once an admin exists) |
 | Account | `GET account/profile`, `PATCH account/password`, `POST account/logout` |
-| Settings *admin* | `GET/PATCH settings/hostname-enrichment`; `GET/POST settings/wifi-sources`, `POST settings/wifi-sources/probe`, `PUT/DELETE settings/wifi-sources/:id`, `POST settings/wifi-sources/:id/probe`, `POST settings/wifi-sources/:id/agent/ping`, `DELETE settings/wifi-sources/:id/agent`; `GET/POST settings/ap-join-tokens`, `POST settings/ap-join-tokens/:id/reveal`, `DELETE settings/ap-join-tokens/:id`, `GET settings/ap-agent/install`; `GET/POST settings/users`, `PATCH settings/users/:id/role`, `DELETE settings/users/:id` |
+| Settings *admin* | `GET/PATCH settings/hostname-enrichment`, `GET settings/hostname-enrichment/sources`; `GET/POST settings/wifi-sources`, `POST settings/wifi-sources/probe`, `PUT/DELETE settings/wifi-sources/:id`, `POST settings/wifi-sources/:id/probe`, `POST settings/wifi-sources/:id/agent/ping`, `DELETE settings/wifi-sources/:id/agent`; `GET/POST settings/ap-join-tokens`, `POST settings/ap-join-tokens/:id/reveal`, `DELETE settings/ap-join-tokens/:id`, `GET settings/ap-agent/install`; `GET/POST settings/users`, `PATCH settings/users/:id/role`, `DELETE settings/users/:id` |
 | Device agents | `POST ap-agent/join` (join token in the body, no user auth), WebSocket `ap-agent/ws` (agent credentials); `POST collectors/announce` (polled collectors), WebSocket `collector-agent/ws` (the collector's API key + instance id) |
 | Network-wide traffic | `GET traffic` (series + summary), `GET traffic/top?limit&by` (top-N devices + rest), `GET protocols`, `GET protocols/:protocol/devices`, `GET peers/top?scope` |
 | Sites & applications | `GET destinations?limit` (names → domains, addresses → networks, categories), `GET destinations/:serverName/traffic`; `GET services?limit`, `GET services/:serverName/traffic` (5m/1h/1d) |

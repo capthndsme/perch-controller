@@ -4,11 +4,13 @@ import { wifiQueryKey } from '@/hooks/use-wifi'
 import { apiFetch, fieldErrorsFromApi } from '@/lib/api'
 import type {
   HostnameEnrichmentSettings,
+  HostnameEnrichmentSources,
   PresenceSettingsView,
   PresenceThresholds,
 } from '@/types/settings'
 
 export const hostnameEnrichmentSettingsQueryKey = ['settings', 'hostname-enrichment'] as const
+export const hostnameEnrichmentSourcesQueryKey = ['settings', 'hostname-enrichment', 'sources'] as const
 export const presenceSettingsQueryKey = ['settings', 'presence'] as const
 
 export function useHostnameEnrichmentSettings(options?: { enabled?: boolean }) {
@@ -17,6 +19,16 @@ export function useHostnameEnrichmentSettings(options?: { enabled?: boolean }) {
     queryFn: () =>
       apiFetch<HostnameEnrichmentSettings>('/api/v1/settings/hostname-enrichment'),
     enabled: options?.enabled,
+  })
+}
+
+export function useHostnameEnrichmentSources() {
+  return useQuery({
+    queryKey: hostnameEnrichmentSourcesQueryKey,
+    queryFn: () =>
+      apiFetch<HostnameEnrichmentSources>('/api/v1/settings/hostname-enrichment/sources'),
+    refetchInterval: 30_000,
+    retry: false,
   })
 }
 
@@ -31,6 +43,7 @@ export function useUpdateHostnameEnrichmentSettings() {
       }),
     onSuccess: (data) => {
       queryClient.setQueryData(hostnameEnrichmentSettingsQueryKey, data)
+      void queryClient.invalidateQueries({ queryKey: hostnameEnrichmentSourcesQueryKey })
     },
   })
 }

@@ -144,6 +144,7 @@ router
       .group(() => {
         router.get('hostname-enrichment', [SettingsController, 'hostnameEnrichment'])
         router.patch('hostname-enrichment', [SettingsController, 'updateHostnameEnrichment'])
+        router.get('hostname-enrichment/sources', [SettingsController, 'hostnameEnrichmentSources'])
         router.get('presence', [SettingsController, 'presence']).as('presence')
         router.patch('presence', [SettingsController, 'updatePresence']).as('updatePresence')
         router.get('wifi-sources', [SettingsController, 'wifiSources'])

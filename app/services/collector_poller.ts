@@ -17,6 +17,7 @@ import {
   type ServiceBucketDelta,
 } from '#services/bucket_writer'
 import { upsertDeviceIdentities, type DeviceIdentityInput } from '#services/device_identity_writer'
+import { recordDhcpObservationSerial } from '#services/gateway_dhcp'
 import { recordAgentPorts } from '#services/infra_ports'
 import { upsertProtocolCategories, type ProtocolCategoryInput } from '#services/protocol_categories'
 import { recordGatewaySample, type GatewayReport } from '#services/router_metrics'
@@ -106,6 +107,8 @@ type SummaryResponse = {
   meta?: { capture_interface?: string; version?: string }
   /** Gateway stats, when the collector runs on the router (docs/collector-agent.md 4.1). */
   gateway?: GatewayReport | null
+  /** Runtime observations of the router (docs/collector-agent.md 4.3); `dhcp` today. */
+  observe?: { dhcp?: unknown } | null
 }
 
 /**
@@ -119,6 +122,12 @@ export type CollectorSnapshot = {
   meta?: SummaryResponse['meta'] | null
   devices: CollectorDevice[] | null | undefined
   gateway?: GatewayReport | null
+  /**
+   * `observe` of the push or summary. Not ingested by
+   * `ingestCollectorSnapshot`: a push hands it to `gateway_dhcp.ts` beside the
+   * traffic (which may be coalesced away), a poll right after the ingest.
+   */
+  observe?: { dhcp?: unknown } | null
 }
 
 /**
@@ -436,6 +445,7 @@ export async function fetchCollectorSnapshot(
     meta: summary.meta,
     devices: devicesResp.devices,
     gateway: summary.gateway ?? null,
+    observe: summary.observe ?? null,
   }
 }
 
@@ -468,7 +478,13 @@ export async function pollOnce(
   if (snapshot.summary?.started_at) {
     await syncProtocolCategories(collector, collector.baseUrl, now, fetcher)
   }
-  return ingestCollectorSnapshot(collector, snapshot, { now })
+  const outcome = await ingestCollectorSnapshot(collector, snapshot, { now })
+  // A polled collector serves its DHCP observation with every summary; an
+  // unchanged one costs a fingerprint compare. Non-fatal, never the traffic.
+  if (outcome.status !== 'failed' && snapshot.observe?.dhcp !== undefined) {
+    await recordDhcpObservationSerial(collector.id, snapshot.observe.dhcp, now)
+  }
+  return outcome
 }
 
 export type IngestOptions = {

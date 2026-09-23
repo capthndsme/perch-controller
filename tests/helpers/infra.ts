@@ -6,6 +6,7 @@ import { _resetCollectorAgentState } from '#services/collector_agent'
 import collectorHub from '#services/collector_agent_hub'
 import { _resetPollerState } from '#services/collector_poller'
 import { resetDeviceLabelCacheForTesting } from '#services/device_labels'
+import { _resetGatewayDhcpState } from '#services/gateway_dhcp'
 import { resetHostnameEnrichmentCacheForTesting } from '#services/hostname_enrichment'
 import { _resetInfraPortsState, recordAgentPorts } from '#services/infra_ports'
 import { _resetQueryCache } from '#services/query_cache'
@@ -38,6 +39,7 @@ export function resetInfraState() {
   _resetRouterState()
   resetDeviceLabelCacheForTesting()
   resetHostnameEnrichmentCacheForTesting()
+  _resetGatewayDhcpState()
   _resetQueryCache()
 }
 

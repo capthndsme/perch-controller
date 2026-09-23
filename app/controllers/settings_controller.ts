@@ -1,3 +1,6 @@
+import collectorHub from '#services/collector_agent_hub'
+import { listDhcpAgentSources } from '#services/gateway_dhcp'
+import { hostnameSourceStatus } from '#services/hostname_enrichment'
 import {
   getHostnameEnrichmentSettings,
   normalizeHostnameEnrichmentSettings,
@@ -34,6 +37,33 @@ export default class SettingsController {
   async hostnameEnrichment({ serialize }: HttpContext) {
     const settings = await getHostnameEnrichmentSettings()
     return serialize(settings)
+  }
+
+  /**
+   * GET /api/v1/settings/hostname-enrichment/sources
+   *
+   * Where device names come from right now: the gateway agents that report
+   * `observe.dhcp` (docs/collector-agent.md section 4.3) and whether the
+   * command-execution path runs, stands by behind an agent, or is off.
+   */
+  async hostnameEnrichmentSources({ serialize }: HttpContext) {
+    const [sources, status] = await Promise.all([listDhcpAgentSources(), hostnameSourceStatus()])
+    return serialize({
+      agentActive: status.agentCollectorIds.length > 0,
+      commandPath: status.commandPath,
+      agents: sources.map((source) => ({
+        collectorId: source.collectorId,
+        name: source.name,
+        active: source.active,
+        online: collectorHub.isOnline(source.collectorId),
+        reportedAt: source.observedAt,
+        changedAt: source.changedAt,
+        leases4: source.counts.leases4,
+        leases6: source.counts.leases6,
+        staticHosts: source.counts.hosts,
+        namedDevices: source.counts.named,
+      })),
+    })
   }
 
   /**

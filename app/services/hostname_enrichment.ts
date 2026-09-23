@@ -2,9 +2,27 @@ import {
   getHostnameEnrichmentSettings,
   type HostnameEnrichmentSettings,
 } from '#services/hostname_enrichment_settings'
+import { gatewayDhcpVersion, listDhcpAgentSources, readGatewayHosts } from '#services/gateway_dhcp'
 import logger from '@adonisjs/core/services/logger'
 import { spawn } from 'node:child_process'
 
+/**
+ * Hostnames for devices, from the router's DHCP: lease hostnames
+ * (`dhcp_lease`) and the names of static `host` sections (`openwrt_static`,
+ * which win).
+ *
+ * Two sources, in order of preference:
+ *
+ * 1. **The gateway agent** (docs/collector-agent.md section 4.3): every
+ *    adopted, enabled collector that reported `observe.dhcp` within
+ *    `AGENT_FRESH_SECONDS` (`gateway_dhcp.ts`, table `gateway_hosts`). No
+ *    setting: a collector on the router gives names with zero configuration,
+ *    whatever Settings → Hostname enrichment says.
+ * 2. **Command execution** (Settings → Hostname enrichment, `enabled`):
+ *    `cat <leasefile>` and `uci show dhcp` over `lxc exec` or `ssh`, for
+ *    gateways without the agent. It stands by, and runs no command, while
+ *    any agent source is active.
+ */
 export type HostnameSource = 'dhcp_lease' | 'openwrt_static'
 
 export type HostnameMatch = {
@@ -33,6 +51,19 @@ type HostnameCommandRunner = (
   timeoutMs: number
 ) => Promise<string>
 
+/** The agent-sourced state: one entry, reloaded when the mirror changes or after the TTL. */
+type AgentState = HostnameMaps & {
+  version: number
+  loadedAtMs: number
+  /** Collectors whose data is in use; empty = no active agent source. */
+  collectorIds: number[]
+}
+
+/** Re-read at least this often, so an agent that went quiet stops counting. */
+const AGENT_STATE_TTL_MS = 60_000
+
+let agentCache: AgentState | null = null
+let agentInFlight: Promise<AgentState> | null = null
 let stateCache: HostnameState | null = null
 let inFlightRefresh: Promise<HostnameState> | null = null
 let commandRunner: HostnameCommandRunner = runHostnameCommand
@@ -336,7 +367,87 @@ async function loadHostnameState(settings: HostnameEnrichmentSettings): Promise<
   return nextState
 }
 
-async function getHostnameState(): Promise<HostnameState> {
+async function loadAgentState(): Promise<AgentState> {
+  const version = gatewayDhcpVersion()
+  const listed = await listDhcpAgentSources()
+  const sources = listed.filter((source) => source.active)
+  const collectorIds = sources.map((source) => source.collectorId)
+  const maps: HostnameMaps = { byMac: new Map(), byIp: new Map() }
+  const hosts = await readGatewayHosts(collectorIds)
+
+  // Lease names first (the first collector to name a MAC or address keeps
+  // it), then the static names, which override, as on the command path.
+  for (const host of hosts) {
+    const hostname = normalizeHostname(host.hostname)
+    if (!hostname) continue
+    const entry: ParsedHostnameEntry = { hostname, source: 'dhcp_lease', mac: host.mac }
+    upsertMaps(maps, entry, false)
+    for (const ip of [host.ipv4, ...host.ipv6]) {
+      const clean = normalizeIp(ip)
+      if (clean) upsertMaps(maps, { hostname, source: 'dhcp_lease', ip: clean }, false)
+    }
+  }
+  for (const host of hosts) {
+    const hostname = normalizeHostname(host.staticName)
+    if (!hostname) continue
+    upsertMaps(maps, { hostname, source: 'openwrt_static', mac: host.mac }, true)
+    const ip = normalizeIp(host.ipv4)
+    if (ip) upsertMaps(maps, { hostname, source: 'openwrt_static', ip }, true)
+  }
+  for (const source of sources) {
+    for (const host of source.ipOnlyHosts) {
+      const hostname = normalizeHostname(host.name)
+      const ip = normalizeIp(host.ip)
+      if (hostname && ip) upsertMaps(maps, { hostname, source: 'openwrt_static', ip }, true)
+    }
+  }
+
+  return { ...maps, version, loadedAtMs: Date.now(), collectorIds }
+}
+
+async function getAgentState(): Promise<AgentState> {
+  const cached = agentCache
+  if (
+    cached &&
+    cached.version === gatewayDhcpVersion() &&
+    Date.now() - cached.loadedAtMs < AGENT_STATE_TTL_MS
+  ) {
+    return cached
+  }
+  if (!agentInFlight) {
+    agentInFlight = loadAgentState()
+      .then((state) => {
+        agentCache = state
+        return state
+      })
+      .finally(() => {
+        agentInFlight = null
+      })
+  }
+  return agentInFlight
+}
+
+/** Which source names devices right now (Settings → Hostname enrichment). */
+export async function hostnameSourceStatus(): Promise<{
+  agentCollectorIds: number[]
+  commandPath: 'off' | 'standby' | 'active'
+}> {
+  const [agent, settings] = await Promise.all([getAgentState(), getHostnameEnrichmentSettings()])
+  const commandPath = !settings.enabled
+    ? 'off'
+    : agent.collectorIds.length > 0
+      ? 'standby'
+      : 'active'
+  return { agentCollectorIds: agent.collectorIds, commandPath }
+}
+
+async function getHostnameState(): Promise<HostnameMaps> {
+  const agent = await getAgentState()
+  if (agent.collectorIds.length > 0) return agent
+  return getCommandState()
+}
+
+async function getCommandState(): Promise<HostnameState> {
   const settings = await getHostnameEnrichmentSettings()
   if (!settings.enabled) return loadHostnameState(settings)
 
@@ -366,7 +477,7 @@ async function getHostnameState(): Promise<HostnameState> {
 }
 
 /** Pure mac/IP lookup of one identity against an already-loaded state. */
-function matchHostname(state: HostnameState, identity: HostnameIdentity): HostnameMatch | null {
+function matchHostname(state: HostnameMaps, identity: HostnameIdentity): HostnameMatch | null {
   const mac = normalizeMac(identity.mac)
   if (mac) {
     const byMac = state.byMac.get(mac)
@@ -409,6 +520,8 @@ export async function getHostnameMatches(
 export function resetHostnameEnrichmentCacheForTesting() {
   stateCache = null
   inFlightRefresh = null
+  agentCache = null
+  agentInFlight = null
 }
 
 /**

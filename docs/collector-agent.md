@@ -206,7 +206,7 @@ Frames are JSON-RPC 2.0 text messages, one object each, no batches.
    {"instanceId":"<same as header>","hostname":"OpenWrt","version":"0.2.0",
     "captureInterface":"br-lan","apiKey":"<only when announce_api_key>",
     "apiKeyFingerprint":"a1b2c3d4","port":9800,"tls":false,
-    "baseUrl":"http://192.168.1.1:9800","capabilities":["gateway_stats"],
+    "baseUrl":"http://192.168.1.1:9800","capabilities":["gateway_stats","observe.dhcp"],
     "system":{"os":"OpenWrt 24.10.2","arch":"amd64"}}
    ```
 
@@ -231,7 +231,8 @@ Frames are JSON-RPC 2.0 text messages, one object each, no batches.
     "summary":{…GET /api/v1/summary .summary…},
     "meta":{"capture_interface":"br-lan","version":"0.2.0"},
     "devices":[…GET /api/v1/devices .devices…],
-    "gateway":{…section 4.1, only with gateway stats on…}}
+    "gateway":{…section 4.1, only with gateway stats on…},
+    "observe":{"dhcp":{…section 4.3, only when it changed, first in a session and every refresh…}}}
    ```
 
    Compact JSON (the HTTP API indents; the push does not). Ingested exactly like a
@@ -327,6 +328,84 @@ compose comments, README). `ROUTER_SAMPLE_RETENTION_DAYS` and the table stay.
   range, from, to, resolution, resolutionSeconds, latest, series  // unchanged
 }
 ```
+
+### 4.3 DHCP observation (`observe.dhcp`, 2026-09-23)
+
+Device names without a transport to the router: the collector on the router
+reports its DHCP leases and static hosts, and the controller names devices from
+them. It is the `dhcp` part of the observation channel sketched in
+`docs/design/gateway/plan-2-native-sync.md` section 3 (same lease shapes, the
+`gateway_hosts` table trimmed to DHCP); later parts (`neighbors`, `upnp`, …)
+join `observe` the same way.
+
+**Collector.** Enabled by `dhcp_leases: auto | on | off` (default `auto` = on
+when `/etc/openwrt_release` exists; env `PERCH_COLLECTOR_DHCP_LEASES`; UCI
+`dhcp_leases`), independent of gateway stats; the hello's `capabilities` then
+include `observe.dhcp`. Sources: the dnsmasq lease files named by
+`uci show dhcp` (`dhcp.@dnsmasq[*].leasefile`, `/tmp/dhcp.leases` for a section
+without one; IPv4 lines and dnsmasq's DHCPv6 lines after `duid`), odhcpd's
+leases over `ubus call dhcp ipv6leases` (and `ipv4leases` with `maindhcp 1`)
+when an `odhcpd` section exists, and the named `host` sections of
+`/etc/config/dhcp`. Nothing depends on dnsmasq's DNS port (dnsmasq on port 54
+behind AdGuard Home reports the same). Files are re-read only when their size
+or mtime changes, `uci` only when `/etc/config/dhcp` changes, odhcpd at most
+once a minute.
+
+```json
+"observe":{"dhcp":{
+  "leases4":[{"mac":"02:00:00:00:10:21","ip":"192.168.1.21","hostname":"laptop",
+              "expires":1790000000,"clientId":"01:02:00:00:00:10:21","source":"dnsmasq"}],
+  "leases6":[{"duid":"000100012abcdef0020000001021","iaid":12345,"addresses":["fd00::21"],
+              "hostname":"laptop","validUntil":1790003600,"device":"br-lan","source":"odhcpd"}],
+  "hosts":[{"name":"nas","macs":["02:00:00:00:10:30"],"ip":"192.168.1.30"},
+           {"name":"printer","macs":[],"ip":"192.168.1.40"}]}}
+```
+
+- `expires` / `validUntil`: Unix seconds, 0 = infinite. `hostname` is left out
+  for dnsmasq's `*`; names are cleaned of control characters and at most 253
+  bytes. Non-Ethernet hardware addresses are skipped; duplicate leases for one
+  MAC and address collapse to the one expiring last. Caps: 4096 leases per
+  family, 1024 hosts.
+- **When.** In `collector.push` only when the section's fingerprint (SHA-256 of
+  its JSON) differs from the last one sent in this session, in the session's
+  first push, and every `dhcp_leases_refresh` seconds (default 600, 60–3600).
+  `GET /api/v1/summary` carries it on every call, for polled collectors.
+- **Absent vs empty.** No `observe` / no `dhcp` = nothing new, the controller
+  keeps what it has. A present `dhcp` is a full snapshot; its lists are `[]`
+  when empty, and an empty snapshot clears the collector's rows.
+
+**Server.** `app/services/gateway_dhcp.ts`:
+
+- A push's `observe.dhcp` is recorded beside the traffic ingest, not inside it:
+  pushes may be dropped as too early or coalesced while one is in flight, and
+  the section rides only in the pushes where it changed. Per collector the
+  writes run one at a time; the row must be adopted, enabled and `agent`. A
+  poll records it right after the ingest. Failures are logged, never fatal.
+- Normalised again (same caps), folded to one row per MAC in `gateway_hosts`
+  (the IPv4 lease that expires last gives address and expiry; the name comes
+  from the latest named IPv4 lease, else a DHCPv6 lease whose DUID carries the
+  MAC, types 1 and 3; `static_name` from the last `host` section naming the
+  MAC), replaced as a whole in one transaction. `gateway_observations`
+  (collector, kind `dhcp`) keeps the fingerprint, `observed_at`, `changed_at`
+  and a payload of counts plus the static hosts without a MAC (matched by
+  address). An unchanged report writes nothing but `observed_at`, at most once
+  a minute; the fingerprint is remembered per collector in a bounded map (256,
+  least recently written evicted) and in the table.
+- Both tables CASCADE with their collector and are in `collectors:merge`'s
+  `NON_HISTORY_TABLES`: the merged collector keeps `--into`'s rows.
+- **Hostname lookup** (`hostname_enrichment.ts`): agent data first. Every
+  adopted, enabled collector whose last `observe.dhcp` is at most 2 h old
+  (twice the longest refresh, a protocol bound) is a source, with no setting;
+  static names win over lease names, as before, and `hostnameSource` keeps its
+  values (`openwrt_static`, `dhcp_lease`). While any agent source is active,
+  the lxc/ssh command path (Settings → Hostname enrichment, off by default)
+  stands by and runs nothing; it takes over for gateways without the agent.
+  The agent maps are one cached entry, reloaded after a write or after 60 s.
+- `GET /api/v1/settings/hostname-enrichment/sources` (admin):
+  `{agentActive, commandPath: 'off'|'standby'|'active', agents: [{collectorId,
+  name, active, online, reportedAt, changedAt, leases4, leases6, staticHosts,
+  namedDevices}]}`. The settings page shows "provided by the gateway agent
+  (collector …)" from it.
 
 ## 5. Controller (perch-controller) changes
 

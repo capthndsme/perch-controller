@@ -125,9 +125,11 @@ const META_COLUMNS = new Set(['id', 'created_at', 'updated_at'])
  * Tables that reference `collectors` but hold no history: the merge moves
  * them with a rule of their own instead of the counter/snapshot machinery.
  * `infra_nodes`: the Gateway agent's node on the infrastructure view
- * (`repointInfraNode`).
+ * (`repointInfraNode`). `gateway_hosts`, `gateway_observations`: the Gateway
+ * agent's DHCP mirror, runtime state that follows `into`, the collector that
+ * keeps running (`repointGatewayObservations`).
  */
-export const NON_HISTORY_TABLES = new Set(['infra_nodes'])
+export const NON_HISTORY_TABLES = new Set(['infra_nodes', 'gateway_hosts', 'gateway_observations'])
 const IDENTITY_COLUMNS = ['primary_ip', 'ips', 'first_seen_at', 'last_seen_at']
 const SERVICE_SUMS = ['bytes_served', 'bytes_received', 'packets_served', 'packets_received']
 const BYTE_PACKET_SUMS = ['bytes_in', 'bytes_out', 'packets_in', 'packets_out']
@@ -679,6 +681,38 @@ export function describeInfraNodeMove(
   return null
 }
 
+// ── gateway observations ─────────────────────────────────────────────────
+
+/** The Gateway agent's runtime mirrors (docs/collector-agent.md section 4.3). */
+const GATEWAY_OBSERVATION_TABLES = ['gateway_hosts', 'gateway_observations'] as const
+
+/**
+ * The DHCP mirror is what the running collector (`into`) reports, not
+ * history: afterwards the survivor holds `into`'s rows and the other side's
+ * are gone. When `into` is the survivor that is only the removed side's rows
+ * going (they would CASCADE anyway); otherwise the survivor's own rows are
+ * dropped and `into`'s move over. The server's fingerprint cache is keyed by
+ * row id and may still name the survivor's old report; the next report of
+ * the collector (a new session sends it first thing) rewrites it if needed.
+ */
+export async function repointGatewayObservations(
+  trx: Client,
+  sides: { survivorId: number; removedId: number; intoId: number }
+): Promise<void> {
+  const dropId = sides.intoId === sides.survivorId ? sides.removedId : sides.survivorId
+  for (const table of GATEWAY_OBSERVATION_TABLES) {
+    await trx.rawQuery(`DELETE FROM ${table} WHERE collector_id = ?`, [dropId])
+  }
+  if (sides.intoId === sides.removedId) {
+    for (const table of GATEWAY_OBSERVATION_TABLES) {
+      await trx.rawQuery(`UPDATE ${table} SET collector_id = ? WHERE collector_id = ?`, [
+        sides.survivorId,
+        sides.removedId,
+      ])
+    }
+  }
+}
+
 // ── the plan ─────────────────────────────────────────────────────────────
 
 export type MergeSide = {
@@ -1099,6 +1133,9 @@ export async function executeCollectorMerge(
       )
     }
   }
+
+  // Runtime mirrors: `into`'s copy is what the running collector reports.
+  await repointGatewayObservations(trx, { survivorId, removedId, intoId: plan.into.id })
 
   // Layout, not history: the Gateway agent's node follows the merged collector.
   const infraNodes = await repointInfraNode(trx, {

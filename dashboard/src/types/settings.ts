@@ -28,6 +28,27 @@ export type HostnameEnrichmentSettings =
       }
     })
 
+/** `GET /api/v1/settings/hostname-enrichment/sources`: where device names come from right now. */
+export type HostnameEnrichmentSources = {
+  /** Device names come from a gateway agent right now. */
+  agentActive: boolean
+  /** The lxc/ssh command path: disabled, standing by behind an agent, or running. */
+  commandPath: 'off' | 'standby' | 'active'
+  agents: Array<{
+    collectorId: number
+    name: string
+    /** Adopted, enabled, reported within 2 h. */
+    active: boolean
+    online: boolean
+    reportedAt: string
+    changedAt: string
+    leases4: number
+    leases6: number
+    staticHosts: number
+    namedDevices: number
+  }>
+}
+
 /** Settings → Presence: the thresholds behind "connected right now", all whole numbers. */
 export type PresenceThresholds = {
   lanQuietMinutes: number

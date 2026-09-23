@@ -927,6 +927,52 @@ test.group('collectors:merge and :purge | infrastructure nodes', (group) => {
     assert.isNull(await boundCollector(oldNode.id))
   })
 
+  test("the gateway DHCP mirror follows --into: the running collector's rows stay", async ({
+    assert,
+  }) => {
+    const old = await makeCollector({ name: 'old-box', baseUrl: 'http://192.168.1.10:9800' })
+    const gw = await makeCollector({ name: 'gateway', baseUrl: 'http://192.168.1.1:9800' })
+    for (let i = 0; i < 6; i++) await bucket(old.id, MAC_A, at(10, 0, i * 5), 100)
+    await bucket(gw.id, MAC_A, at(10, 1), 7)
+    for (const [id, mac, name] of [
+      [old.id, MAC_A, 'stale-name'],
+      [gw.id, MAC_B, 'laptop'],
+    ] as const) {
+      await db.table('gateway_hosts').insert({
+        collector_id: id,
+        mac,
+        hostname: name,
+        lease_infinite: false,
+        first_seen_at: NOW_SQL,
+        updated_at: NOW_SQL,
+      })
+      await db.table('gateway_observations').insert({
+        collector_id: id,
+        kind: 'dhcp',
+        payload: '{}',
+        fingerprint: `fp-${id}`,
+        observed_at: NOW_SQL,
+        changed_at: NOW_SQL,
+      })
+    }
+    await assertMergeRegistryMatchesSchema()
+
+    const run = await merge([`--from=${old.id}`, `--into=${gw.id}`, '--grace=0'])
+    assert.equal(run.exitCode, 0)
+    assert.isNull(await Collector.find(gw.id), 'the old box has more rows and keeps its id')
+    const hosts = await db.from('gateway_hosts').select('collector_id', 'mac', 'hostname')
+    assert.deepEqual(
+      hosts.map((h) => [Number(h.collector_id), h.mac, h.hostname]),
+      [[old.id, MAC_B, 'laptop']],
+      "into's rows under the surviving id; the survivor's own are gone"
+    )
+    const observations = await db.from('gateway_observations').select('collector_id', 'fingerprint')
+    assert.deepEqual(
+      observations.map((o) => [Number(o.collector_id), o.fingerprint]),
+      [[old.id, `fp-${gw.id}`]]
+    )
+  })
+
   test('collectors:purge detaches the node instead of deleting it', async ({ assert }) => {
     const gw = await makeCollector({ name: 'gateway', baseUrl: 'http://192.168.1.1:9800' })
     await bucket(gw.id, MAC_A, at(10, 0), 100)

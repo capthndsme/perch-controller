@@ -625,6 +625,50 @@ export class DeviceTrafficBucketsHourlySchema extends BaseModel {
   declare updatedAt: DateTime
 }
 
+export class GatewayHostSchema extends BaseModel {
+  static $columns = ['collectorId', 'firstSeenAt', 'hostname', 'id', 'ipv4', 'ipv6', 'leaseExpiresAt', 'leaseInfinite', 'mac', 'staticName', 'updatedAt'] as const
+  $columns = GatewayHostSchema.$columns
+  @column()
+  declare collectorId: number
+  @column.dateTime()
+  declare firstSeenAt: DateTime
+  @column()
+  declare hostname: string | null
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare ipv4: string | null
+  @column()
+  declare ipv6: string | null
+  @column.dateTime()
+  declare leaseExpiresAt: DateTime | null
+  @column()
+  declare leaseInfinite: boolean
+  @column()
+  declare mac: string
+  @column()
+  declare staticName: string | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime
+}
+
+export class GatewayObservationSchema extends BaseModel {
+  static $columns = ['changedAt', 'collectorId', 'fingerprint', 'kind', 'observedAt', 'payload'] as const
+  $columns = GatewayObservationSchema.$columns
+  @column.dateTime()
+  declare changedAt: DateTime
+  @column({ isPrimary: true })
+  declare collectorId: number
+  @column()
+  declare fingerprint: string
+  @column()
+  declare kind: string
+  @column.dateTime()
+  declare observedAt: DateTime
+  @column()
+  declare payload: string | null
+}
+
 export class InfraLinkSchema extends BaseModel {
   static $columns = ['aPortId', 'bPortId', 'createdAt', 'id', 'label', 'medium', 'notes', 'updatedAt'] as const
   $columns = InfraLinkSchema.$columns
