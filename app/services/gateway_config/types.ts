@@ -228,6 +228,8 @@ export const GATEWAY_EVENTS = [
   'pairing_failed',
   'pairing_lost',
   'unpaired',
+  'network_capture_changed',
+  'network_labelled',
 ] as const
 export type GatewayEventName = (typeof GATEWAY_EVENTS)[number]
 
