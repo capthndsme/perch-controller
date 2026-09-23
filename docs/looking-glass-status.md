@@ -2411,3 +2411,104 @@ tagged yet.
   171 → 251. Flows open across the restart stay unnamed until they end.
 - **Rollback.** `/root/perch-collector-1.0.0-rc.2.bak` in the gateway container, and the rc.2 binary,
   its UCI config and the downloaded rc.3 files in `~/metricslite-rollback/2026-09-23-rc3/`.
+
+## 2026-09-24 — Managed gateway: the build, integrated and run end to end in the lab
+
+The managed-gateway plan (`docs/design/gateway/`) built by parallel branches and merged on
+`gw/integration` in four rounds (metrics-be, go-collector, perch-agentkit, perch-apd). Nothing is
+pushed or tagged; the release chain (kit v0.3.0 tag → daemons → controller) waits for the owner.
+Contracts live in `docs/gateway/*.md` (controller) and go-collector `ARCHITECTURE.md` / `CONFIG.md`.
+
+### Kit and router side (perch-agentkit, go-collector)
+- **Kit** `openwrt/ubus`, `openwrt/uci` (parser and renderer byte-equal to `uci export`, hashes,
+  secret redaction, private rpcd session stager) and `openwrt/pkgdb`; perch-apd moved to ubus.
+- **Config plane on the collector** (`internal/gwconfig`): `config_access none|read|write`,
+  `managed_config` allowlist + fixed denylist, reads of committed files, change watcher (procd trigger,
+  author luci/cli/perch), writes with base hashes, apply order system → network → dhcp → firewall →
+  sqm → perch-qos, confirm only on a fresh session, rollback on timeout, boot guard, package installs.
+  Writes need verified TLS, or `config_allow_insecure '1'` and a **pairing** (X25519, commitment,
+  6-digit code confirmed on both ends, `perch-collector pair confirm`); the api_key never signs.
+- **Observation** in `collector.push` (`observe`: DHCP, neighbours, interfaces, UPnP, mwan3, resolver,
+  system), `gateway.observe`, `net.conntrack_flush`, redacted backups.
+- **Multi-network capture** (`capture_networks auto`, SIGHUP rescan, per-network report with rates and
+  kernel drops) honouring the controller's `capture.exclude` live.
+- **perch-qos** (package of its own): HTB on two ifbs with per-device caps, nested buckets, schedules on
+  the router clock, quotas; `sqm-scripts` and `perch-qos` join the allowlist by themselves
+  (`managed_config_auto`, `managed_config_exclude`).
+- **Guest portal** on nftables (`inet perch_portal`, `netdev perch_portal_acct` with a kernel quota per
+  group), guest pages on :2080 per portal address, offline redemption, Paid Hotspot checkouts
+  (terminal protocol with signed requests, price lock, idle timeout, reference codes) and
+  click-through with a repeat limit. The router is the checkout authority.
+- Fix found in the lab: an own-write echo survived the fresh hello and labelled a later router edit as
+  Perch's (plane-writer).
+
+### Controller (metrics-be)
+- **Config plane** (`app/services/gateway_config/`, `docs/gateway/config-plane.md`): per-section A/B/C
+  model, domains with round-trip checks, imports, drafts, applies with a serial queue per gateway,
+  revisions with restore, conflicts, drift, Authoritative Mode with a revert delay, rejoin offers,
+  pairing, audit events. Writes Perch makes by itself carry a system actor ("Perch (system)").
+  Router-side pauses (`routerPause`: sqm `enabled '0'`, perch-qos `globals.enabled '0'`) are held on
+  every read and never reverted; an admin's resume over one is marked until its apply lands and goes
+  back to the router on rollback (`settleReclaim`). `perch_qos` is one-way.
+- **Domains** in apply order: system (host name, zone → POSIX TZ, NTP), networks (bridge, VLAN bridge,
+  802.1Q), routes, dhcp_pools (options, tags), dhcp_hosts, dns_records, dns_settings (Perch owns only the
+  upstream / rebind / address entries it adds; `port` and AdGuard stay the router's), dhcp_tags,
+  firewall (zones, forwardings, ordered rules and redirects, WAN block set), sqm, perch_qos. Guards:
+  management path (protected applies, `routing_controller_path`, `firewall_controller_path`),
+  controller-name pin, DHCP gateway / disable confirmations, `dns_no_upstream`. Each feature has an
+  "in sync" check that blocks Authoritative Mode. Sections stored unmodeled before their domain
+  existed are promoted on the next read.
+- **Observation** REST, backups, gateway sightings for presence; **networks** with accounting (30 s
+  samples, scope-change marks, device network history) and zone wiring in one apply.
+- **QoS** (`docs/gateway/qos.md`): policies, groups, assignments, schedules, quotas, WAN queues through
+  the real `SqmPlaneWriter` / `QosPlaneWriter`, live rates, portal devices shaped through QoS.
+- **Guest portal** (`docs/gateway/portal.md`): portals per network, vouchers (HMAC v1, offline lists),
+  users, API clients, templates, the Paid Hotspot API, price tables, terminals, the payment ledger
+  (void, credit, dismiss), click-through.
+- Migrations 048–111 (ranges per branch). `database/schema.ts` and the `.adonisjs` registry regenerated
+  after the last merges.
+
+### Dashboard
+One **Gateway** sidebar entry with a sub-nav: Overview, Configuration, Networks, DHCP, DNS, Firewall,
+Routing, System, Shaping, Guest portal (payments, terminals, price tables under it). App-wide apply
+banner, device cards (network, reservation, Internet access, speed limit). Round-4 polish: the chosen
+segment stands out in light mode, backup notes wrap, the live-rates legend wraps at phone width, the
+terminal reference client scrolls sideways, firewall types reuse the config plane's.
+
+### Charts: the sparse-series class on the gateway pages
+Network history returns every bucket of the window (null = no samples) and draws straight segments over
+the requested window with breaks at gaps; a network rate over a gap of more than 120 s is unknown
+instead of the whole-outage average; live network rates expire after 90 s; a bucket's unmeasured rate is
+null, not a 0 drop; the live QoS chart keys and colours by queue and breaks at report gaps;
+`scopeAtStart` reads the newest change before the window.
+
+### Lab run (integrate-4, lab router on OpenWrt 24.10, lab ISP shaped to 55 Mbit/s + 20 ms)
+| Check | Result |
+|---|---|
+| Pairing over plain HTTP, observe → managed | codes matched on both ends; writable with the paired key |
+| Import (adopt + rename of anonymous sections incl. 7 firewall zones) → in sync | 3 chained applies, 20 s, policy unchanged, reachability matrix green |
+| VLAN network with its own zone (bridge VLAN 130, DHCP, guest defaults) | one apply, 8 s; client got a lease, internet yes, LAN and router HTTP no |
+| Capture switch off for that network | collector stopped capturing it within 13 s (`capture.exclude`) |
+| DHCP option (NTP server + a raw option) | in dnsmasq, client received option 42 |
+| DNS upstream + rebind domain, then removed | both applied (3–8 s); removal left no entry on the router |
+| Static route; route covering the controller | route installed; the covering one refused with `routing_controller_path` |
+| Host name + time zone | zone applied (`PST-8` / `Asia/Manila`); host name blocked by the in-sync check (`system_hostname_not_live`: an unprivileged container cannot set it) |
+| Authoritative Mode, router edit of a DHCP pool | drift after 26 s, reverted as "Perch (system)" 58 s after the edit (30 s delay) |
+| Router-side sqm pause in Authoritative Mode | kept for 71 s (`router_paused`), resume on the router → `router_resumed` |
+| SQM 45/45 Mbit/s on the second WAN | 42.3 down / 41.9 up; RTT under a 4-stream download **20.2 ms** vs **297 ms** (max 537) paused |
+| Guest bucket 8/4 Mbit/s | guest 7.51 / 3.77; LAN client alongside 42.2 / 42.0 |
+| Click-through (30 min, 2/1 Mbit/s, once per 24 h) | granted from headless Chromium, 1.75 / 0.84 Mbit/s, second use refused `clickthrough_used` |
+| Username / password | signed in from Chromium |
+| Voucher with a 20 MB quota, kernel quota | cut at exactly 20,000,000 bytes (up 2,522,649 + down 17,477,351) with SQM stopped |
+| Paid Hotspot: terminal session, 5 + 1 coin (duplicate event refused), guest Done | receipt with reference code; ledger PHP 6, voucher minted with the same code; code redeemed on another device moved the rest (old grant `moved`) |
+| Protected apply that breaks the agent path (route to the controller via a dead next hop) | router rolled back after 300 s (`confirm_timeout`), agent back, draft discarded, in sync |
+
+**Found in the lab, open:**
+- **Portal accounting misses traffic that went through an ifb** (sqm's ingress ifb on a WAN, or
+  perch-qos shaping the device): the `netdev` egress/ingress counters on the guest device saw 1.4 kB of a
+  25 MB download. The nft quota then never cuts, and the portal's usage figures are too low. With perch-qos
+  shaping the device, the QoS quota cut it instead, 30% late (26.0 MB for 20 MB at 42 Mbit/s, one tick).
+  Needs counting that survives a mirred redirect (collector portal follow-up).
+- A portal device with its own QoS entry left the guest bucket (full WAN speed).
+- `managementConfirmTimeoutSeconds` accepts 60–1800 but the router floors protected applies at 300 s.
+- Lab only: the sqm service must be running once for procd's reload trigger to exist.
