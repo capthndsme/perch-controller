@@ -650,13 +650,48 @@ export class DeviceTrafficBucketsHourlySchema extends BaseModel {
   declare updatedAt: DateTime
 }
 
+export class GatewayBackupSchema extends BaseModel {
+  static $columns = ['collectorId', 'content', 'createdAt', 'filename', 'id', 'note', 'redacted', 'redactions', 'release', 'requestedByUserId', 'sha256', 'size'] as const
+  $columns = GatewayBackupSchema.$columns
+  @column()
+  declare collectorId: number
+  @column()
+  declare content: Buffer
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare filename: string | null
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare note: string | null
+  @column()
+  declare redacted: boolean
+  @column()
+  declare redactions: string | null
+  @column()
+  declare release: string | null
+  @column()
+  declare requestedByUserId: number | null
+  @column()
+  declare sha256: string
+  @column()
+  declare size: number
+}
+
 export class GatewayHostSchema extends BaseModel {
-  static $columns = ['collectorId', 'firstSeenAt', 'hostname', 'id', 'ipv4', 'ipv6', 'leaseExpiresAt', 'leaseInfinite', 'mac', 'staticName', 'updatedAt'] as const
+  static $columns = ['collectorId', 'dhcpPresent', 'dhcpSeenAt', 'firstSeenAt', 'hasLease', 'hostname', 'id', 'ipv4', 'ipv6', 'lastReportedAt', 'leaseExpiresAt', 'leaseInfinite', 'mac', 'neighborDevice', 'neighborIpv4', 'neighborIpv6', 'neighborPresent', 'neighborReachable', 'neighborSeenAt', 'network', 'staticName', 'updatedAt'] as const
   $columns = GatewayHostSchema.$columns
   @column()
   declare collectorId: number
+  @column()
+  declare dhcpPresent: boolean
+  @column.dateTime()
+  declare dhcpSeenAt: DateTime | null
   @column.dateTime()
   declare firstSeenAt: DateTime
+  @column()
+  declare hasLease: boolean
   @column()
   declare hostname: string | null
   @column({ isPrimary: true })
@@ -666,11 +701,27 @@ export class GatewayHostSchema extends BaseModel {
   @column()
   declare ipv6: string | null
   @column.dateTime()
+  declare lastReportedAt: DateTime | null
+  @column.dateTime()
   declare leaseExpiresAt: DateTime | null
   @column()
   declare leaseInfinite: boolean
   @column()
   declare mac: string
+  @column()
+  declare neighborDevice: string | null
+  @column()
+  declare neighborIpv4: string | null
+  @column()
+  declare neighborIpv6: string | null
+  @column()
+  declare neighborPresent: boolean
+  @column()
+  declare neighborReachable: boolean
+  @column.dateTime()
+  declare neighborSeenAt: DateTime | null
+  @column()
+  declare network: string | null
   @column()
   declare staticName: string | null
   @column.dateTime({ autoCreate: true, autoUpdate: true })
@@ -692,6 +743,58 @@ export class GatewayObservationSchema extends BaseModel {
   declare observedAt: DateTime
   @column()
   declare payload: string | null
+}
+
+export class GatewayUpnpEventSchema extends BaseModel {
+  static $columns = ['at', 'collectorId', 'description', 'event', 'extPort', 'id', 'intIp', 'intPort', 'mac', 'proto'] as const
+  $columns = GatewayUpnpEventSchema.$columns
+  @column.dateTime()
+  declare at: DateTime
+  @column()
+  declare collectorId: number
+  @column()
+  declare description: string | null
+  @column()
+  declare event: string
+  @column()
+  declare extPort: number
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare intIp: string
+  @column()
+  declare intPort: number
+  @column()
+  declare mac: string | null
+  @column()
+  declare proto: string
+}
+
+export class GatewayUpnpMappingSchema extends BaseModel {
+  static $columns = ['collectorId', 'description', 'expiresAt', 'extPort', 'firstSeenAt', 'id', 'intIp', 'intPort', 'lastSeenAt', 'mac', 'proto'] as const
+  $columns = GatewayUpnpMappingSchema.$columns
+  @column()
+  declare collectorId: number
+  @column()
+  declare description: string | null
+  @column.dateTime()
+  declare expiresAt: DateTime | null
+  @column()
+  declare extPort: number
+  @column.dateTime()
+  declare firstSeenAt: DateTime
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare intIp: string
+  @column()
+  declare intPort: number
+  @column.dateTime()
+  declare lastSeenAt: DateTime
+  @column()
+  declare mac: string | null
+  @column()
+  declare proto: string
 }
 
 export class InfraLinkSchema extends BaseModel {
