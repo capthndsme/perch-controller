@@ -994,3 +994,155 @@ test.group('collectors:merge and :purge | infrastructure nodes', (group) => {
     assert.lengthOf(await db.from('infra_links').select('id'), 1)
   })
 })
+
+/** A managed gateway bound to the collector, with `revisions` config revisions and one section. */
+async function seedGateway(collectorId: number, revisions: number): Promise<number> {
+  const [id] = await db.table('gateways').insert({
+    collector_id: collectorId,
+    mode: 'observe',
+    created_at: NOW_SQL,
+    updated_at: NOW_SQL,
+  })
+  await db.table('gateway_sections').insert({
+    gateway_id: id,
+    perch_id: `s${collectorId}`,
+    config: 'dhcp',
+    section_name: 'lan',
+    section_type: 'dhcp',
+    scope: 'synced',
+    status: 'in_sync',
+    created_at: NOW_SQL,
+  })
+  for (let n = 1; n <= revisions; n++) {
+    await db.table('gateway_revisions').insert({
+      gateway_id: id,
+      number: n,
+      source: 'import',
+      summary: `revision ${n}`,
+      snapshot: '[]',
+      diff: '[]',
+      hashes: '{}',
+      created_at: NOW_SQL,
+    })
+  }
+  return Number(id)
+}
+
+async function gatewayCollector(gatewayId: number): Promise<number | null> {
+  const row = await db.from('gateways').where('id', gatewayId).first()
+  return row.collector_id === null ? null : Number(row.collector_id)
+}
+
+test.group('collectors:merge and :purge | managed gateways', (group) => {
+  group.each.setup(resetDb)
+
+  test('gateways references collectors, is exempt from the history registry', async ({
+    assert,
+  }) => {
+    const referencing = rows<{ t: string }>(
+      await db.rawQuery(
+        `SELECT table_name AS t FROM information_schema.referential_constraints
+          WHERE constraint_schema = DATABASE() AND referenced_table_name = 'collectors'`
+      )
+    ).map((row) => row.t)
+    assert.include(referencing, 'gateways')
+    for (const child of [
+      'gateway_sections',
+      'gateway_secrets',
+      'gateway_applies',
+      'gateway_revisions',
+      'gateway_config_events',
+      'gateway_networks',
+      'gateway_network_samples',
+      'device_network_latest',
+    ]) {
+      assert.notInclude(referencing, child, `${child} hangs off gateways, not collectors`)
+    }
+    assert.notInclude(
+      mergeTables().map((t) => t.table),
+      'gateways'
+    )
+    await assertMergeRegistryMatchesSchema()
+  })
+
+  test("the removed collector's gateway follows the merged collector with its history", async ({
+    assert,
+  }) => {
+    const old = await makeCollector({ name: 'old-box', baseUrl: 'http://192.168.1.10:9800' })
+    const gw = await makeCollector({ name: 'gateway', baseUrl: 'http://192.168.1.1:9800' })
+    for (let i = 0; i < 6; i++) await bucket(old.id, MAC_A, at(10, 0, i * 5), 100)
+    await bucket(gw.id, MAC_A, at(10, 1), 7)
+    const gatewayId = await seedGateway(gw.id, 3)
+
+    const plan = await planCollectorMerge({ fromId: old.id, intoId: gw.id, collectorUrl: null })
+    assert.equal(plan.survivorId, old.id)
+    assert.deepEqual(plan.gateways, {
+      boundGatewayId: gatewayId,
+      movedGatewayId: gatewayId,
+      detachedGatewayId: null,
+      revisions: { [gatewayId]: 3 },
+    })
+
+    const dryRun = await merge([`--from=${old.id}`, `--into=${gw.id}`, '--dry-run'])
+    assert.equal(dryRun.exitCode, 0)
+    assert.equal(await gatewayCollector(gatewayId), gw.id, 'a dry run moves nothing')
+
+    const run = await merge([`--from=${old.id}`, `--into=${gw.id}`, '--grace=0'])
+    assert.equal(run.exitCode, 0)
+    assert.isNull(await Collector.find(gw.id))
+    assert.equal(await gatewayCollector(gatewayId), old.id)
+    assert.lengthOf(await db.from('gateway_revisions').where('gateway_id', gatewayId), 3)
+    assert.lengthOf(await db.from('gateway_sections').where('gateway_id', gatewayId), 1)
+  })
+
+  test('both have a gateway: more revisions stays bound, the other is detached with its history', async ({
+    assert,
+  }) => {
+    const old = await makeCollector({ name: 'old-box', baseUrl: 'http://192.168.1.10:9800' })
+    const gw = await makeCollector({ name: 'gateway', baseUrl: 'http://192.168.1.1:9800' })
+    for (let i = 0; i < 6; i++) await bucket(old.id, MAC_A, at(10, 0, i * 5), 100)
+    await bucket(gw.id, MAC_A, at(10, 1), 7)
+    const oldGateway = await seedGateway(old.id, 5)
+    const newGateway = await seedGateway(gw.id, 2)
+
+    const plan = await planCollectorMerge({ fromId: old.id, intoId: gw.id, collectorUrl: null })
+    assert.deepEqual(plan.gateways, {
+      boundGatewayId: oldGateway,
+      movedGatewayId: null,
+      detachedGatewayId: newGateway,
+      revisions: { [oldGateway]: 5, [newGateway]: 2 },
+    })
+
+    const run = await merge([`--from=${old.id}`, `--into=${gw.id}`, '--grace=0'])
+    assert.equal(run.exitCode, 0)
+    assert.equal(await gatewayCollector(oldGateway), old.id)
+    assert.isNull(await gatewayCollector(newGateway), 'detached')
+    assert.lengthOf(await db.from('gateway_revisions').where('gateway_id', newGateway), 2, 'kept')
+  })
+
+  test("on a tie the target's gateway stays bound", async ({ assert }) => {
+    const old = await makeCollector({ name: 'old-box', baseUrl: 'http://192.168.1.10:9800' })
+    const gw = await makeCollector({ name: 'gateway', baseUrl: 'http://192.168.1.1:9800' })
+    for (let i = 0; i < 6; i++) await bucket(old.id, MAC_A, at(10, 0, i * 5), 100)
+    const oldGateway = await seedGateway(old.id, 1)
+    const newGateway = await seedGateway(gw.id, 1)
+
+    const run = await merge([`--from=${old.id}`, `--into=${gw.id}`, '--grace=0'])
+    assert.equal(run.exitCode, 0)
+    assert.equal(await gatewayCollector(newGateway), old.id, "into's gateway, on the survivor row")
+    assert.isNull(await gatewayCollector(oldGateway))
+  })
+
+  test('collectors:purge detaches the gateway instead of deleting it', async ({ assert }) => {
+    const gw = await makeCollector({ name: 'gateway', baseUrl: 'http://192.168.1.1:9800' })
+    await bucket(gw.id, MAC_A, at(10, 0), 100)
+    const gatewayId = await seedGateway(gw.id, 2)
+    const ace = await app.container.make('ace')
+
+    const run = await ace.exec('collectors:purge', [`--id=${gw.id}`, '--grace=0'])
+    assert.equal(run.exitCode, 0)
+    assert.isNull(await Collector.find(gw.id))
+    assert.isNull(await gatewayCollector(gatewayId))
+    assert.lengthOf(await db.from('gateway_revisions').where('gateway_id', gatewayId), 2)
+  })
+})
