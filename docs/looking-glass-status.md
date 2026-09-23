@@ -2656,3 +2656,16 @@ Found in the lab and fixed:
     Asia/Manila (`PST-8`, no zoneinfo on it). The controller container stays `TZ=UTC` by design (stored times are
     UTC, mysql2 parses in the process zone); its instance `timezone` setting is already Asia/Manila. MariaDB's
     `time_zone` stays UTC.
+
+## 2026-09-23 (UTC): Perch 1.0.0 released
+
+Owner: "authorizing you to create the public 1.0.0 release". Final releases of all three on their `stable` branches,
+GitHub "Latest" (so `releases/latest`, install.sh and the Docker `latest` tag now mean 1.0.0):
+- **perch-apd 1.0.0** (1e4605b) = rc.2 with the version bumped; 19 files (six binaries, install.sh pinned to v1.0.0,
+  .ipk/.apk for five arches, checksums).
+- **perch-collector 1.0.0** (04ab724) = rc.3 with the version bumped; OpenWrt packages, static nDPI build, image.
+- **perch-controller 1.0.0** (14f6667) = rc.3 + the light-mode segmented control fix (cherry-picked from main); pins
+  both daemons at 1.0.0. Checks on stable: typecheck, lint, dashboard build, 568/568 tests.
+Every 1.1 commit was checked for fixes that belong in 1.0; only that UI fix touched 1.0 code. GitHub `main`
+fast-forwarded to each release commit. `stable` merged back into local `main` (1.1.0-pre versions kept, daemon pins
+1.0.0 there too). Live system unchanged (local 1.1.0-pre line).
