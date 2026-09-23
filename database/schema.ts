@@ -8,7 +8,21 @@ import { BaseModel, column } from '@adonisjs/lucid/orm'
 import { DateTime } from 'luxon'
 
 export class ApJoinTokenSchema extends BaseModel {
-  static $columns = ['createdAt', 'createdByUserId', 'expiresAt', 'id', 'label', 'lastUsedAt', 'maxUses', 'revokedAt', 'tokenEncrypted', 'tokenHash', 'tokenPrefix', 'updatedAt', 'useCount'] as const
+  static $columns = [
+    'createdAt',
+    'createdByUserId',
+    'expiresAt',
+    'id',
+    'label',
+    'lastUsedAt',
+    'maxUses',
+    'revokedAt',
+    'tokenEncrypted',
+    'tokenHash',
+    'tokenPrefix',
+    'updatedAt',
+    'useCount',
+  ] as const
   $columns = ApJoinTokenSchema.$columns
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
@@ -39,7 +53,20 @@ export class ApJoinTokenSchema extends BaseModel {
 }
 
 export class ApSystemBuckets5MSchema extends BaseModel {
-  static $columns = ['apId', 'avgLoad1', 'avgLoad15', 'avgLoad5', 'maxConntrackEntries', 'maxConntrackLimit', 'maxMemAvailable', 'maxMemTotal', 'maxUptimeSeconds', 'samples', 'slotStart', 'updatedAt'] as const
+  static $columns = [
+    'apId',
+    'avgLoad1',
+    'avgLoad15',
+    'avgLoad5',
+    'maxConntrackEntries',
+    'maxConntrackLimit',
+    'maxMemAvailable',
+    'maxMemTotal',
+    'maxUptimeSeconds',
+    'samples',
+    'slotStart',
+    'updatedAt',
+  ] as const
   $columns = ApSystemBuckets5MSchema.$columns
   @column({ isPrimary: true })
   declare apId: number
@@ -68,7 +95,18 @@ export class ApSystemBuckets5MSchema extends BaseModel {
 }
 
 export class ApSystemLatestSchema extends BaseModel {
-  static $columns = ['apId', 'conntrackEntries', 'conntrackLimit', 'load1', 'load15', 'load5', 'memAvailable', 'memTotal', 'recordedAt', 'uptimeSeconds'] as const
+  static $columns = [
+    'apId',
+    'conntrackEntries',
+    'conntrackLimit',
+    'load1',
+    'load15',
+    'load5',
+    'memAvailable',
+    'memTotal',
+    'recordedAt',
+    'uptimeSeconds',
+  ] as const
   $columns = ApSystemLatestSchema.$columns
   @column({ isPrimary: true })
   declare apId: number
@@ -93,7 +131,19 @@ export class ApSystemLatestSchema extends BaseModel {
 }
 
 export class ApSystemSnapshotSchema extends BaseModel {
-  static $columns = ['apId', 'conntrackEntries', 'conntrackLimit', 'id', 'load1', 'load15', 'load5', 'memAvailable', 'memTotal', 'recordedAt', 'uptimeSeconds'] as const
+  static $columns = [
+    'apId',
+    'conntrackEntries',
+    'conntrackLimit',
+    'id',
+    'load1',
+    'load15',
+    'load5',
+    'memAvailable',
+    'memTotal',
+    'recordedAt',
+    'uptimeSeconds',
+  ] as const
   $columns = ApSystemSnapshotSchema.$columns
   @column()
   declare apId: number
@@ -120,7 +170,17 @@ export class ApSystemSnapshotSchema extends BaseModel {
 }
 
 export class AsnCacheSchema extends BaseModel {
-  static $columns = ['asn', 'checkedAt', 'createdAt', 'error', 'id', 'ipAddress', 'org', 'prefix', 'updatedAt'] as const
+  static $columns = [
+    'asn',
+    'checkedAt',
+    'createdAt',
+    'error',
+    'id',
+    'ipAddress',
+    'org',
+    'prefix',
+    'updatedAt',
+  ] as const
   $columns = AsnCacheSchema.$columns
   @column()
   declare asn: number | null
@@ -143,7 +203,18 @@ export class AsnCacheSchema extends BaseModel {
 }
 
 export class AuthAccessTokenSchema extends BaseModel {
-  static $columns = ['abilities', 'createdAt', 'expiresAt', 'hash', 'id', 'lastUsedAt', 'name', 'tokenableId', 'type', 'updatedAt'] as const
+  static $columns = [
+    'abilities',
+    'createdAt',
+    'expiresAt',
+    'hash',
+    'id',
+    'lastUsedAt',
+    'name',
+    'tokenableId',
+    'type',
+    'updatedAt',
+  ] as const
   $columns = AuthAccessTokenSchema.$columns
   @column()
   declare abilities: string
@@ -168,7 +239,26 @@ export class AuthAccessTokenSchema extends BaseModel {
 }
 
 export class CollectorSchema extends BaseModel {
-  static $columns = ['announcedBaseUrl', 'apiKeyFingerprint', 'baseUrl', 'captureInterface', 'createdAt', 'enabled', 'hostname', 'id', 'instanceId', 'lastAnnounceAt', 'lastSeenAt', 'lifecycle', 'name', 'pollIntervalSeconds', 'source', 'transport', 'updatedAt', 'version'] as const
+  static $columns = [
+    'announcedBaseUrl',
+    'apiKeyFingerprint',
+    'baseUrl',
+    'captureInterface',
+    'createdAt',
+    'enabled',
+    'hostname',
+    'id',
+    'instanceId',
+    'lastAnnounceAt',
+    'lastSeenAt',
+    'lifecycle',
+    'name',
+    'pollIntervalSeconds',
+    'source',
+    'transport',
+    'updatedAt',
+    'version',
+  ] as const
   $columns = CollectorSchema.$columns
   @column()
   declare announcedBaseUrl: string | null
@@ -209,7 +299,20 @@ export class CollectorSchema extends BaseModel {
 }
 
 export class DeviceDestinationBucketsHourlySchema extends BaseModel {
-  static $columns = ['bytesIn', 'bytesOut', 'category', 'collectorId', 'hourStart', 'mac', 'packetsIn', 'packetsOut', 'peerIp', 'protocol', 'serverName', 'updatedAt'] as const
+  static $columns = [
+    'bytesIn',
+    'bytesOut',
+    'category',
+    'collectorId',
+    'hourStart',
+    'mac',
+    'packetsIn',
+    'packetsOut',
+    'peerIp',
+    'protocol',
+    'serverName',
+    'updatedAt',
+  ] as const
   $columns = DeviceDestinationBucketsHourlySchema.$columns
   @column()
   declare bytesIn: bigint | number
@@ -238,7 +341,17 @@ export class DeviceDestinationBucketsHourlySchema extends BaseModel {
 }
 
 export class DeviceIdentitySchema extends BaseModel {
-  static $columns = ['collectorId', 'createdAt', 'firstSeenAt', 'id', 'ips', 'lastSeenAt', 'mac', 'primaryIp', 'updatedAt'] as const
+  static $columns = [
+    'collectorId',
+    'createdAt',
+    'firstSeenAt',
+    'id',
+    'ips',
+    'lastSeenAt',
+    'mac',
+    'primaryIp',
+    'updatedAt',
+  ] as const
   $columns = DeviceIdentitySchema.$columns
   @column()
   declare collectorId: number
@@ -261,7 +374,18 @@ export class DeviceIdentitySchema extends BaseModel {
 }
 
 export class DeviceLabelSchema extends BaseModel {
-  static $columns = ['connection', 'createdAt', 'deviceType', 'id', 'mac', 'name', 'notes', 'tags', 'updatedAt', 'updatedByUserId'] as const
+  static $columns = [
+    'connection',
+    'createdAt',
+    'deviceType',
+    'id',
+    'mac',
+    'name',
+    'notes',
+    'tags',
+    'updatedAt',
+    'updatedByUserId',
+  ] as const
   $columns = DeviceLabelSchema.$columns
   @column()
   declare connection: string | null
@@ -299,7 +423,16 @@ export class DeviceNetworkLatestSchema extends BaseModel {
 }
 
 export class DevicePeerBucketsHourlySchema extends BaseModel {
-  static $columns = ['bytesIn', 'bytesOut', 'collectorId', 'hourStart', 'mac', 'peerIp', 'scope', 'updatedAt'] as const
+  static $columns = [
+    'bytesIn',
+    'bytesOut',
+    'collectorId',
+    'hourStart',
+    'mac',
+    'peerIp',
+    'scope',
+    'updatedAt',
+  ] as const
   $columns = DevicePeerBucketsHourlySchema.$columns
   @column()
   declare bytesIn: bigint | number
@@ -320,7 +453,19 @@ export class DevicePeerBucketsHourlySchema extends BaseModel {
 }
 
 export class DeviceProtocolBucketSchema extends BaseModel {
-  static $columns = ['bucketStart', 'bytesIn', 'bytesOut', 'collectorId', 'createdAt', 'id', 'mac', 'packetsIn', 'packetsOut', 'protocol', 'updatedAt'] as const
+  static $columns = [
+    'bucketStart',
+    'bytesIn',
+    'bytesOut',
+    'collectorId',
+    'createdAt',
+    'id',
+    'mac',
+    'packetsIn',
+    'packetsOut',
+    'protocol',
+    'updatedAt',
+  ] as const
   $columns = DeviceProtocolBucketSchema.$columns
   @column.dateTime()
   declare bucketStart: DateTime
@@ -347,7 +492,17 @@ export class DeviceProtocolBucketSchema extends BaseModel {
 }
 
 export class DeviceProtocolBuckets5MSchema extends BaseModel {
-  static $columns = ['bytesIn', 'bytesOut', 'collectorId', 'mac', 'packetsIn', 'packetsOut', 'protocol', 'slotStart', 'updatedAt'] as const
+  static $columns = [
+    'bytesIn',
+    'bytesOut',
+    'collectorId',
+    'mac',
+    'packetsIn',
+    'packetsOut',
+    'protocol',
+    'slotStart',
+    'updatedAt',
+  ] as const
   $columns = DeviceProtocolBuckets5MSchema.$columns
   @column()
   declare bytesIn: bigint | number
@@ -370,7 +525,17 @@ export class DeviceProtocolBuckets5MSchema extends BaseModel {
 }
 
 export class DeviceProtocolBucketsDailySchema extends BaseModel {
-  static $columns = ['bytesIn', 'bytesOut', 'collectorId', 'dayStart', 'mac', 'packetsIn', 'packetsOut', 'protocol', 'updatedAt'] as const
+  static $columns = [
+    'bytesIn',
+    'bytesOut',
+    'collectorId',
+    'dayStart',
+    'mac',
+    'packetsIn',
+    'packetsOut',
+    'protocol',
+    'updatedAt',
+  ] as const
   $columns = DeviceProtocolBucketsDailySchema.$columns
   @column()
   declare bytesIn: bigint | number
@@ -393,7 +558,17 @@ export class DeviceProtocolBucketsDailySchema extends BaseModel {
 }
 
 export class DeviceProtocolBucketsHourlySchema extends BaseModel {
-  static $columns = ['bytesIn', 'bytesOut', 'collectorId', 'hourStart', 'mac', 'packetsIn', 'packetsOut', 'protocol', 'updatedAt'] as const
+  static $columns = [
+    'bytesIn',
+    'bytesOut',
+    'collectorId',
+    'hourStart',
+    'mac',
+    'packetsIn',
+    'packetsOut',
+    'protocol',
+    'updatedAt',
+  ] as const
   $columns = DeviceProtocolBucketsHourlySchema.$columns
   @column()
   declare bytesIn: bigint | number
@@ -416,7 +591,18 @@ export class DeviceProtocolBucketsHourlySchema extends BaseModel {
 }
 
 export class DeviceServiceBucketSchema extends BaseModel {
-  static $columns = ['bucketStart', 'bytesReceived', 'bytesServed', 'collectorId', 'mac', 'packetsReceived', 'packetsServed', 'protocol', 'serverName', 'updatedAt'] as const
+  static $columns = [
+    'bucketStart',
+    'bytesReceived',
+    'bytesServed',
+    'collectorId',
+    'mac',
+    'packetsReceived',
+    'packetsServed',
+    'protocol',
+    'serverName',
+    'updatedAt',
+  ] as const
   $columns = DeviceServiceBucketSchema.$columns
   @column.dateTime()
   declare bucketStart: DateTime
@@ -441,7 +627,18 @@ export class DeviceServiceBucketSchema extends BaseModel {
 }
 
 export class DeviceServiceBuckets5MSchema extends BaseModel {
-  static $columns = ['bytesReceived', 'bytesServed', 'collectorId', 'mac', 'packetsReceived', 'packetsServed', 'protocol', 'serverName', 'slotStart', 'updatedAt'] as const
+  static $columns = [
+    'bytesReceived',
+    'bytesServed',
+    'collectorId',
+    'mac',
+    'packetsReceived',
+    'packetsServed',
+    'protocol',
+    'serverName',
+    'slotStart',
+    'updatedAt',
+  ] as const
   $columns = DeviceServiceBuckets5MSchema.$columns
   @column()
   declare bytesReceived: bigint | number
@@ -466,7 +663,18 @@ export class DeviceServiceBuckets5MSchema extends BaseModel {
 }
 
 export class DeviceServiceBucketsHourlySchema extends BaseModel {
-  static $columns = ['bytesReceived', 'bytesServed', 'collectorId', 'hourStart', 'mac', 'packetsReceived', 'packetsServed', 'protocol', 'serverName', 'updatedAt'] as const
+  static $columns = [
+    'bytesReceived',
+    'bytesServed',
+    'collectorId',
+    'hourStart',
+    'mac',
+    'packetsReceived',
+    'packetsServed',
+    'protocol',
+    'serverName',
+    'updatedAt',
+  ] as const
   $columns = DeviceServiceBucketsHourlySchema.$columns
   @column()
   declare bytesReceived: bigint | number
@@ -491,7 +699,16 @@ export class DeviceServiceBucketsHourlySchema extends BaseModel {
 }
 
 export class DeviceTopPeerSchema extends BaseModel {
-  static $columns = ['bytesIn', 'bytesOut', 'collectorId', 'id', 'mac', 'peerIp', 'scope', 'updatedAt'] as const
+  static $columns = [
+    'bytesIn',
+    'bytesOut',
+    'collectorId',
+    'id',
+    'mac',
+    'peerIp',
+    'scope',
+    'updatedAt',
+  ] as const
   $columns = DeviceTopPeerSchema.$columns
   @column()
   declare bytesIn: bigint | number
@@ -512,7 +729,26 @@ export class DeviceTopPeerSchema extends BaseModel {
 }
 
 export class DeviceTrafficBucketSchema extends BaseModel {
-  static $columns = ['bucketStart', 'bytesIn', 'bytesInLan', 'bytesInWan', 'bytesOut', 'bytesOutLan', 'bytesOutWan', 'collectorId', 'createdAt', 'id', 'mac', 'packetsIn', 'packetsInLan', 'packetsInWan', 'packetsOut', 'packetsOutLan', 'packetsOutWan', 'updatedAt'] as const
+  static $columns = [
+    'bucketStart',
+    'bytesIn',
+    'bytesInLan',
+    'bytesInWan',
+    'bytesOut',
+    'bytesOutLan',
+    'bytesOutWan',
+    'collectorId',
+    'createdAt',
+    'id',
+    'mac',
+    'packetsIn',
+    'packetsInLan',
+    'packetsInWan',
+    'packetsOut',
+    'packetsOutLan',
+    'packetsOutWan',
+    'updatedAt',
+  ] as const
   $columns = DeviceTrafficBucketSchema.$columns
   @column.dateTime()
   declare bucketStart: DateTime
@@ -553,7 +789,24 @@ export class DeviceTrafficBucketSchema extends BaseModel {
 }
 
 export class DeviceTrafficBuckets5MSchema extends BaseModel {
-  static $columns = ['bytesIn', 'bytesInLan', 'bytesInWan', 'bytesOut', 'bytesOutLan', 'bytesOutWan', 'collectorId', 'mac', 'packetsIn', 'packetsInLan', 'packetsInWan', 'packetsOut', 'packetsOutLan', 'packetsOutWan', 'slotStart', 'updatedAt'] as const
+  static $columns = [
+    'bytesIn',
+    'bytesInLan',
+    'bytesInWan',
+    'bytesOut',
+    'bytesOutLan',
+    'bytesOutWan',
+    'collectorId',
+    'mac',
+    'packetsIn',
+    'packetsInLan',
+    'packetsInWan',
+    'packetsOut',
+    'packetsOutLan',
+    'packetsOutWan',
+    'slotStart',
+    'updatedAt',
+  ] as const
   $columns = DeviceTrafficBuckets5MSchema.$columns
   @column()
   declare bytesIn: bigint | number
@@ -590,7 +843,24 @@ export class DeviceTrafficBuckets5MSchema extends BaseModel {
 }
 
 export class DeviceTrafficBucketsDailySchema extends BaseModel {
-  static $columns = ['bytesIn', 'bytesInLan', 'bytesInWan', 'bytesOut', 'bytesOutLan', 'bytesOutWan', 'collectorId', 'dayStart', 'mac', 'packetsIn', 'packetsInLan', 'packetsInWan', 'packetsOut', 'packetsOutLan', 'packetsOutWan', 'updatedAt'] as const
+  static $columns = [
+    'bytesIn',
+    'bytesInLan',
+    'bytesInWan',
+    'bytesOut',
+    'bytesOutLan',
+    'bytesOutWan',
+    'collectorId',
+    'dayStart',
+    'mac',
+    'packetsIn',
+    'packetsInLan',
+    'packetsInWan',
+    'packetsOut',
+    'packetsOutLan',
+    'packetsOutWan',
+    'updatedAt',
+  ] as const
   $columns = DeviceTrafficBucketsDailySchema.$columns
   @column()
   declare bytesIn: bigint | number
@@ -627,7 +897,24 @@ export class DeviceTrafficBucketsDailySchema extends BaseModel {
 }
 
 export class DeviceTrafficBucketsHourlySchema extends BaseModel {
-  static $columns = ['bytesIn', 'bytesInLan', 'bytesInWan', 'bytesOut', 'bytesOutLan', 'bytesOutWan', 'collectorId', 'hourStart', 'mac', 'packetsIn', 'packetsInLan', 'packetsInWan', 'packetsOut', 'packetsOutLan', 'packetsOutWan', 'updatedAt'] as const
+  static $columns = [
+    'bytesIn',
+    'bytesInLan',
+    'bytesInWan',
+    'bytesOut',
+    'bytesOutLan',
+    'bytesOutWan',
+    'collectorId',
+    'hourStart',
+    'mac',
+    'packetsIn',
+    'packetsInLan',
+    'packetsInWan',
+    'packetsOut',
+    'packetsOutLan',
+    'packetsOutWan',
+    'updatedAt',
+  ] as const
   $columns = DeviceTrafficBucketsHourlySchema.$columns
   @column()
   declare bytesIn: bigint | number
@@ -664,7 +951,25 @@ export class DeviceTrafficBucketsHourlySchema extends BaseModel {
 }
 
 export class GatewaySchema extends BaseModel {
-  static $columns = ['agentAccess', 'authoritative', 'authoritativeByUserId', 'authoritativeSince', 'capabilitiesAt', 'collectorId', 'createdAt', 'enforcement', 'enforcementChangedAt', 'headRevision', 'id', 'localStateFlushSeconds', 'localStatePath', 'mode', 'observedAt', 'syncState', 'updatedAt'] as const
+  static $columns = [
+    'agentAccess',
+    'authoritative',
+    'authoritativeByUserId',
+    'authoritativeSince',
+    'capabilitiesAt',
+    'collectorId',
+    'createdAt',
+    'enforcement',
+    'enforcementChangedAt',
+    'headRevision',
+    'id',
+    'localStateFlushSeconds',
+    'localStatePath',
+    'mode',
+    'observedAt',
+    'syncState',
+    'updatedAt',
+  ] as const
   $columns = GatewaySchema.$columns
   @column()
   declare agentAccess: string | null
@@ -703,7 +1008,27 @@ export class GatewaySchema extends BaseModel {
 }
 
 export class GatewayApplySchema extends BaseModel {
-  static $columns = ['adminConfirmedAt', 'adminConfirmedBy', 'agentReconnectedAt', 'applyKey', 'confirmMode', 'confirmTimeoutSeconds', 'deadlineAt', 'finishedAt', 'gatewayId', 'id', 'kind', 'note', 'protected', 'queueExpiresAt', 'requestedAt', 'requestedByUserId', 'revisionNumber', 'sentAt', 'state'] as const
+  static $columns = [
+    'adminConfirmedAt',
+    'adminConfirmedBy',
+    'agentReconnectedAt',
+    'applyKey',
+    'confirmMode',
+    'confirmTimeoutSeconds',
+    'deadlineAt',
+    'finishedAt',
+    'gatewayId',
+    'id',
+    'kind',
+    'note',
+    'protected',
+    'queueExpiresAt',
+    'requestedAt',
+    'requestedByUserId',
+    'revisionNumber',
+    'sentAt',
+    'state',
+  ] as const
   $columns = GatewayApplySchema.$columns
   @column.dateTime()
   declare adminConfirmedAt: DateTime | null
@@ -746,7 +1071,15 @@ export class GatewayApplySchema extends BaseModel {
 }
 
 export class GatewayConfigEventSchema extends BaseModel {
-  static $columns = ['applyId', 'createdAt', 'event', 'gatewayId', 'id', 'revisionNumber', 'userId'] as const
+  static $columns = [
+    'applyId',
+    'createdAt',
+    'event',
+    'gatewayId',
+    'id',
+    'revisionNumber',
+    'userId',
+  ] as const
   $columns = GatewayConfigEventSchema.$columns
   @column()
   declare applyId: bigint | number | null
@@ -765,7 +1098,19 @@ export class GatewayConfigEventSchema extends BaseModel {
 }
 
 export class GatewayHostSchema extends BaseModel {
-  static $columns = ['collectorId', 'firstSeenAt', 'hostname', 'id', 'ipv4', 'ipv6', 'leaseExpiresAt', 'leaseInfinite', 'mac', 'staticName', 'updatedAt'] as const
+  static $columns = [
+    'collectorId',
+    'firstSeenAt',
+    'hostname',
+    'id',
+    'ipv4',
+    'ipv6',
+    'leaseExpiresAt',
+    'leaseInfinite',
+    'mac',
+    'staticName',
+    'updatedAt',
+  ] as const
   $columns = GatewayHostSchema.$columns
   @column()
   declare collectorId: number
@@ -792,7 +1137,16 @@ export class GatewayHostSchema extends BaseModel {
 }
 
 export class GatewayNetworkSchema extends BaseModel {
-  static $columns = ['capture', 'createdAt', 'gatewayId', 'id', 'interfacePerchId', 'label', 'purpose', 'updatedAt'] as const
+  static $columns = [
+    'capture',
+    'createdAt',
+    'gatewayId',
+    'id',
+    'interfacePerchId',
+    'label',
+    'purpose',
+    'updatedAt',
+  ] as const
   $columns = GatewayNetworkSchema.$columns
   @column()
   declare capture: boolean
@@ -813,7 +1167,15 @@ export class GatewayNetworkSchema extends BaseModel {
 }
 
 export class GatewayNetworkSampleSchema extends BaseModel {
-  static $columns = ['gatewayId', 'network', 'recordedAt', 'rxBps', 'rxBytes', 'txBps', 'txBytes'] as const
+  static $columns = [
+    'gatewayId',
+    'network',
+    'recordedAt',
+    'rxBps',
+    'rxBytes',
+    'txBps',
+    'txBytes',
+  ] as const
   $columns = GatewayNetworkSampleSchema.$columns
   @column({ isPrimary: true })
   declare gatewayId: number
@@ -832,7 +1194,14 @@ export class GatewayNetworkSampleSchema extends BaseModel {
 }
 
 export class GatewayObservationSchema extends BaseModel {
-  static $columns = ['changedAt', 'collectorId', 'fingerprint', 'kind', 'observedAt', 'payload'] as const
+  static $columns = [
+    'changedAt',
+    'collectorId',
+    'fingerprint',
+    'kind',
+    'observedAt',
+    'payload',
+  ] as const
   $columns = GatewayObservationSchema.$columns
   @column.dateTime()
   declare changedAt: DateTime
@@ -849,7 +1218,18 @@ export class GatewayObservationSchema extends BaseModel {
 }
 
 export class GatewayRevisionSchema extends BaseModel {
-  static $columns = ['applyId', 'authorUserId', 'confirmedAt', 'createdAt', 'gatewayId', 'id', 'note', 'number', 'source', 'summary'] as const
+  static $columns = [
+    'applyId',
+    'authorUserId',
+    'confirmedAt',
+    'createdAt',
+    'gatewayId',
+    'id',
+    'note',
+    'number',
+    'source',
+    'summary',
+  ] as const
   $columns = GatewayRevisionSchema.$columns
   @column()
   declare applyId: bigint | number | null
@@ -891,7 +1271,26 @@ export class GatewaySecretSchema extends BaseModel {
 }
 
 export class GatewaySectionSchema extends BaseModel {
-  static $columns = ['anonymous', 'baseRevision', 'config', 'createdAt', 'domain', 'driftSince', 'gatewayId', 'id', 'issue', 'perchId', 'position', 'routerChangedAt', 'scope', 'sectionName', 'sectionType', 'status', 'updatedAt', 'updatedByUserId'] as const
+  static $columns = [
+    'anonymous',
+    'baseRevision',
+    'config',
+    'createdAt',
+    'domain',
+    'driftSince',
+    'gatewayId',
+    'id',
+    'issue',
+    'perchId',
+    'position',
+    'routerChangedAt',
+    'scope',
+    'sectionName',
+    'sectionType',
+    'status',
+    'updatedAt',
+    'updatedByUserId',
+  ] as const
   $columns = GatewaySectionSchema.$columns
   @column()
   declare anonymous: boolean
@@ -932,7 +1331,16 @@ export class GatewaySectionSchema extends BaseModel {
 }
 
 export class InfraLinkSchema extends BaseModel {
-  static $columns = ['aPortId', 'bPortId', 'createdAt', 'id', 'label', 'medium', 'notes', 'updatedAt'] as const
+  static $columns = [
+    'aPortId',
+    'bPortId',
+    'createdAt',
+    'id',
+    'label',
+    'medium',
+    'notes',
+    'updatedAt',
+  ] as const
   $columns = InfraLinkSchema.$columns
   @column()
   declare aPortId: number
@@ -953,7 +1361,26 @@ export class InfraLinkSchema extends BaseModel {
 }
 
 export class InfraNodeSchema extends BaseModel {
-  static $columns = ['apId', 'collectorId', 'createdAt', 'deviceMac', 'height', 'hidden', 'id', 'kind', 'model', 'name', 'notes', 'origin', 'parentId', 'posX', 'posY', 'updatedAt', 'virtual', 'width'] as const
+  static $columns = [
+    'apId',
+    'collectorId',
+    'createdAt',
+    'deviceMac',
+    'height',
+    'hidden',
+    'id',
+    'kind',
+    'model',
+    'name',
+    'notes',
+    'origin',
+    'parentId',
+    'posX',
+    'posY',
+    'updatedAt',
+    'virtual',
+    'width',
+  ] as const
   $columns = InfraNodeSchema.$columns
   @column()
   declare apId: number | null
@@ -994,7 +1421,33 @@ export class InfraNodeSchema extends BaseModel {
 }
 
 export class InfraPortSchema extends BaseModel {
-  static $columns = ['adminUp', 'carrier', 'carrierChanges', 'createdAt', 'duplex', 'hidden', 'id', 'label', 'mac', 'medium', 'missingSince', 'nodeId', 'operstate', 'origin', 'portKey', 'position', 'present', 'reportedAt', 'reportedLabel', 'reportedMedium', 'reportedRole', 'role', 'speedMbps', 'stateChangedAt', 'updatedAt'] as const
+  static $columns = [
+    'adminUp',
+    'carrier',
+    'carrierChanges',
+    'createdAt',
+    'duplex',
+    'hidden',
+    'id',
+    'label',
+    'mac',
+    'medium',
+    'missingSince',
+    'nodeId',
+    'operstate',
+    'origin',
+    'portKey',
+    'position',
+    'present',
+    'reportedAt',
+    'reportedLabel',
+    'reportedMedium',
+    'reportedRole',
+    'role',
+    'speedMbps',
+    'stateChangedAt',
+    'updatedAt',
+  ] as const
   $columns = InfraPortSchema.$columns
   @column()
   declare adminUp: boolean | null
@@ -1049,7 +1502,21 @@ export class InfraPortSchema extends BaseModel {
 }
 
 export class PortalSchema extends BaseModel {
-  static $columns = ['appliedRevision', 'createdAt', 'deletedAt', 'enforcement', 'gatewayId', 'id', 'instance', 'name', 'networkPerchId', 'privacyNotice', 'revision', 'templateId', 'updatedAt'] as const
+  static $columns = [
+    'appliedRevision',
+    'createdAt',
+    'deletedAt',
+    'enforcement',
+    'gatewayId',
+    'id',
+    'instance',
+    'name',
+    'networkPerchId',
+    'privacyNotice',
+    'revision',
+    'templateId',
+    'updatedAt',
+  ] as const
   $columns = PortalSchema.$columns
   @column()
   declare appliedRevision: number | null
@@ -1080,7 +1547,19 @@ export class PortalSchema extends BaseModel {
 }
 
 export class PortalApiClientSchema extends BaseModel {
-  static $columns = ['createdAt', 'createdByUserId', 'id', 'lastUsedAt', 'maxActiveGrants', 'maxBytesPerCall', 'maxMinutesPerCall', 'name', 'revokedAt', 'tokenPrefix', 'updatedAt'] as const
+  static $columns = [
+    'createdAt',
+    'createdByUserId',
+    'id',
+    'lastUsedAt',
+    'maxActiveGrants',
+    'maxBytesPerCall',
+    'maxMinutesPerCall',
+    'name',
+    'revokedAt',
+    'tokenPrefix',
+    'updatedAt',
+  ] as const
   $columns = PortalApiClientSchema.$columns
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
@@ -1106,6 +1585,57 @@ export class PortalApiClientSchema extends BaseModel {
   declare updatedAt: DateTime | null
 }
 
+export class PortalAuthorizationSchema extends BaseModel {
+  static $columns = [
+    'address',
+    'apiClientId',
+    'bytes',
+    'createdAt',
+    'createdByUserId',
+    'externalRef',
+    'grantId',
+    'id',
+    'mac',
+    'minutes',
+    'outcome',
+    'portalId',
+    'principal',
+    'requestSha',
+    'via',
+  ] as const
+  $columns = PortalAuthorizationSchema.$columns
+  @column()
+  declare address: string | null
+  @column()
+  declare apiClientId: number | null
+  @column()
+  declare bytes: bigint | number | null
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdByUserId: number | null
+  @column()
+  declare externalRef: string | null
+  @column()
+  declare grantId: bigint | number | null
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare mac: string
+  @column()
+  declare minutes: number | null
+  @column()
+  declare outcome: string
+  @column()
+  declare portalId: number
+  @column()
+  declare principal: string
+  @column()
+  declare requestSha: string
+  @column()
+  declare via: string
+}
+
 export class PortalEventSchema extends BaseModel {
   static $columns = ['createdAt', 'gatewayId', 'grantId', 'id', 'mac', 'portalId', 'type'] as const
   $columns = PortalEventSchema.$columns
@@ -1126,7 +1656,16 @@ export class PortalEventSchema extends BaseModel {
 }
 
 export class PortalGatewayStateSchema extends BaseModel {
-  static $columns = ['ackedEventSeq', 'createdAt', 'gatewayId', 'keyEpoch', 'lastReportAt', 'lastSyncAt', 'routerKeyEpoch', 'updatedAt'] as const
+  static $columns = [
+    'ackedEventSeq',
+    'createdAt',
+    'gatewayId',
+    'keyEpoch',
+    'lastReportAt',
+    'lastSyncAt',
+    'routerKeyEpoch',
+    'updatedAt',
+  ] as const
   $columns = PortalGatewayStateSchema.$columns
   @column()
   declare ackedEventSeq: bigint | number
@@ -1147,7 +1686,40 @@ export class PortalGatewayStateSchema extends BaseModel {
 }
 
 export class PortalGrantSchema extends BaseModel {
-  static $columns = ['apiClientId', 'bytesDown', 'bytesUp', 'createdAt', 'createdByUserId', 'delivery', 'downKbps', 'durationMode', 'endReason', 'endedAt', 'expiresAt', 'externalRef', 'groupKey', 'hostname', 'id', 'ip', 'lastSeenAt', 'localRef', 'mac', 'note', 'portalId', 'portalUserId', 'quotaBytes', 'revision', 'source', 'startedAt', 'state', 'timeBudgetSeconds', 'timeUsedSeconds', 'upKbps', 'updatedAt', 'voucherId'] as const
+  static $columns = [
+    'apiClientId',
+    'bytesDown',
+    'bytesUp',
+    'createdAt',
+    'createdByUserId',
+    'delivery',
+    'downKbps',
+    'durationMode',
+    'endReason',
+    'endedAt',
+    'expiresAt',
+    'externalRef',
+    'groupKey',
+    'hostname',
+    'id',
+    'ip',
+    'lastSeenAt',
+    'localRef',
+    'mac',
+    'note',
+    'portalId',
+    'portalUserId',
+    'quotaBytes',
+    'revision',
+    'source',
+    'startedAt',
+    'state',
+    'timeBudgetSeconds',
+    'timeUsedSeconds',
+    'upKbps',
+    'updatedAt',
+    'voucherId',
+  ] as const
   $columns = PortalGrantSchema.$columns
   @column()
   declare apiClientId: number | null
@@ -1215,8 +1787,54 @@ export class PortalGrantSchema extends BaseModel {
   declare voucherId: number | null
 }
 
+export class PortalOutboxSchema extends BaseModel {
+  static $columns = [
+    'attempts',
+    'createdAt',
+    'dedupeKey',
+    'gatewayId',
+    'id',
+    'kind',
+    'lastError',
+    'portalId',
+    'updatedAt',
+  ] as const
+  $columns = PortalOutboxSchema.$columns
+  @column()
+  declare attempts: number
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare dedupeKey: string
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare kind: string
+  @column()
+  declare lastError: string | null
+  @column()
+  declare portalId: number | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
 export class PortalSessionSchema extends BaseModel {
-  static $columns = ['bytesDown', 'bytesUp', 'endReason', 'endedAt', 'grantId', 'id', 'ip', 'mac', 'portalId', 'startBytesDown', 'startBytesUp', 'startedAt'] as const
+  static $columns = [
+    'bytesDown',
+    'bytesUp',
+    'endReason',
+    'endedAt',
+    'grantId',
+    'id',
+    'ip',
+    'mac',
+    'portalId',
+    'startBytesDown',
+    'startBytesUp',
+    'startedAt',
+  ] as const
   $columns = PortalSessionSchema.$columns
   @column()
   declare bytesDown: bigint | number
@@ -1245,7 +1863,16 @@ export class PortalSessionSchema extends BaseModel {
 }
 
 export class PortalTemplateSchema extends BaseModel {
-  static $columns = ['builtin', 'createdAt', 'createdByUserId', 'id', 'name', 'sha256', 'totalBytes', 'updatedAt'] as const
+  static $columns = [
+    'builtin',
+    'createdAt',
+    'createdByUserId',
+    'id',
+    'name',
+    'sha256',
+    'totalBytes',
+    'updatedAt',
+  ] as const
   $columns = PortalTemplateSchema.$columns
   @column()
   declare builtin: boolean
@@ -1266,7 +1893,16 @@ export class PortalTemplateSchema extends BaseModel {
 }
 
 export class PortalTemplateFileSchema extends BaseModel {
-  static $columns = ['bytes', 'contentType', 'createdAt', 'id', 'name', 'sha256', 'templateId', 'updatedAt'] as const
+  static $columns = [
+    'bytes',
+    'contentType',
+    'createdAt',
+    'id',
+    'name',
+    'sha256',
+    'templateId',
+    'updatedAt',
+  ] as const
   $columns = PortalTemplateFileSchema.$columns
   @column()
   declare bytes: number
@@ -1287,7 +1923,20 @@ export class PortalTemplateFileSchema extends BaseModel {
 }
 
 export class PortalUserSchema extends BaseModel {
-  static $columns = ['createdAt', 'displayName', 'downKbps', 'enabled', 'id', 'lastLoginAt', 'maxDevices', 'revision', 'sessionMinutes', 'upKbps', 'updatedAt', 'username'] as const
+  static $columns = [
+    'createdAt',
+    'displayName',
+    'downKbps',
+    'enabled',
+    'id',
+    'lastLoginAt',
+    'maxDevices',
+    'revision',
+    'sessionMinutes',
+    'upKbps',
+    'updatedAt',
+    'username',
+  ] as const
   $columns = PortalUserSchema.$columns
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
@@ -1327,7 +1976,20 @@ export class ProtocolCategorySchema extends BaseModel {
 }
 
 export class RouterSampleSchema extends BaseModel {
-  static $columns = ['conntrackEntries', 'conntrackLimit', 'load1', 'memAvailable', 'memTotal', 'recordedAt', 'scrapeMs', 'tcpEstablished', 'wanRxBps', 'wanRxBytes', 'wanTxBps', 'wanTxBytes'] as const
+  static $columns = [
+    'conntrackEntries',
+    'conntrackLimit',
+    'load1',
+    'memAvailable',
+    'memTotal',
+    'recordedAt',
+    'scrapeMs',
+    'tcpEstablished',
+    'wanRxBps',
+    'wanRxBytes',
+    'wanTxBps',
+    'wanTxBytes',
+  ] as const
   $columns = RouterSampleSchema.$columns
   @column()
   declare conntrackEntries: number | null
@@ -1365,7 +2027,16 @@ export class SystemSettingSchema extends BaseModel {
 }
 
 export class UserSchema extends BaseModel {
-  static $columns = ['createdAt', 'email', 'fullName', 'id', 'mustChangePassword', 'password', 'role', 'updatedAt'] as const
+  static $columns = [
+    'createdAt',
+    'email',
+    'fullName',
+    'id',
+    'mustChangePassword',
+    'password',
+    'role',
+    'updatedAt',
+  ] as const
   $columns = UserSchema.$columns
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
@@ -1386,7 +2057,22 @@ export class UserSchema extends BaseModel {
 }
 
 export class VoucherSchema extends BaseModel {
-  static $columns = ['batchId', 'boundPortalId', 'bytesUsed', 'createdAt', 'exhaustedAt', 'expiresAt', 'firstUsedAt', 'hint', 'id', 'revision', 'revokedAt', 'startsAt', 'timeUsedSeconds', 'updatedAt'] as const
+  static $columns = [
+    'batchId',
+    'boundPortalId',
+    'bytesUsed',
+    'createdAt',
+    'exhaustedAt',
+    'expiresAt',
+    'firstUsedAt',
+    'hint',
+    'id',
+    'revision',
+    'revokedAt',
+    'startsAt',
+    'timeUsedSeconds',
+    'updatedAt',
+  ] as const
   $columns = VoucherSchema.$columns
   @column()
   declare batchId: number
@@ -1419,7 +2105,26 @@ export class VoucherSchema extends BaseModel {
 }
 
 export class VoucherBatchSchema extends BaseModel {
-  static $columns = ['codeLength', 'count', 'createdAt', 'createdByUserId', 'downKbps', 'durationMinutes', 'durationMode', 'id', 'maxDevices', 'name', 'note', 'portalId', 'quotaBytes', 'redeemBy', 'revokedAt', 'startMode', 'upKbps', 'updatedAt'] as const
+  static $columns = [
+    'codeLength',
+    'count',
+    'createdAt',
+    'createdByUserId',
+    'downKbps',
+    'durationMinutes',
+    'durationMode',
+    'id',
+    'maxDevices',
+    'name',
+    'note',
+    'portalId',
+    'quotaBytes',
+    'redeemBy',
+    'revokedAt',
+    'startMode',
+    'upKbps',
+    'updatedAt',
+  ] as const
   $columns = VoucherBatchSchema.$columns
   @column()
   declare codeLength: number
@@ -1460,7 +2165,36 @@ export class VoucherBatchSchema extends BaseModel {
 }
 
 export class WifiAccessPointSchema extends BaseModel {
-  static $columns = ['agentConnectedAt', 'agentDisconnectedAt', 'agentId', 'agentInfo', 'agentJoinedAt', 'agentLastAddress', 'agentSecretHash', 'agentVersion', 'createdAt', 'enableTwoWayCommands', 'enabled', 'friendlyName', 'id', 'joinTokenId', 'lastSeenAt', 'lastStatus', 'metricsUrl', 'model', 'name', 'nodename', 'openwrtRelease', 'pollIntervalSeconds', 'sshHost', 'sshPort', 'sshPrivateKey', 'sshUsername', 'transport', 'updatedAt'] as const
+  static $columns = [
+    'agentConnectedAt',
+    'agentDisconnectedAt',
+    'agentId',
+    'agentInfo',
+    'agentJoinedAt',
+    'agentLastAddress',
+    'agentSecretHash',
+    'agentVersion',
+    'createdAt',
+    'enableTwoWayCommands',
+    'enabled',
+    'friendlyName',
+    'id',
+    'joinTokenId',
+    'lastSeenAt',
+    'lastStatus',
+    'metricsUrl',
+    'model',
+    'name',
+    'nodename',
+    'openwrtRelease',
+    'pollIntervalSeconds',
+    'sshHost',
+    'sshPort',
+    'sshPrivateKey',
+    'sshUsername',
+    'transport',
+    'updatedAt',
+  ] as const
   $columns = WifiAccessPointSchema.$columns
   @column.dateTime()
   declare agentConnectedAt: DateTime | null
@@ -1521,7 +2255,14 @@ export class WifiAccessPointSchema extends BaseModel {
 }
 
 export class WifiClientDistributionSchema extends BaseModel {
-  static $columns = ['apId', 'band', 'clientCount', 'grainSeconds', 'slotStart', 'updatedAt'] as const
+  static $columns = [
+    'apId',
+    'band',
+    'clientCount',
+    'grainSeconds',
+    'slotStart',
+    'updatedAt',
+  ] as const
   $columns = WifiClientDistributionSchema.$columns
   @column()
   declare apId: number
@@ -1551,7 +2292,18 @@ export class WifiClientTotalSchema extends BaseModel {
 }
 
 export class WifiCommandAuditSchema extends BaseModel {
-  static $columns = ['apId', 'command', 'executedAt', 'executedByUserId', 'id', 'mac', 'params', 'status', 'stderr', 'stdout'] as const
+  static $columns = [
+    'apId',
+    'command',
+    'executedAt',
+    'executedByUserId',
+    'id',
+    'mac',
+    'params',
+    'status',
+    'stderr',
+    'stdout',
+  ] as const
   $columns = WifiCommandAuditSchema.$columns
   @column()
   declare apId: number
@@ -1576,7 +2328,25 @@ export class WifiCommandAuditSchema extends BaseModel {
 }
 
 export class WifiInterfaceBucketSchema extends BaseModel {
-  static $columns = ['apId', 'band', 'bucketStart', 'bytesIn', 'bytesOut', 'createdAt', 'dropsIn', 'dropsOut', 'errsIn', 'errsOut', 'id', 'ifname', 'packetsIn', 'packetsOut', 'radio', 'ssid', 'updatedAt'] as const
+  static $columns = [
+    'apId',
+    'band',
+    'bucketStart',
+    'bytesIn',
+    'bytesOut',
+    'createdAt',
+    'dropsIn',
+    'dropsOut',
+    'errsIn',
+    'errsOut',
+    'id',
+    'ifname',
+    'packetsIn',
+    'packetsOut',
+    'radio',
+    'ssid',
+    'updatedAt',
+  ] as const
   $columns = WifiInterfaceBucketSchema.$columns
   @column()
   declare apId: number
@@ -1615,7 +2385,23 @@ export class WifiInterfaceBucketSchema extends BaseModel {
 }
 
 export class WifiInterfaceBuckets5MSchema extends BaseModel {
-  static $columns = ['apId', 'band', 'bytesIn', 'bytesOut', 'dropsIn', 'dropsOut', 'errsIn', 'errsOut', 'ifname', 'packetsIn', 'packetsOut', 'radio', 'slotStart', 'ssid', 'updatedAt'] as const
+  static $columns = [
+    'apId',
+    'band',
+    'bytesIn',
+    'bytesOut',
+    'dropsIn',
+    'dropsOut',
+    'errsIn',
+    'errsOut',
+    'ifname',
+    'packetsIn',
+    'packetsOut',
+    'radio',
+    'slotStart',
+    'ssid',
+    'updatedAt',
+  ] as const
   $columns = WifiInterfaceBuckets5MSchema.$columns
   @column({ isPrimary: true })
   declare apId: number
@@ -1650,7 +2436,23 @@ export class WifiInterfaceBuckets5MSchema extends BaseModel {
 }
 
 export class WifiInterfaceBucketsDailySchema extends BaseModel {
-  static $columns = ['apId', 'band', 'bytesIn', 'bytesOut', 'dayStart', 'dropsIn', 'dropsOut', 'errsIn', 'errsOut', 'ifname', 'packetsIn', 'packetsOut', 'radio', 'ssid', 'updatedAt'] as const
+  static $columns = [
+    'apId',
+    'band',
+    'bytesIn',
+    'bytesOut',
+    'dayStart',
+    'dropsIn',
+    'dropsOut',
+    'errsIn',
+    'errsOut',
+    'ifname',
+    'packetsIn',
+    'packetsOut',
+    'radio',
+    'ssid',
+    'updatedAt',
+  ] as const
   $columns = WifiInterfaceBucketsDailySchema.$columns
   @column({ isPrimary: true })
   declare apId: number
@@ -1685,7 +2487,23 @@ export class WifiInterfaceBucketsDailySchema extends BaseModel {
 }
 
 export class WifiInterfaceBucketsHourlySchema extends BaseModel {
-  static $columns = ['apId', 'band', 'bytesIn', 'bytesOut', 'dropsIn', 'dropsOut', 'errsIn', 'errsOut', 'hourStart', 'ifname', 'packetsIn', 'packetsOut', 'radio', 'ssid', 'updatedAt'] as const
+  static $columns = [
+    'apId',
+    'band',
+    'bytesIn',
+    'bytesOut',
+    'dropsIn',
+    'dropsOut',
+    'errsIn',
+    'errsOut',
+    'hourStart',
+    'ifname',
+    'packetsIn',
+    'packetsOut',
+    'radio',
+    'ssid',
+    'updatedAt',
+  ] as const
   $columns = WifiInterfaceBucketsHourlySchema.$columns
   @column({ isPrimary: true })
   declare apId: number
@@ -1720,7 +2538,19 @@ export class WifiInterfaceBucketsHourlySchema extends BaseModel {
 }
 
 export class WifiNetworkBuckets5MSchema extends BaseModel {
-  static $columns = ['apId', 'avgNoiseDbm', 'avgQuality', 'avgSignalDbm', 'band', 'ifname', 'maxBitrateKbps', 'samples', 'slotStart', 'ssid', 'updatedAt'] as const
+  static $columns = [
+    'apId',
+    'avgNoiseDbm',
+    'avgQuality',
+    'avgSignalDbm',
+    'band',
+    'ifname',
+    'maxBitrateKbps',
+    'samples',
+    'slotStart',
+    'ssid',
+    'updatedAt',
+  ] as const
   $columns = WifiNetworkBuckets5MSchema.$columns
   @column({ isPrimary: true })
   declare apId: number
@@ -1747,7 +2577,21 @@ export class WifiNetworkBuckets5MSchema extends BaseModel {
 }
 
 export class WifiNetworkLatestSchema extends BaseModel {
-  static $columns = ['apId', 'band', 'bitrateKbps', 'bssid', 'channel', 'frequencyMhz', 'ifname', 'noiseDbm', 'quality', 'radio', 'recordedAt', 'signalDbm', 'ssid'] as const
+  static $columns = [
+    'apId',
+    'band',
+    'bitrateKbps',
+    'bssid',
+    'channel',
+    'frequencyMhz',
+    'ifname',
+    'noiseDbm',
+    'quality',
+    'radio',
+    'recordedAt',
+    'signalDbm',
+    'ssid',
+  ] as const
   $columns = WifiNetworkLatestSchema.$columns
   @column({ isPrimary: true })
   declare apId: number
@@ -1778,7 +2622,22 @@ export class WifiNetworkLatestSchema extends BaseModel {
 }
 
 export class WifiNetworkSnapshotSchema extends BaseModel {
-  static $columns = ['apId', 'band', 'bitrateKbps', 'bssid', 'channel', 'frequencyMhz', 'id', 'ifname', 'noiseDbm', 'quality', 'radio', 'recordedAt', 'signalDbm', 'ssid'] as const
+  static $columns = [
+    'apId',
+    'band',
+    'bitrateKbps',
+    'bssid',
+    'channel',
+    'frequencyMhz',
+    'id',
+    'ifname',
+    'noiseDbm',
+    'quality',
+    'radio',
+    'recordedAt',
+    'signalDbm',
+    'ssid',
+  ] as const
   $columns = WifiNetworkSnapshotSchema.$columns
   @column()
   declare apId: number
@@ -1811,7 +2670,20 @@ export class WifiNetworkSnapshotSchema extends BaseModel {
 }
 
 export class WifiRoamingEventSchema extends BaseModel {
-  static $columns = ['detectedAt', 'eventType', 'fromApId', 'fromBand', 'fromIfname', 'fromSsid', 'id', 'mac', 'toApId', 'toBand', 'toIfname', 'toSsid'] as const
+  static $columns = [
+    'detectedAt',
+    'eventType',
+    'fromApId',
+    'fromBand',
+    'fromIfname',
+    'fromSsid',
+    'id',
+    'mac',
+    'toApId',
+    'toBand',
+    'toIfname',
+    'toSsid',
+  ] as const
   $columns = WifiRoamingEventSchema.$columns
   @column.dateTime()
   declare detectedAt: DateTime
@@ -1840,7 +2712,23 @@ export class WifiRoamingEventSchema extends BaseModel {
 }
 
 export class WifiStationBuckets5MSchema extends BaseModel {
-  static $columns = ['activeSamples', 'apId', 'avgSignalDbm', 'avgSnrDb', 'band', 'ifname', 'mac', 'maxRxRateKbps', 'maxSignalDbm', 'maxTxRateKbps', 'minSignalDbm', 'samples', 'slotStart', 'ssid', 'updatedAt'] as const
+  static $columns = [
+    'activeSamples',
+    'apId',
+    'avgSignalDbm',
+    'avgSnrDb',
+    'band',
+    'ifname',
+    'mac',
+    'maxRxRateKbps',
+    'maxSignalDbm',
+    'maxTxRateKbps',
+    'minSignalDbm',
+    'samples',
+    'slotStart',
+    'ssid',
+    'updatedAt',
+  ] as const
   $columns = WifiStationBuckets5MSchema.$columns
   @column()
   declare activeSamples: number
@@ -1875,7 +2763,27 @@ export class WifiStationBuckets5MSchema extends BaseModel {
 }
 
 export class WifiStationLatestSchema extends BaseModel {
-  static $columns = ['apId', 'band', 'channel', 'expectedThroughputKbps', 'frequencyMhz', 'ifname', 'inactiveMs', 'mac', 'radio', 'recordedAt', 'rxBytes', 'rxPackets', 'rxRateKbps', 'signalDbm', 'snrDb', 'ssid', 'txBytes', 'txPackets', 'txRateKbps'] as const
+  static $columns = [
+    'apId',
+    'band',
+    'channel',
+    'expectedThroughputKbps',
+    'frequencyMhz',
+    'ifname',
+    'inactiveMs',
+    'mac',
+    'radio',
+    'recordedAt',
+    'rxBytes',
+    'rxPackets',
+    'rxRateKbps',
+    'signalDbm',
+    'snrDb',
+    'ssid',
+    'txBytes',
+    'txPackets',
+    'txRateKbps',
+  ] as const
   $columns = WifiStationLatestSchema.$columns
   @column()
   declare apId: number
@@ -1918,7 +2826,28 @@ export class WifiStationLatestSchema extends BaseModel {
 }
 
 export class WifiStationSnapshotSchema extends BaseModel {
-  static $columns = ['apId', 'band', 'channel', 'expectedThroughputKbps', 'frequencyMhz', 'id', 'ifname', 'inactiveMs', 'mac', 'radio', 'recordedAt', 'rxBytes', 'rxPackets', 'rxRateKbps', 'signalDbm', 'snrDb', 'ssid', 'txBytes', 'txPackets', 'txRateKbps'] as const
+  static $columns = [
+    'apId',
+    'band',
+    'channel',
+    'expectedThroughputKbps',
+    'frequencyMhz',
+    'id',
+    'ifname',
+    'inactiveMs',
+    'mac',
+    'radio',
+    'recordedAt',
+    'rxBytes',
+    'rxPackets',
+    'rxRateKbps',
+    'signalDbm',
+    'snrDb',
+    'ssid',
+    'txBytes',
+    'txPackets',
+    'txRateKbps',
+  ] as const
   $columns = WifiStationSnapshotSchema.$columns
   @column()
   declare apId: number

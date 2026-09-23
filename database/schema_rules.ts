@@ -69,5 +69,9 @@ export default {
     portal_events: {
       skipColumns: ['detail'],
     },
+    // REST layer (migration 076): the outbox's grant id list.
+    portal_outbox: {
+      skipColumns: ['grant_ids'],
+    },
   },
 } satisfies SchemaRules
