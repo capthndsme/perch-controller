@@ -7,14 +7,17 @@ import type {
   ChartSettingsView,
   HostnameEnrichmentSettings,
   HostnameEnrichmentSources,
+  GatewayObservationSettings,
+  GatewayObservationSettingsView,
+  PresenceSettings,
   PresenceSettingsView,
-  PresenceThresholds,
 } from '@/types/settings'
 
 export const hostnameEnrichmentSettingsQueryKey = ['settings', 'hostname-enrichment'] as const
 export const hostnameEnrichmentSourcesQueryKey = ['settings', 'hostname-enrichment', 'sources'] as const
 export const presenceSettingsQueryKey = ['settings', 'presence'] as const
 export const chartSettingsQueryKey = ['settings', 'charts'] as const
+export const gatewayObservationSettingsQueryKey = ['settings', 'gateway-observations'] as const
 
 export function useHostnameEnrichmentSettings(options?: { enabled?: boolean }) {
   return useQuery({
@@ -63,7 +66,7 @@ export function useUpdatePresenceSettings() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (payload: Partial<PresenceThresholds>) =>
+    mutationFn: (payload: Partial<PresenceSettings>) =>
       apiFetch<PresenceSettingsView>('/api/v1/settings/presence', {
         method: 'PATCH',
         body: JSON.stringify(payload),
@@ -100,6 +103,30 @@ export function useUpdateChartSettings() {
       // The floor and cap decide the bucket width of every per-name series.
       queryClient.invalidateQueries({ queryKey: ['services'] })
       queryClient.invalidateQueries({ queryKey: ['destinations'] })
+    },
+  })
+}
+
+/** Settings → Gateway observation: retention of what no report lists any more, backups kept. */
+export function useGatewayObservationSettings() {
+  return useQuery({
+    queryKey: gatewayObservationSettingsQueryKey,
+    queryFn: () => apiFetch<GatewayObservationSettingsView>('/api/v1/settings/gateway-observations'),
+  })
+}
+
+/** Fields left out of the payload keep their stored value. Applies from the next daily run. */
+export function useUpdateGatewayObservationSettings() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (payload: Partial<GatewayObservationSettings>) =>
+      apiFetch<GatewayObservationSettingsView>('/api/v1/settings/gateway-observations', {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(gatewayObservationSettingsQueryKey, data)
     },
   })
 }
