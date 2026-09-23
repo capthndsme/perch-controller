@@ -1162,19 +1162,7 @@ export class InfraPortSchema extends BaseModel {
 }
 
 export class PortalSchema extends BaseModel {
-  static $columns = [
-    'appliedRevision',
-    'createdAt',
-    'deletedAt',
-    'gatewayId',
-    'id',
-    'name',
-    'networkPerchId',
-    'privacyNotice',
-    'revision',
-    'templateId',
-    'updatedAt',
-  ] as const
+  static $columns = ['appliedRevision', 'createdAt', 'deletedAt', 'gatewayId', 'id', 'name', 'networkPerchId', 'privacyNotice', 'revision', 'templateId', 'updatedAt'] as const
   $columns = PortalSchema.$columns
   @column()
   declare appliedRevision: number | null
@@ -1282,23 +1270,7 @@ export class PortalEventSchema extends BaseModel {
 }
 
 export class PortalGatewayStateSchema extends BaseModel {
-  static $columns = [
-    'ackedEventSeq',
-    'capabilitiesAt',
-    'configRevision',
-    'configuredAt',
-    'createdAt',
-    'deliveryError',
-    'deliveryFailedAt',
-    'deliveryFailures',
-    'gatewayId',
-    'keyEpoch',
-    'lastReportAt',
-    'lastSyncAt',
-    'routerConfigRevision',
-    'routerKeyEpoch',
-    'updatedAt',
-  ] as const
+  static $columns = ['ackedEventSeq', 'capabilitiesAt', 'configRevision', 'configuredAt', 'createdAt', 'deliveryError', 'deliveryFailedAt', 'deliveryFailures', 'gatewayId', 'keyEpoch', 'lastReportAt', 'lastSyncAt', 'routerConfigRevision', 'routerKeyEpoch', 'updatedAt'] as const
   $columns = PortalGatewayStateSchema.$columns
   @column()
   declare ackedEventSeq: bigint | number
