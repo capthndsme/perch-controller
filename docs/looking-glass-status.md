@@ -2626,3 +2626,8 @@ Found in the lab and fixed:
   controller's copy has 82 sections synced, 19 unmodeled (WAN-side interfaces, WireGuard, four port forwards the
   model finds ambiguous, firewall defaults, odhcpd, one static host), no conflicts; `lan` is the management
   network. Managed mode waits for the owner's password in the dashboard.
+- **Managed** (21:08 UTC, the owner in the dashboard): nothing written to the router (the ledger file comes with the
+  first confirmed apply). Found at once: the QoS sweep asked the gateway for `qos.devices.set` every 30 s although
+  perch-qos is not installed there ("method not found" logged on the router each time). **Controller 1.1.0-pre.2**
+  (controller only): a "method not found" is remembered for that collector session and asked again only after a
+  reconnect (installing perch-qos restarts the collector). Test: once per session, not per sweep. Suite 1317/1317.

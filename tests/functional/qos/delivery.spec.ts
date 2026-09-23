@@ -343,4 +343,48 @@ test.group('qos | device-set delivery (fake agent on the hub)', (group) => {
     await flushQosSync()
     assert.isTrue(plane.accepted[plane.accepted.length - 1].overrideRouterPause)
   })
+
+  test('a collector without the shaper is asked once per session, not by every sweep', async ({
+    client,
+    assert,
+  }) => {
+    const { adminToken, operatorToken } = await setup()
+    await post(client, adminToken, 'assignments', {
+      target: { type: 'device', mac: MAC1 },
+      rate: { downloadKbit: 5000, uploadKbit: null },
+    })
+    await flushQosSync()
+
+    // perch-qos not installed: the collector has no qos.* methods.
+    let agent = await FakeCollector.connect({ handlers: {} })
+    await agent.hello()
+    try {
+      await agent.waitFor('qos.devices.set')
+      await flushQosSync()
+      await sweepQosSync()
+      await flushQosSync()
+      await sweepQosSync()
+      await flushQosSync()
+      assert.lengthOf(sets(agent), 1)
+      assert.containsSubset(await overview(client, operatorToken), {
+        agentSupportsQos: false,
+        devices: { state: 'failed', error: 'qos_unsupported' },
+      })
+    } finally {
+      await agent.close()
+    }
+
+    // A new session (perch-qos may have been installed meanwhile): asked again, once.
+    agent = await FakeCollector.connect({ handlers: {} })
+    await agent.hello()
+    try {
+      await agent.waitFor('qos.devices.set')
+      await flushQosSync()
+      await sweepQosSync()
+      await flushQosSync()
+      assert.lengthOf(sets(agent), 1)
+    } finally {
+      await agent.close()
+    }
+  })
 })

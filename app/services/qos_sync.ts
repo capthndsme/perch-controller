@@ -284,9 +284,13 @@ async function runDevices(gatewayId: number): Promise<void> {
     set({ state: 'offline', error: null })
     return
   }
+  const session = sessionKey(collectorId)
+  // A collector without the shaper (perch-qos not installed) answered
+  // "method not found" on this session: it stays so until it reconnects
+  // (installing perch-qos restarts it), so the sweep does not ask again.
+  if (state.devices.error === 'qos_unsupported' && state.devices.session === session) return
   const plan = planQos(await loadPlanInput(gatewayId))
   const fingerprint = plan.fingerprints.devices
-  const session = sessionKey(collectorId)
   if (
     !state.forceDevices &&
     state.devices.state === 'in_sync' &&
@@ -335,7 +339,11 @@ async function runDevices(gatewayId: number): Promise<void> {
           : error.code === RPC_ERRORS.METHOD_NOT_FOUND
             ? 'qos_unsupported'
             : error.message.slice(0, 200)
-      set({ state: code === 'qos_not_active' ? 'queued' : 'failed', error: code })
+      set({
+        state: code === 'qos_not_active' ? 'queued' : 'failed',
+        error: code,
+        ...(code === 'qos_unsupported' ? { session } : {}),
+      })
     } else {
       throw error
     }
