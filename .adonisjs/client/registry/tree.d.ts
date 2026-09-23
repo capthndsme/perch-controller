@@ -219,6 +219,29 @@ export interface ApiDefinition {
     sessions: {
       index: typeof routes['portal.sessions.index']
     }
+    priceTables: {
+      index: typeof routes['portal.priceTables.index']
+      show: typeof routes['portal.priceTables.show']
+      quote: typeof routes['portal.priceTables.quote']
+      store: typeof routes['portal.priceTables.store']
+      update: typeof routes['portal.priceTables.update']
+      destroy: typeof routes['portal.priceTables.destroy']
+    }
+    terminals: {
+      index: typeof routes['portal.terminals.index']
+      show: typeof routes['portal.terminals.show']
+      store: typeof routes['portal.terminals.store']
+      update: typeof routes['portal.terminals.update']
+      rotate: typeof routes['portal.terminals.rotate']
+      destroy: typeof routes['portal.terminals.destroy']
+    }
+    checkouts: {
+      index: typeof routes['portal.checkouts.index']
+      show: typeof routes['portal.checkouts.show']
+      void: typeof routes['portal.checkouts.void']
+      credit: typeof routes['portal.checkouts.credit']
+      dismiss: typeof routes['portal.checkouts.dismiss']
+    }
     gateways: {
       rotateKey: typeof routes['portal.gateways.rotateKey']
     }

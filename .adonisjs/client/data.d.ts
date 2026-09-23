@@ -9,6 +9,7 @@ import type CollectorSummaryTransformer from '#transformers/collector_summary_tr
 import type CollectorTransformer from '#transformers/collector_transformer'
 import type DeviceSummaryTransformer from '#transformers/device_summary_transformer'
 import type GatewayTransformer from '#transformers/gateway_transformer'
+import type HotspotTransformer from '#transformers/hotspot'
 import type PortalTransformer from '#transformers/portal'
 import type QosViewTransformer from '#transformers/qos_view_transformer'
 import type QosWanQueueTransformer from '#transformers/qos_wan_queue_transformer'
@@ -31,6 +32,10 @@ export namespace Data {
   export type Gateway = InferData<GatewayTransformer>
   export namespace Gateway {
     export type Variants = InferVariants<GatewayTransformer>
+  }
+  export type Hotspot = InferData<HotspotTransformer>
+  export namespace Hotspot {
+    export type Variants = InferVariants<HotspotTransformer>
   }
   export type Portal = InferData<PortalTransformer>
   export namespace Portal {

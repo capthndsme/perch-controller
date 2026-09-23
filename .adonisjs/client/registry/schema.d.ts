@@ -1723,6 +1723,90 @@ export interface Registry {
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/portal_grants_controller').default['sessions']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
+  'portal.priceTables.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/portal/price-tables'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['priceTables']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['priceTables']>>>
+    }
+  }
+  'portal.priceTables.show': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/portal/price-tables/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['priceTable']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['priceTable']>>>
+    }
+  }
+  'portal.priceTables.quote': {
+    methods: ["POST"]
+    pattern: '/api/v1/portal/price-tables/:id/quote'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/portal').quoteValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/portal').quoteValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['quote']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['quote']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'portal.terminals.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/portal/terminals'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/portal').terminalListQueryValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['terminals']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['terminals']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'portal.terminals.show': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/portal/terminals/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['terminal']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['terminal']>>>
+    }
+  }
+  'portal.checkouts.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/portal/checkouts'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/portal').checkoutListQueryValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['checkouts']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['checkouts']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'portal.checkouts.show': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/portal/checkouts/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['checkout']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['checkout']>>>
+    }
+  }
   'portal.portals.store': {
     methods: ["POST"]
     pattern: '/api/v1/portal/portals'
@@ -2141,6 +2225,126 @@ export interface Registry {
       query: {}
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/portal_api_clients_controller').default['destroy']>>>
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/portal_api_clients_controller').default['destroy']>>>
+    }
+  }
+  'portal.priceTables.store': {
+    methods: ["POST"]
+    pattern: '/api/v1/portal/price-tables'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/portal').createPriceTableValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/portal').createPriceTableValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['storePriceTable']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['storePriceTable']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'portal.priceTables.update': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/portal/price-tables/:id'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/portal').updatePriceTableValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/portal').updatePriceTableValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['updatePriceTable']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['updatePriceTable']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'portal.priceTables.destroy': {
+    methods: ["DELETE"]
+    pattern: '/api/v1/portal/price-tables/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['destroyPriceTable']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['destroyPriceTable']>>>
+    }
+  }
+  'portal.terminals.store': {
+    methods: ["POST"]
+    pattern: '/api/v1/portal/terminals'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/portal').createTerminalValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/portal').createTerminalValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['storeTerminal']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['storeTerminal']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'portal.terminals.update': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/portal/terminals/:id'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/portal').updateTerminalValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/portal').updateTerminalValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['updateTerminal']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['updateTerminal']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'portal.terminals.rotate': {
+    methods: ["POST"]
+    pattern: '/api/v1/portal/terminals/:id/rotate'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['rotateTerminal']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['rotateTerminal']>>>
+    }
+  }
+  'portal.terminals.destroy': {
+    methods: ["DELETE"]
+    pattern: '/api/v1/portal/terminals/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['destroyTerminal']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['destroyTerminal']>>>
+    }
+  }
+  'portal.checkouts.void': {
+    methods: ["POST"]
+    pattern: '/api/v1/portal/checkouts/:id/void'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/portal').voidCheckoutValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/portal').voidCheckoutValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['void']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['void']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'portal.checkouts.credit': {
+    methods: ["POST"]
+    pattern: '/api/v1/portal/checkouts/:id/credit'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/portal').creditCheckoutValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/portal').creditCheckoutValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['credit']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['credit']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'portal.checkouts.dismiss': {
+    methods: ["POST"]
+    pattern: '/api/v1/portal/checkouts/:id/dismiss'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/portal').dismissCheckoutValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/portal').dismissCheckoutValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['dismiss']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['dismiss']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'qos.overview': {

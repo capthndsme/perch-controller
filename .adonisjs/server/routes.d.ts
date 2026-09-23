@@ -147,6 +147,13 @@ export type ScannedRoutes = {
     'portal.portals.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.grants.index': { paramsTuple?: []; params?: {} }
     'portal.sessions.index': { paramsTuple?: []; params?: {} }
+    'portal.priceTables.index': { paramsTuple?: []; params?: {} }
+    'portal.priceTables.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.priceTables.quote': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.terminals.index': { paramsTuple?: []; params?: {} }
+    'portal.terminals.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.checkouts.index': { paramsTuple?: []; params?: {} }
+    'portal.checkouts.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.portals.store': { paramsTuple?: []; params?: {} }
     'portal.portals.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.portals.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
@@ -182,6 +189,16 @@ export type ScannedRoutes = {
     'portal.apiClients.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.apiClients.rotate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.apiClients.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.priceTables.store': { paramsTuple?: []; params?: {} }
+    'portal.priceTables.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.priceTables.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.terminals.store': { paramsTuple?: []; params?: {} }
+    'portal.terminals.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.terminals.rotate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.terminals.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.checkouts.void': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.checkouts.credit': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.checkouts.dismiss': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'qos.overview': { paramsTuple?: []; params?: {} }
     'qos.devices.index': { paramsTuple?: []; params?: {} }
     'qos.wanQueues.index': { paramsTuple?: []; params?: {} }
@@ -356,6 +373,12 @@ export type ScannedRoutes = {
     'portal.portals.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.grants.index': { paramsTuple?: []; params?: {} }
     'portal.sessions.index': { paramsTuple?: []; params?: {} }
+    'portal.priceTables.index': { paramsTuple?: []; params?: {} }
+    'portal.priceTables.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.terminals.index': { paramsTuple?: []; params?: {} }
+    'portal.terminals.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.checkouts.index': { paramsTuple?: []; params?: {} }
+    'portal.checkouts.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.templates.index': { paramsTuple?: []; params?: {} }
     'portal.templates.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.templates.preview': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
@@ -476,6 +499,12 @@ export type ScannedRoutes = {
     'portal.portals.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.grants.index': { paramsTuple?: []; params?: {} }
     'portal.sessions.index': { paramsTuple?: []; params?: {} }
+    'portal.priceTables.index': { paramsTuple?: []; params?: {} }
+    'portal.priceTables.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.terminals.index': { paramsTuple?: []; params?: {} }
+    'portal.terminals.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.checkouts.index': { paramsTuple?: []; params?: {} }
+    'portal.checkouts.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.templates.index': { paramsTuple?: []; params?: {} }
     'portal.templates.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.templates.preview': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
@@ -551,6 +580,7 @@ export type ScannedRoutes = {
     'gatewayObservations.gateway_observations.observe': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
     'gatewayObservations.gateway_observations.create_backup': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
     'portal.authorizations.store': { paramsTuple?: []; params?: {} }
+    'portal.priceTables.quote': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.portals.store': { paramsTuple?: []; params?: {} }
     'portal.gateways.rotateKey': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
     'portal.grants.extend': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
@@ -564,6 +594,12 @@ export type ScannedRoutes = {
     'portal.users.store': { paramsTuple?: []; params?: {} }
     'portal.apiClients.store': { paramsTuple?: []; params?: {} }
     'portal.apiClients.rotate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.priceTables.store': { paramsTuple?: []; params?: {} }
+    'portal.terminals.store': { paramsTuple?: []; params?: {} }
+    'portal.terminals.rotate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.checkouts.void': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.checkouts.credit': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.checkouts.dismiss': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'qos.wanQueues.store': { paramsTuple?: []; params?: {} }
     'qos.policies.store': { paramsTuple?: []; params?: {} }
     'qos.groups.store': { paramsTuple?: []; params?: {} }
@@ -614,6 +650,8 @@ export type ScannedRoutes = {
     'portal.templates.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.users.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.apiClients.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.priceTables.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.terminals.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'qos.wanQueues.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'qos.policies.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'qos.groups.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
@@ -662,6 +700,8 @@ export type ScannedRoutes = {
     'portal.voucherBatches.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.users.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.apiClients.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.priceTables.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.terminals.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'qos.wanQueues.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'qos.policies.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'qos.groups.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
