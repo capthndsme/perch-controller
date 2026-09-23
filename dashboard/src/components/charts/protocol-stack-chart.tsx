@@ -11,68 +11,69 @@ import {
 import { ZoomableAreaChart } from '@/components/charts/zoomable-area-chart'
 import { formatBytes, formatMbps } from '@/lib/format-bytes'
 import { downsampleTimeSeries } from '@/lib/traffic'
+import type { ProtocolStackPoint, ProtocolStackSeries } from '@/lib/protocols'
 import {
-  buildProtocolChartConfig,
-  formatProtocolLabel,
-  type ProtocolStackPoint,
-} from '@/lib/protocols'
-import {
+  chartTimeDomain,
   formatAxisTick,
   formatTooltipTimestamp,
+  type ChartRange,
   type TimeWindow,
 } from '@/lib/time-window'
 
 type ProtocolStackChartProps = {
   data: ProtocolStackPoint[]
-  protocols: string[]
+  /**
+   * The stacked series, bottom first, each with its chart key, label and
+   * colour (`ProtocolsSection` keeps colours and order stable per key).
+   */
+  series: ProtocolStackSeries[]
   className?: string
   onZoom?: (window: TimeWindow) => void
   onResetZoom?: () => void
   canResetZoom?: boolean
   /** LTTB point budget for wide windows; see BandwidthChart. */
   maxPoints?: number
-  /**
-   * Label + colour per series key. Defaults to the protocol table; pass
-   * `buildCategoryChartConfig` when the keys are nDPI categories.
-   */
-  config?: ChartConfig
+  /** The window the API read: the x-axis spans it even where it was quiet. */
+  range?: ChartRange
 }
 
+/**
+ * Stacked protocol (or category) rates. Every point carries every series
+ * (zero-filled in `protocolTimeSeriesToChartPoints`), segments are straight
+ * between buckets, and the axis spans the requested window.
+ */
 export function ProtocolStackChart({
   data,
-  protocols,
+  series,
   className,
   onZoom,
   onResetZoom,
   canResetZoom,
   maxPoints = 2000,
-  config,
+  range,
 }: ProtocolStackChartProps) {
-  const chartConfig = useMemo(() => config ?? buildProtocolChartConfig(protocols), [config, protocols])
-  const labelFor = (key: string) => String(chartConfig[key]?.label ?? formatProtocolLabel(key))
+  const chartConfig = useMemo(() => {
+    const config: ChartConfig = {}
+    for (const s of series) config[s.key] = { label: s.label, color: s.color }
+    return config
+  }, [series])
+  const labelFor = (key: string) => String(chartConfig[key]?.label ?? key)
 
   // Downsample by total stacked magnitude so the busiest moments survive.
   const points = useMemo(
     () =>
       downsampleTimeSeries(data, maxPoints, (p) =>
-        protocols.reduce((sum, key) => sum + (Number((p as Record<string, number>)[key]) || 0), 0),
+        series.reduce((sum, s) => sum + (Number((p as Record<string, number>)[s.key]) || 0), 0),
       ),
-    [data, maxPoints, protocols],
+    [data, maxPoints, series],
   )
 
-  const { domain, spanSeconds } = useMemo(() => {
-    if (points.length === 0) {
-      return {
-        domain: ['auto', 'auto'] as [number | string, number | string],
-        spanSeconds: 0,
-      }
-    }
-    const min = points[0].ts
-    const max = points[points.length - 1].ts
-    return { domain: [min, max] as [number, number], spanSeconds: (max - min) / 1000 }
-  }, [points])
+  const { domain, spanSeconds } = useMemo(
+    () => chartTimeDomain(points, range),
+    [points, range?.from, range?.to], // eslint-disable-line react-hooks/exhaustive-deps
+  )
 
-  if (points.length === 0 || protocols.length === 0) {
+  if (points.length === 0 || series.length === 0) {
     return null
   }
 
@@ -143,18 +144,18 @@ export function ProtocolStackChart({
                   }}
                   formatter={(value, name, item) => {
                     const payload = item.payload as ProtocolStackPoint
-                    const protocol = String(name)
-                    const bytes = payload.bytesByProtocol[protocol] ?? 0
+                    const key = String(name)
+                    const bytes = payload.bytesByProtocol[key] ?? 0
                     return (
                       <div className="flex w-full items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
                           <span
                             aria-hidden
                             className="size-2.5 shrink-0 rounded-[2px]"
-                            style={{ backgroundColor: `var(--color-${protocol})` }}
+                            style={{ backgroundColor: `var(--color-${key})` }}
                           />
                           <span className="text-muted-foreground">
-                            {labelFor(protocol)}
+                            {labelFor(key)}
                           </span>
                         </div>
                         <span className="font-mono text-foreground">
@@ -175,16 +176,16 @@ export function ProtocolStackChart({
               content={<ChartLegendContent nameKey="dataKey" />}
               formatter={(value) => labelFor(String(value))}
             />
-            {protocols.map((protocol) => (
+            {series.map((s) => (
               <Area
-                key={protocol}
+                key={s.key}
                 isAnimationActive={false}
-                dataKey={protocol}
-                type="monotone"
+                dataKey={s.key}
+                type="linear"
                 stackId="protocols"
-                fill={`var(--color-${protocol})`}
+                fill={`var(--color-${s.key})`}
                 fillOpacity={0.65}
-                stroke={`var(--color-${protocol})`}
+                stroke={`var(--color-${s.key})`}
                 strokeWidth={1}
               />
             ))}

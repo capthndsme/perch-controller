@@ -348,3 +348,27 @@ export function absoluteWindow(fromMs: number, toMs: number): TimeWindow {
     to: new Date(toSec).toISOString(),
   }
 }
+
+/** The window a series response says it read (`from` / `to`, UTC ISO). */
+export type ChartRange = { from?: string | null; to?: string | null }
+
+/**
+ * X-axis domain of a time chart: the window the API read, so a quiet start
+ * or end of the window stays on the axis instead of the axis shrinking to
+ * the first and last point. Falls back to the data's extent when the
+ * response names no window.
+ */
+export function chartTimeDomain(
+  points: ReadonlyArray<{ ts: number }>,
+  range?: ChartRange,
+): { domain: [number, number] | ['auto', 'auto']; spanSeconds: number } {
+  const from = range?.from ? Date.parse(range.from) : Number.NaN
+  const to = range?.to ? Date.parse(range.to) : Number.NaN
+  if (Number.isFinite(from) && Number.isFinite(to) && to > from) {
+    return { domain: [from, to], spanSeconds: (to - from) / 1000 }
+  }
+  if (points.length === 0) return { domain: ['auto', 'auto'], spanSeconds: 0 }
+  const min = points[0].ts
+  const max = points[points.length - 1].ts
+  return { domain: [min, max], spanSeconds: (max - min) / 1000 }
+}

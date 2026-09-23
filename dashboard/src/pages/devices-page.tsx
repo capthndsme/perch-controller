@@ -24,10 +24,13 @@ import {
   deviceTypeMeta,
 } from '@/lib/device-labels'
 import { formatBytes, formatMbps } from '@/lib/format-bytes'
+import { useStableSeriesOrder, useStableSeriesSlots } from '@/lib/series-colors'
 import { connectionLabel } from '@/lib/presence'
 import {
   RATE_DIRECTION_OPTIONS,
   RATE_MODE_OPTIONS,
+  seriesSlotColor,
+  topTrafficSeriesKey,
   topTrafficToRateData,
   type RateChartDirection,
   type RateChartMode,
@@ -124,9 +127,23 @@ export function DevicesPage() {
     by: rankFor(topDirection),
     refreshInterval,
   })
-  const topRate = useMemo(
-    () => (topTraffic.data ? topTrafficToRateData(topTraffic.data) : { series: [], points: [] }),
+  // Colour and stacking order follow the device, not its rank: a swap
+  // between refreshes neither repaints nor restacks the chart.
+  const topKeys = useMemo(
+    () => (topTraffic.data?.devices ?? []).map((device) => topTrafficSeriesKey(device.mac)),
     [topTraffic.data],
+  )
+  const topSlots = useStableSeriesSlots(topKeys)
+  const topOrder = useStableSeriesOrder(topKeys)
+  const topRate = useMemo(
+    () =>
+      topTraffic.data
+        ? topTrafficToRateData(topTraffic.data, {
+            colorFor: (key) => seriesSlotColor(topSlots.get(key) ?? 0),
+            order: topOrder,
+          })
+        : { series: [], points: [] },
+    [topTraffic.data, topSlots, topOrder],
   )
 
   const [query, setQuery] = useState('')
@@ -321,6 +338,7 @@ export function DevicesPage() {
           <SeriesRateChart
             series={topRate.series}
             data={topRate.points}
+            range={topTraffic.data}
             mode={topMode}
             direction={topDirection}
             className="h-[300px] w-full"

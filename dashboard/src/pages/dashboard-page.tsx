@@ -160,16 +160,25 @@ export function DashboardPage() {
     if (!compareEnabled) return 0
     if (compareMode === 'day') return 86_400_000
     if (compareMode === 'week') return 604_800_000
-    return chartData[chartData.length - 1].ts - chartData[0].ts
-  }, [compareMode, compareEnabled, chartData])
+    // The window before this one: its span in whole buckets, so the two
+    // series share a bucket grid and line up point for point.
+    const bucketMs = (traffic.data?.bucketSeconds ?? 0) * 1000
+    const spanMs =
+      traffic.data?.from && traffic.data?.to
+        ? Date.parse(traffic.data.to) - Date.parse(traffic.data.from)
+        : chartData[chartData.length - 1].ts - chartData[0].ts
+    return bucketMs > 0 ? Math.max(1, Math.round(spanMs / bucketMs)) * bucketMs : spanMs
+  }, [compareMode, compareEnabled, chartData, traffic.data])
   const compareWindow = useMemo<TimeWindow | null>(() => {
     if (!compareEnabled || offsetMs <= 0) return null
+    const fromMs = traffic.data?.from ? Date.parse(traffic.data.from) : chartData[0].ts
+    const toMs = traffic.data?.to ? Date.parse(traffic.data.to) : chartData[chartData.length - 1].ts
     return {
       kind: 'absolute',
-      from: new Date(chartData[0].ts - offsetMs).toISOString(),
-      to: new Date(chartData[chartData.length - 1].ts - offsetMs).toISOString(),
+      from: new Date(fromMs - offsetMs).toISOString(),
+      to: new Date(toMs - offsetMs).toISOString(),
     }
-  }, [compareEnabled, offsetMs, chartData])
+  }, [compareEnabled, offsetMs, chartData, traffic.data])
   const compareTraffic = useAggregateTraffic({
     window: compareWindow ?? DEFAULT_AGGREGATE_WINDOW,
     resolution,
@@ -366,6 +375,7 @@ export function DashboardPage() {
             <>
               <BandwidthChart
                 data={chartDataWithCompare}
+                range={traffic.data}
                 showOverlay={isOverlay}
                 showComparison={showComparison}
                 className="h-[300px] w-full"

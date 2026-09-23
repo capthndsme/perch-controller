@@ -21,7 +21,13 @@ import {
   type RateSeries,
 } from '@/lib/rate-series'
 import { downsampleTimeSeries } from '@/lib/traffic'
-import { formatAxisTick, formatTooltipTimestamp, type TimeWindow } from '@/lib/time-window'
+import {
+  chartTimeDomain,
+  formatAxisTick,
+  formatTooltipTimestamp,
+  type ChartRange,
+  type TimeWindow,
+} from '@/lib/time-window'
 import { cn } from '@/lib/utils'
 
 type SeriesRateChartProps = {
@@ -36,6 +42,8 @@ type SeriesRateChartProps = {
   /** LTTB point budget for wide windows; see BandwidthChart. */
   maxPoints?: number
   emptyMessage?: string
+  /** The window the API read: the x-axis spans it even where it was quiet. */
+  range?: ChartRange
 }
 
 /**
@@ -43,7 +51,9 @@ type SeriesRateChartProps = {
  * axis. `lines` draws one line per entity (solid ↓, dashed ↑); `stacked`
  * stacks the entities so the outline is the total, and with `both`
  * mirrors upload below the axis UniFi-style so the two stacks never
- * overlap. Drag to zoom like the other time charts.
+ * overlap. Drag to zoom like the other time charts. Straight segments
+ * between buckets (a smoothed curve overshoots and invents values between
+ * sums), and the axis spans the requested window (`range`).
  */
 export function SeriesRateChart({
   series,
@@ -56,6 +66,7 @@ export function SeriesRateChart({
   canResetZoom,
   maxPoints = 2000,
   emptyMessage = 'No data for this range.',
+  range,
 }: SeriesRateChartProps) {
   const showDown = direction !== 'up'
   const showUp = direction !== 'down'
@@ -97,14 +108,10 @@ export function SeriesRateChart({
     return config
   }, [series])
 
-  const { domain, spanSeconds } = useMemo(() => {
-    if (points.length === 0) {
-      return { domain: ['auto', 'auto'] as [number | string, number | string], spanSeconds: 0 }
-    }
-    const min = points[0].ts
-    const max = points[points.length - 1].ts
-    return { domain: [min, max] as [number, number], spanSeconds: (max - min) / 1000 }
-  }, [points])
+  const { domain, spanSeconds } = useMemo(
+    () => chartTimeDomain(points, range),
+    [points, range?.from, range?.to], // eslint-disable-line react-hooks/exhaustive-deps
+  )
 
   if (points.length === 0 || series.length === 0) {
     return (
@@ -183,7 +190,7 @@ export function SeriesRateChart({
                       key={downKey(s.key)}
                       isAnimationActive={false}
                       dataKey={downKey(s.key)}
-                      type="monotone"
+                      type="linear"
                       stroke={s.color}
                       strokeWidth={1.75}
                       dot={false}
@@ -195,7 +202,7 @@ export function SeriesRateChart({
                       key={upKey(s.key)}
                       isAnimationActive={false}
                       dataKey={upKey(s.key)}
-                      type="monotone"
+                      type="linear"
                       stroke={s.color}
                       strokeWidth={1.5}
                       strokeDasharray={direction === 'both' ? '5 3' : undefined}
@@ -223,7 +230,7 @@ export function SeriesRateChart({
                       key={downKey(s.key)}
                       isAnimationActive={false}
                       dataKey={downKey(s.key)}
-                      type="monotone"
+                      type="linear"
                       stackId="down"
                       fill={s.color}
                       fillOpacity={0.45}
@@ -236,7 +243,7 @@ export function SeriesRateChart({
                       key={upKey(s.key)}
                       isAnimationActive={false}
                       dataKey={upKey(s.key)}
-                      type="monotone"
+                      type="linear"
                       stackId="up"
                       fill={s.color}
                       fillOpacity={mirrored ? 0.3 : 0.45}

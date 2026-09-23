@@ -128,6 +128,17 @@ export function categoryLabel(category: string | null | undefined): string {
   )
 }
 
+/** A category's own colour slot, if it has one. */
+export function categoryPinnedSlot(category: string): number | undefined {
+  return PINNED_SLOTS[category]
+}
+
+/** Colours that are not series slots: flagged categories and `other`. */
+export function categoryFixedColor(category: string): string | undefined {
+  if (category === OTHER_CATEGORY) return 'var(--series-other)'
+  return FLAGGED[category]
+}
+
 export function categoryColor(category: string | null | undefined): string {
   const slug = category || OTHER_CATEGORY
   if (slug === OTHER_CATEGORY) return 'var(--series-other)'

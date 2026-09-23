@@ -301,6 +301,7 @@ export function DevicePage() {
           ) : (
             <BandwidthChart
               data={chartData}
+              range={overview.data?.traffic}
               showOverlay={isOverlay}
               showWifiOverlay={hasWifiOverlay && showWifiPhyOverlay}
               className="h-[300px] w-full"

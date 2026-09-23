@@ -7,16 +7,24 @@ import {
 import { Button } from '@/components/ui/button'
 import { PanelOverlay } from '@/components/ui/panel-overlay'
 import {
-  buildCategoryChartConfig,
   categoryColor,
+  categoryFixedColor,
   categoryLabel,
+  categoryPinnedSlot,
   foldTimeSeriesByCategory,
   groupProtocolsByCategory,
 } from '@/lib/categories'
 import {
   chartProtocolsFromBreakdown,
+  formatProtocolLabel,
+  protocolChartKey,
+  protocolColor,
+  protocolPinnedSlot,
   protocolTimeSeriesToChartPoints,
+  type ProtocolStackSeries,
 } from '@/lib/protocols'
+import { SERIES_SLOT_COLORS } from '@/lib/rate-series'
+import { useStableSeriesOrder, useStableSeriesSlots } from '@/lib/series-colors'
 import type { TimeWindow } from '@/lib/time-window'
 import type { ProtocolsResponse } from '@/types/api'
 
@@ -82,20 +90,56 @@ export function ProtocolsSection({
     [breakdown, compact],
   )
 
+  // The named series (the rest is `other`): colours by key, distinct among
+  // what is on screen, pinned ones first (HTTPS stays blue), and a stable
+  // stacking order, so neither a refresh nor a rank swap repaints the chart.
+  const named = useMemo(() => chartKeys.filter((name) => name !== 'other'), [chartKeys])
+  const scope = byCategory ? 'category' : 'protocol'
+  const slots = useStableSeriesSlots(
+    named,
+    byCategory ? categoryPinnedSlot : protocolPinnedSlot,
+    scope,
+  )
+  const order = useStableSeriesOrder(named, scope)
+  const colorOf = useMemo(() => {
+    return (name: string): string => {
+      const fixed = byCategory ? categoryFixedColor(name) : name === 'other' ? 'var(--series-other)' : undefined
+      if (fixed) return fixed
+      const slot = slots.get(name)
+      if (slot !== undefined) return SERIES_SLOT_COLORS[slot]
+      return byCategory ? categoryColor(name) : protocolColor(name)
+    }
+  }, [slots, byCategory])
+
+  const stackSeries = useMemo<ProtocolStackSeries[]>(() => {
+    const label = byCategory ? categoryLabel : formatProtocolLabel
+    const list = order.map((name) => ({
+      key: protocolChartKey(name),
+      name,
+      label: label(name),
+      color: colorOf(name),
+    }))
+    if (chartKeys.includes('other')) {
+      list.push({
+        key: protocolChartKey('other'),
+        name: 'other',
+        label: 'Other',
+        color: 'var(--series-other)',
+      })
+    }
+    return list
+  }, [order, chartKeys, colorOf, byCategory])
+
   const chartData = useMemo(() => {
     if (!data?.timeSeries.length || chartKeys.length === 0) return []
     const series = byCategory ? foldTimeSeriesByCategory(data.timeSeries, data.protocols) : data.timeSeries
     return protocolTimeSeriesToChartPoints(
       series,
-      chartKeys.filter((name) => name !== 'other'),
+      named,
       data.resolutionSeconds,
+      chartKeys.includes('other'),
     )
-  }, [data, chartKeys, byCategory])
-
-  const chartConfig = useMemo(
-    () => (byCategory ? buildCategoryChartConfig(chartKeys) : undefined),
-    [byCategory, chartKeys],
-  )
+  }, [data, chartKeys, named, byCategory])
 
   return (
     <section className="relative space-y-4 rounded-lg border border-border bg-card p-4">
@@ -133,8 +177,8 @@ export function ProtocolsSection({
       {!compact && chartData.length > 0 ? (
         <ProtocolStackChart
           data={chartData}
-          protocols={chartKeys}
-          config={chartConfig}
+          series={stackSeries}
+          range={data}
           className="h-[260px] w-full"
           onZoom={onZoom}
           onResetZoom={onResetZoom}
@@ -151,7 +195,7 @@ export function ProtocolsSection({
         topDevices={byCategory ? undefined : topDevices}
         keyHeading={byCategory ? 'Category' : 'Protocol'}
         labelFor={byCategory ? categoryLabel : undefined}
-        colorFor={byCategory ? categoryColor : undefined}
+        colorFor={byCategory ? colorOf : undefined}
       />
       <PanelOverlay show={isPlaceholderData} label="Updating…" />
     </section>

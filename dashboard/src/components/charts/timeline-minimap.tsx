@@ -118,7 +118,7 @@ export function TimelineMinimap({ data, window, onSelect, className }: TimelineM
           <Area
             isAnimationActive={false}
             dataKey="total"
-            type="monotone"
+            type="linear"
             fill="var(--color-total)"
             fillOpacity={0.18}
             stroke="var(--color-total)"
