@@ -108,15 +108,20 @@ async function seedHotspot(client: Client) {
 
 /** Reads the router's report for a sync (portal.event → schedule). */
 async function syncNow(router: FakePortalRouter) {
-  const before = router.calls('portal.sync').length
+  const syncs = router.calls('portal.sync').length
+  const authorizes = router.calls('portal.authorize').length
+  const vouchers = router.calls('portal.vouchers').length
   router.collector.notifyServer('portal.event', { type: 'poke', seq: 0, at: 0, mac: '' })
+  // The sync, its full authorize and the offline list after it.
   await eventually(
-    () => router.calls('portal.authorize').length > 0 && router.calls('portal.sync').length,
-    (n) => Number(n) > before,
+    () =>
+      router.calls('portal.sync').length > syncs &&
+      router.calls('portal.authorize').length > authorizes &&
+      router.calls('portal.vouchers').length > vouchers,
+    (done) => done,
     5000
   )
-  // The authorize and vouchers of that sync.
-  await new Promise((r) => setTimeout(r, 150))
+  await new Promise((r) => setTimeout(r, 50))
 }
 
 test.group('portal | paid hotspot', (group) => {
