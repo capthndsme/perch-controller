@@ -297,20 +297,41 @@ const SHAPER_FEATURES = [
   'matchall',
 ] as const
 
-/** Sums the measured rates of a policy's bucket class (`b:<id>`), per direction. */
-function bucketLive(live: QosLiveEntry | null, policyId: number) {
+/**
+ * Sums the measured rates of a policy's bucket class (`b:<id>`), per
+ * direction. `present`: the router reports the class at all. A direction
+ * with a class but no measured rate (first report, a gap over the rate
+ * window) is null = unknown, never 0 (a false drop on the chart).
+ */
+export function bucketLive(live: QosLiveEntry | null, policyId: number) {
   const report = live?.report
   if (!report) return null
   let down: number | null = null
   let up: number | null = null
+  let present = false
   for (const c of report.classes) {
     if (c.key !== `b:${policyId}`) continue
+    present = true
     const rate = live!.classRates.get(classRateKey(c.id, c.dir))?.kbit ?? null
     if (rate === null) continue
     if (c.dir === 'down') down = (down ?? 0) + rate
     else up = (up ?? 0) + rate
   }
-  return { down, up }
+  return { down, up, present }
+}
+
+/**
+ * A policy's `live` block: the bucket's rates while the router reports its
+ * class (unknown directions null), 0 when the report has no such class (the
+ * bucket is not built: nothing flows through it), null without a report.
+ */
+export function policyLive(
+  rates: ReturnType<typeof bucketLive>,
+  activeMembers: number
+): { downloadKbit: number | null; uploadKbit: number | null; activeMembers: number } | null {
+  if (rates === null) return null
+  if (rates.present) return { downloadKbit: rates.down, uploadKbit: rates.up, activeMembers }
+  return { downloadKbit: 0, uploadKbit: 0, activeMembers }
 }
 
 /** The package's state from its config plane apply. */
@@ -420,15 +441,7 @@ export async function qosOverview(ref: GatewayRef) {
     const members = [...shaping.values()].filter(
       (s) => s.policy?.id === policy.id && s.state === 'enforced'
     ).length
-    return {
-      ...policy,
-      live:
-        rates && (rates.down !== null || rates.up !== null)
-          ? { downloadKbit: rates.down ?? 0, uploadKbit: rates.up ?? 0, activeMembers: members }
-          : report
-            ? { downloadKbit: 0, uploadKbit: 0, activeMembers: members }
-            : null,
-    }
+    return { ...policy, live: policyLive(rates, members) }
   })
 
   const errors: Array<{ code: string; message: string; mac?: string; device?: string }> = []

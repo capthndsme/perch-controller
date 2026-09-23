@@ -31,13 +31,19 @@ type Row = { ts: number; downloadMbps: number | null; uploadMbps: number | null 
  */
 export function NetworkHistoryChart({
   points,
+  from,
+  to,
   scopeChanges,
   className,
   onZoom,
   onResetZoom,
   canResetZoom,
 }: {
+  /** Every bucket of the window (the server fills empty ones with null). */
   points: NetworkHistoryPoint[]
+  /** The requested window (the response's `from` / `to`): the x-axis spans it, not the data. */
+  from?: string | null
+  to?: string | null
   scopeChanges: NetworkScopeMark[]
   className?: string
   onZoom?: (window: TimeWindow) => void
@@ -59,7 +65,9 @@ export function NetworkHistoryChart({
   )
   const spanSeconds = data.length > 1 ? (data[data.length - 1].ts - data[0].ts) / 1000 : 0
 
-  if (data.length === 0) {
+  const hasValues = data.some((row) => row.downloadMbps !== null || row.uploadMbps !== null)
+
+  if (!hasValues) {
     return (
       <div
         className={cn(
@@ -72,9 +80,11 @@ export function NetworkHistoryChart({
     )
   }
 
+  const fromTs = from ? Date.parse(from) : Number.NaN
+  const toTs = to ? Date.parse(to) : Number.NaN
   const domain: [number, number] = [
-    Math.min(data[0].ts, ...marks.map((m) => m.ts)),
-    Math.max(data[data.length - 1].ts, ...marks.map((m) => m.ts)),
+    Number.isFinite(fromTs) ? fromTs : Math.min(data[0].ts, ...marks.map((m) => m.ts)),
+    Number.isFinite(toTs) ? toTs : Math.max(data[data.length - 1].ts, ...marks.map((m) => m.ts)),
   ]
 
   return (
@@ -129,7 +139,7 @@ export function NetworkHistoryChart({
             <Area
               isAnimationActive={false}
               dataKey="downloadMbps"
-              type="monotone"
+              type="linear"
               stroke="var(--color-downloadMbps)"
               fill="var(--color-downloadMbps)"
               fillOpacity={0.18}
@@ -139,7 +149,7 @@ export function NetworkHistoryChart({
             <Area
               isAnimationActive={false}
               dataKey="uploadMbps"
-              type="monotone"
+              type="linear"
               stroke="var(--color-uploadMbps)"
               fill="var(--color-uploadMbps)"
               fillOpacity={0.14}

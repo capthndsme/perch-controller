@@ -668,7 +668,7 @@ type QosOverview = { gatewayId; collectorId; managed: boolean; authoritative: bo
   paused: { by: 'controller' | 'router'; at: string | null } | null
   config: ApplyState; devices: ApplyState & { entries: number; rejected: { mac; error }[] }
   wan: QosWanQueue[]                                 // with `live`
-  policies: (QosPolicy & { live: { downloadKbit; uploadKbit; activeMembers } | null })[]
+  policies: (QosPolicy & { live: { downloadKbit: number | null; uploadKbit: number | null; activeMembers } | null })[]
   counts: { shapedDevices; dynamicDevices; quotasExhausted }
   errors: { code; message; mac?; device? }[]         // router errors, delivery errors, rejected MACs
   issues: PlanIssue[]                                // the planner's (section 3)
@@ -677,7 +677,9 @@ type QosOverview = { gatewayId; collectorId; managed: boolean; authoritative: bo
   report: { epoch; state; configRevision; devicesRevision; reportedAt } | null }
 ```
 
-A policy's `live` sums the measured rates of its bucket class (`b:<id>`); `activeMembers` counts its
+A policy's `live` sums the measured rates of its bucket class (`b:<id>`); a direction the router reports
+but has no measured rate for yet is `null` (unknown, never 0); a report without the class gives 0 both
+ways (the bucket is not built); no report gives `live: null`. `activeMembers` counts its
 `enforced` devices. `QosWanQueue.live` (also on `GET /qos/wan-queues`) comes from the report's `wan`
 entry with the same device.
 

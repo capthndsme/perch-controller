@@ -237,8 +237,9 @@ type NetworkHistory = { gatewayId: number; range: string | null; from: string; t
   resolution: string; resolutionSeconds: 60 | 300 | 900 | 3600
   scopeAtStart: 'routed' | 'legacy' | null   // the scope rule in force at `from`
   scopeChanges: Array<{ scope: 'routed' | 'legacy'; changedAt: string }>   // inside the window
+  // points: every bucket of [from, to) in order; a bucket without samples has null rates (unknown, never 0)
   networks: Array<{ network: string; points: Array<{ bucketStart: string; ts: number
-    rxBps: number | null; txBps: number | null         // bucket averages of the 30 s rates, router side
+    rxBps: number | null; txBps: number | null         // bucket averages of the 30 s rates, router side (a rate over a > 120 s gap is null)
     rxPeakBps: number | null; txPeakBps: number | null }> }> }
 type NetworkSummary = { gatewayId: number; id: number; key: string; label: string; purpose: string
   vlanId: number | null; ipv4: string | null; capture: boolean; captured: boolean | null; up: boolean | null

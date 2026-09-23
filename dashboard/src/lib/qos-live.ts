@@ -11,7 +11,7 @@ export type QosLiveSample = {
   /** WAN device → Mbit/s (download = the ingress ifb, upload = the device's egress) and peak delay. */
   wan: Record<string, { down: number | null; up: number | null; delayMs: number | null }>
   /** Policy id → its bucket's Mbit/s. */
-  buckets: Record<number, { down: number; up: number }>
+  buckets: Record<number, { down: number | null; up: number | null }>
 }
 
 const MAX_SAMPLES = 180 // 15 minutes at the 5 s poll
@@ -36,7 +36,7 @@ export function recordQosSample(gatewayKey: string, overview: QosOverview): QosL
     }
   }
   for (const p of overview.policies) {
-    if (p.live && p.shared) sample.buckets[p.id] = { down: p.live.downloadKbit / 1000, up: p.live.uploadKbit / 1000 }
+    if (p.live && p.shared) sample.buckets[p.id] = { down: mbit(p.live.downloadKbit), up: mbit(p.live.uploadKbit) }
   }
   const next = [...list, sample].slice(-MAX_SAMPLES)
   buffers.delete(gatewayKey)

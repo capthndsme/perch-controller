@@ -23,6 +23,17 @@ type View = 'wan' | 'buckets'
 
 const SERIES = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)', 'var(--series-6)', 'var(--series-7)', 'var(--series-8)']
 
+/**
+ * Two reports further apart than this (the page polls every 5 s) are a gap:
+ * the chart breaks there instead of drawing a line across the missing time.
+ */
+const GAP_MS = 20_000
+
+/** Stable series slot per key: the key's position in id order, so colours never move with ranks or list order. */
+function slotOf<T extends { id: number }>(items: T[], item: T): number {
+  return [...items].sort((a, b) => a.id - b.id).findIndex((x) => x.id === item.id)
+}
+
 function timeLabel(t: number): string {
   return new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(t)
 }
@@ -37,13 +48,15 @@ export function LiveRatesChart({ samples, wan, policies }: Props) {
     const keys: { key: string; dashed: boolean }[] = []
     if (current === 'wan') {
       const multi = wan.length > 1
-      wan.forEach((q, i) => {
-        const down = `wan_down_${i}`
-        const up = `wan_up_${i}`
+      // Keyed by device, coloured by the queue's id order: stable across refreshes.
+      for (const q of [...wan].sort((a, b) => a.id - b.id)) {
+        const i = slotOf(wan, q)
+        const down = `wan_down_${q.device}`
+        const up = `wan_up_${q.device}`
         config[down] = { label: multi ? `${q.device} download` : 'Download', color: multi ? SERIES[(i * 2) % 8] : 'var(--chart-download)' }
         config[up] = { label: multi ? `${q.device} upload` : 'Upload', color: multi ? SERIES[(i * 2 + 1) % 8] : 'var(--chart-upload)' }
         keys.push({ key: down, dashed: false }, { key: up, dashed: false })
-      })
+      }
     } else {
       // Colour follows the policy (by id order), never its rank; past eight they share the last slot.
       buckets.forEach((p, i) => {
@@ -52,18 +65,27 @@ export function LiveRatesChart({ samples, wan, policies }: Props) {
         keys.push({ key, dashed: false })
       })
     }
-    const data = samples.map((s) => {
+    const data: Record<string, number | null>[] = []
+    let previous: number | null = null
+    for (const s of samples) {
+      // A missed stretch of reports becomes one empty row, so the lines break there.
+      if (previous !== null && s.t - previous > GAP_MS) {
+        const gap: Record<string, number | null> = { t: previous + 1 }
+        for (const { key } of keys) gap[key] = null
+        data.push(gap)
+      }
+      previous = s.t
       const row: Record<string, number | null> = { t: s.t }
       if (current === 'wan') {
-        wan.forEach((q, i) => {
-          row[`wan_down_${i}`] = s.wan[q.device]?.down ?? null
-          row[`wan_up_${i}`] = s.wan[q.device]?.up ?? null
-        })
+        for (const q of wan) {
+          row[`wan_down_${q.device}`] = s.wan[q.device]?.down ?? null
+          row[`wan_up_${q.device}`] = s.wan[q.device]?.up ?? null
+        }
       } else {
         for (const p of buckets) row[`b_${p.id}`] = s.buckets[p.id]?.down ?? null
       }
-      return row
-    })
+      data.push(row)
+    }
     return { data, config, keys }
   }, [samples, wan, buckets, current])
   const hasValues = data.some((row) => keys.some(({ key }) => typeof row[key] === 'number'))
@@ -129,7 +151,7 @@ export function LiveRatesChart({ samples, wan, policies }: Props) {
               <Line
                 key={key}
                 dataKey={key}
-                type="monotone"
+                type="linear"
                 stroke={`var(--color-${key})`}
                 strokeWidth={2}
                 strokeDasharray={dashed ? '4 3' : undefined}

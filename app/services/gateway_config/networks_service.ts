@@ -29,6 +29,7 @@ import {
 } from '#services/gateway_config/network_model'
 import type { Issue, SectionStatus } from '#services/gateway_config/types'
 import {
+  LIVE_NETWORKS_MAX_AGE_MS,
   latestNetworkSamples,
   liveNetworks,
   refreshCaptureExclusions,
@@ -215,17 +216,27 @@ async function createRow(
 function liveOf(
   entry: ReportedNetwork | undefined,
   reportedAt: string | null,
-  sample: { recordedAt: string; rxBps: number | null; txBps: number | null } | undefined
+  sample: { recordedAt: string; rxBps: number | null; txBps: number | null } | undefined,
+  now: number = Date.now()
 ): NetworkLive | null {
   if (!entry && !sample) return null
+  // The stored sample stands in for a missing live rate only while it is
+  // current: an offline gateway's last rates are unknown, not still flowing.
+  const sampleAt = sample ? Date.parse(sample.recordedAt) : Number.NaN
+  const current =
+    sample !== undefined && Number.isFinite(sampleAt) && now - sampleAt <= LIVE_NETWORKS_MAX_AGE_MS
   const rxBps =
     entry?.rxRate !== null && entry?.rxRate !== undefined
       ? Math.round(entry.rxRate * 8)
-      : (sample?.rxBps ?? null)
+      : current
+        ? (sample?.rxBps ?? null)
+        : null
   const txBps =
     entry?.txRate !== null && entry?.txRate !== undefined
       ? Math.round(entry.txRate * 8)
-      : (sample?.txBps ?? null)
+      : current
+        ? (sample?.txBps ?? null)
+        : null
   return {
     reportedAt: entry ? reportedAt! : sample!.recordedAt,
     up: entry ? entry.up : null,

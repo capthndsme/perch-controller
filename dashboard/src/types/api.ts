@@ -2547,8 +2547,8 @@ export type QosPolicy = {
   source: 'admin' | 'portal'
   sourceRef: string | null
   counts: { devices: number; groups: number; networks: string[]; children: number }
-  /** Only in `GET /qos`: the bucket's measured rate. */
-  live: { downloadKbit: number; uploadKbit: number; activeMembers: number } | null
+  /** Only in `GET /qos`: the bucket's measured rate (null per direction = not measured yet). */
+  live: { downloadKbit: number | null; uploadKbit: number | null; activeMembers: number } | null
   createdAt: string
   updatedAt: string
 }

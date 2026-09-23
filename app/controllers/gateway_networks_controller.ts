@@ -143,7 +143,7 @@ export default class GatewayNetworksController {
           network: qs.network,
         }),
         scopeChanges({ gatewayId: gateway.id, since: window.since, until: window.until }),
-        scopeChanges({ gatewayId: gateway.id, until: window.since }),
+        scopeChanges({ gatewayId: gateway.id, until: window.since, newest: 1 }),
       ])
       return serialize({
         gatewayId: gateway.id,

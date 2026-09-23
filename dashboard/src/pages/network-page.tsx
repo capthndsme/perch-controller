@@ -198,6 +198,8 @@ export function NetworkPage() {
             ) : (
               <NetworkHistoryChart
                 points={points}
+                from={history.data?.from ?? null}
+                to={history.data?.to ?? null}
                 scopeChanges={history.data?.scopeChanges ?? []}
                 onZoom={time.setWindow}
                 onResetZoom={() => time.setWindow(DEFAULT_NETWORK_WINDOW)}

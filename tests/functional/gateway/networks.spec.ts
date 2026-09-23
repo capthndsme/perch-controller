@@ -11,7 +11,11 @@ import { _resetPollerState, ingestCollectorSnapshot } from '#services/collector_
 import { GATEWAY_CONFIG_SETTING_KEY } from '#services/gateway_config/gateway_config_settings'
 import { _resetGatewaySessions } from '#services/gateway_config/gateway_registry'
 import { gatewayQueue } from '#services/gateway_config/serial_queue'
-import { _resetNetworkAccountingState } from '#services/gateway_network_accounting'
+import {
+  _resetNetworkAccountingState,
+  LIVE_NETWORKS_MAX_AGE_MS,
+  liveNetworks,
+} from '#services/gateway_network_accounting'
 import { _resetRouterState } from '#services/router_metrics'
 import { eventually, seedSetupComplete } from '#tests/helpers/ap_agent'
 import { device, reading, TEST_API_KEY, TEST_INSTANCE_ID } from '#tests/helpers/collector_agent'
@@ -926,5 +930,82 @@ test.group('gateway networks: accounting', (group) => {
       { now: t0.plus({ seconds: 150 }) }
     )
     assert.lengthOf(await db.from('gateway_network_samples').where('network', 'lan'), 4)
+  })
+
+  test('history is dense (null = no samples), outage gaps carry no rate, live rates expire, scope at start is the newest', async ({
+    client,
+    assert,
+  }) => {
+    const { collector, gateway, operatorToken } = await gatewayCollector()
+    const t0 = DateTime.utc().minus({ minutes: 20 }).startOf('minute')
+    const ingest = async (seconds: number, rx: number) => {
+      const outcome = await ingestCollectorSnapshot(
+        collector,
+        {
+          summary: { started_at: '2026-09-21T10:00:00Z', total_devices: 0 },
+          devices: [],
+          gateway: {
+            wan: [],
+            networks: netReport({ lan: { rxBytes: rx, txBytes: rx } }, 'routed'),
+          },
+        },
+        { now: t0.plus({ seconds }) }
+      )
+      assert.notEqual(outcome.status, 'failed', JSON.stringify(outcome))
+    }
+    await ingest(0, 1_000_000)
+    await ingest(30, 1_375_000) // 100 kbit/s
+    // Five minutes without a report (collector offline): no whole-outage average.
+    await ingest(330, 5_000_000)
+    await ingest(360, 5_375_000) // 100 kbit/s again
+
+    const rates = await db
+      .from('gateway_network_samples')
+      .where('gateway_id', gateway.id)
+      .where('network', 'lan')
+      .orderBy('recorded_at')
+    assert.deepEqual(
+      rates.map((r: any) => (r.rx_bps === null ? null : Number(r.rx_bps))),
+      [null, 100_000, null, 100_000]
+    )
+
+    // The live report is current for LIVE_NETWORKS_MAX_AGE_MS, then gone.
+    const lastAt = t0.plus({ seconds: 360 }).toMillis()
+    assert.isNotNull(liveNetworks(gateway.id, lastAt + 10_000))
+    assert.isNull(liveNetworks(gateway.id, lastAt + LIVE_NETWORKS_MAX_AGE_MS + 1000))
+
+    // 1001 changes before the window: the scope in force is the newest one.
+    const before = t0.minus({ days: 3 })
+    const old = Array.from({ length: 1000 }, (_, i) => ({
+      gateway_id: gateway.id,
+      scope: 'legacy',
+      changed_at: before.plus({ seconds: i }).toFormat('yyyy-MM-dd HH:mm:ss'),
+    }))
+    old.push({
+      gateway_id: gateway.id,
+      scope: 'routed',
+      changed_at: before.plus({ hours: 2 }).toFormat('yyyy-MM-dd HH:mm:ss'),
+    })
+    await db.table('gateway_scope_changes').multiInsert(old)
+
+    const from = t0.minus({ minutes: 1 })
+    const to = t0.plus({ minutes: 10 })
+    const hist = await client
+      .get(`/api/v1/gateways/${gateway.id}/networks/history`)
+      .qs({ from: from.toISO(), to: to.toISO(), resolution: '1m', network: 'lan' })
+      .bearerToken(operatorToken)
+    hist.assertStatus(200)
+    const data = hist.body().data
+    assert.equal(data.scopeAtStart, 'routed')
+    const points = data.networks[0].points as Array<{ ts: number; rxBps: number | null }>
+    // Every minute of [from, to), in order, starting at the bucket holding `from`.
+    assert.lengthOf(points, 11)
+    assert.equal(points[0].ts, from.startOf('minute').toMillis())
+    assert.isTrue(points.every((p, i) => i === 0 || p.ts - points[i - 1].ts === 60_000))
+    const byMinute = points.map((p) => p.rxBps)
+    assert.isNull(byMinute[0]) // before the first sample
+    assert.equal(byMinute[1], 100_000) // minute 0: samples at 0 s (no rate) and 30 s
+    assert.deepEqual(byMinute.slice(2, 6), [null, null, null, null]) // the outage: unknown, not 0
+    assert.equal(byMinute[7], 100_000) // minute 6: 360 s
   })
 })

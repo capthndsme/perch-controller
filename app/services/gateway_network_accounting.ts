@@ -33,6 +33,14 @@ import { DateTime } from 'luxon'
 /** One row per gateway and network per this many ms, at most (the router_samples grid). */
 export const NETWORK_SAMPLE_INTERVAL_MS = 30_000
 const SAMPLE_SLACK_MS = 1500
+/**
+ * A rate needs two samples at most this far apart (like `qos_live.ts`): the
+ * first sample after an outage would otherwise store the average over the
+ * whole outage. Beyond it the rate is unknown (null), never an average.
+ */
+export const NETWORK_RATE_MAX_GAP_MS = 120_000
+/** A live report (or the newest stored sample) older than this carries no current rate. */
+export const LIVE_NETWORKS_MAX_AGE_MS = 90_000
 const MAX_NETWORKS = 64
 const MAX_NETWORK_NAME = 15
 const MAX_GATEWAYS = 1024
@@ -299,7 +307,8 @@ export async function recordGatewayNetworks(
     counters: new Map(counted.map((n) => [n.name, { rx: n.rxBytes!, tx: n.txBytes! }])),
   })
   if (counted.length === 0) return
-  const seconds = previous ? (at - previous.at) / 1000 : 0
+  const gapMs = previous ? at - previous.at : 0
+  const seconds = previous && gapMs <= NETWORK_RATE_MAX_GAP_MS ? gapMs / 1000 : 0
   const recordedAt = sqlTime(receivedAt)
   const rows = counted.map((n) => {
     const before = previous?.counters.get(n.name)
@@ -437,9 +446,18 @@ export async function recordDeviceNetworks(
 
 // ── reads ────────────────────────────────────────────────────────────────
 
-/** The last `gateway.networks` report of a gateway (since this process started). */
-export function liveNetworks(gatewayId: number): LiveNetworks | null {
-  return live.get(gatewayId) ?? null
+/**
+ * The last `gateway.networks` report of a gateway (since this process
+ * started), while it is current: a gateway that stopped reporting (offline,
+ * collector stopped) has none after `LIVE_NETWORKS_MAX_AGE_MS`, so its last
+ * rates are not shown as if they were still flowing.
+ */
+export function liveNetworks(gatewayId: number, now: number = Date.now()): LiveNetworks | null {
+  const entry = live.get(gatewayId)
+  if (!entry) return null
+  const at = Date.parse(entry.reportedAt)
+  if (!Number.isFinite(at) || now - at > LIVE_NETWORKS_MAX_AGE_MS) return null
+  return entry
 }
 
 /**
@@ -468,21 +486,25 @@ export async function scopeChanges(
     gatewayId?: number
     since?: DateTime
     until?: DateTime
+    /** Only the newest this many (still returned oldest first), e.g. 1 for "the scope in force". */
+    newest?: number
   } = {}
 ): Promise<ScopeChange[]> {
+  const direction = opts.newest ? 'desc' : 'asc'
   const query = db
     .from('gateway_scope_changes')
     .select('gateway_id', 'scope', db.raw(`${ISO('changed_at')} AS changed_at`))
-    .orderBy('changed_at', 'asc')
-    .orderBy('id', 'asc')
+    .orderBy('changed_at', direction)
+    .orderBy('id', direction)
   if (opts.gatewayId !== undefined) query.where('gateway_id', opts.gatewayId)
   if (opts.since) query.where('changed_at', '>=', sqlTime(opts.since))
   if (opts.until) query.where('changed_at', '<', sqlTime(opts.until))
-  const rows = (await query.limit(1000)) as Array<{
+  const fetched = (await query.limit(opts.newest ? Math.min(opts.newest, 1000) : 1000)) as Array<{
     gateway_id: number
     scope: string
     changed_at: Date | string
   }>
+  const rows = opts.newest ? [...fetched].reverse() : fetched
   return rows.map((r) => ({
     gatewayId: r.gateway_id,
     scope: r.scope === 'routed' ? 'routed' : 'legacy',
@@ -550,21 +572,53 @@ export async function queryNetworkHistory(opts: {
     const x = Number(v)
     return Number.isFinite(x) ? Math.round(x) : null
   }
-  const out = new Map<string, NetworkPoint[]>()
+  const found = new Map<string, Map<number, Omit<NetworkPoint, 'bucketStart' | 'ts'>>>()
   for (const r of rows) {
     const ts = Number(r.bucketTs) * 1000
-    const list = out.get(r.network) ?? []
-    list.push({
-      bucketStart: DateTime.fromMillis(ts, { zone: 'utc' }).toISO()!,
-      ts,
+    const byTs = found.get(r.network) ?? new Map()
+    byTs.set(ts, {
       rxBps: n(r.rxBps),
       txBps: n(r.txBps),
       rxPeakBps: n(r.rxPeak),
       txPeakBps: n(r.txPeak),
     })
-    out.set(r.network, list)
+    found.set(r.network, byTs)
   }
-  return [...out.entries()].map(([network, points]) => ({ network, points }))
+  // Every bucket of the window, in order: one without samples is unknown
+  // (null), never 0, so a chart breaks there instead of bridging the gap.
+  const grid = networkBucketGrid(opts.since, opts.until, opts.resolutionSeconds)
+  return [...found.entries()].map(([network, byTs]) => ({
+    network,
+    points: grid.map((ts) => ({
+      bucketStart: DateTime.fromMillis(ts, { zone: 'utc' }).toISO()!,
+      ts,
+      ...(byTs.get(ts) ?? { rxBps: null, txBps: null, rxPeakBps: null, txPeakBps: null }),
+    })),
+  }))
+}
+
+/** Upper bound of the dense grid (a year of hourly buckets); a longer window is cut at its end. */
+const MAX_HISTORY_BUCKETS = 9000
+
+/**
+ * Bucket starts (epoch ms) covering `[since, until)` on the query's grid
+ * (`FLOOR(UNIX_TIMESTAMP(t) / res) * res`): the first holds `since`.
+ */
+export function networkBucketGrid(
+  since: DateTime,
+  until: DateTime,
+  resolutionSeconds: number
+): number[] {
+  const step = resolutionSeconds * 1000
+  if (!(step > 0)) return []
+  const end = until.toMillis()
+  let ts = Math.floor(since.toMillis() / step) * step
+  const out: number[] = []
+  while (ts < end && out.length < MAX_HISTORY_BUCKETS) {
+    out.push(ts)
+    ts += step
+  }
+  return out
 }
 
 /** The newest sample per network of a gateway (rates when no live report is at hand). */
