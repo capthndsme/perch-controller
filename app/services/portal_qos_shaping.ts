@@ -20,10 +20,11 @@ import { DateTime } from 'luxon'
  *   stays the only enforcement.
  * - A device an administrator already caps keeps the admin's cap
  *   (`qos_mac_assigned`): logged, never overridden.
- * - A quota is set once, when the assignment gets it: the QoS side counts the
- *   bytes from then on, so later "bytes left" figures from the portal (which
- *   shrink as the same bytes are used) never replace it (that would count
- *   the usage twice). A grant that gains a quota later gets it then.
+ * - No quota: the router's portal cuts a data quota itself, exactly, in the
+ *   kernel (nft quota objects, shared vouchers included). A second copy in
+ *   the shaper counted link-layer bytes, ran out first and blocked a device
+ *   the portal still showed as active (2026-09-24); an assignment made
+ *   before then loses its quota at the next update.
  * - Per-device rates, no tier policies: a portal group's `downKbps` /
  *   `upKbps` cap each device, which is exactly a device assignment's own
  *   rate (`ensureTierPolicy` stays for integrations that want named tiers).
@@ -100,28 +101,15 @@ export class QosPortalShaping implements PortalShaping {
       await releaseDevice(entry.sourceRef)
       return
     }
-    const existing = await QosAssignment.query()
-      .where('source', 'portal')
-      .where('sourceRef', entry.sourceRef)
-      .first()
-    let quota: { limitBytes: number; onExhausted: 'block' } | undefined
-    if (existing && existing.quotaBytes !== null && existing.gatewayId === gatewayId) {
-      // Keep the quota the assignment counts against (see above).
-      quota = { limitBytes: Number(existing.quotaBytes), onExhausted: 'block' }
-    } else if (entry.quotaBytes !== null && entry.quotaBytes > 0) {
-      quota = { limitBytes: entry.quotaBytes, onExhausted: 'block' }
-    }
-    const hasRate = entry.downKbps !== null || entry.upKbps !== null
-    if (!hasRate && !quota) {
-      // Nothing left to shape (e.g. a quota already used up: the router ends it).
+    if (entry.downKbps === null && entry.upKbps === null) {
+      // Nothing to shape: a quota alone is the router's portal's to cut.
       await releaseDevice(entry.sourceRef)
       return
     }
     await shapeDevice({
       gatewayId,
       mac: entry.mac,
-      rate: hasRate ? { downloadKbit: entry.downKbps, uploadKbit: entry.upKbps } : undefined,
-      quota,
+      rate: { downloadKbit: entry.downKbps, uploadKbit: entry.upKbps },
       expiresAt: expiresAt ?? undefined,
       source: 'portal',
       sourceRef: entry.sourceRef,

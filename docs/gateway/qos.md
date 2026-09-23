@@ -147,7 +147,9 @@ reason while the draft waits. `DELETE /qos/wan-queues/:id` answers `200 {queue, 
 ### 3.1 Kernel objects (plan 3 section 3.2, amendment section 1)
 
 Download: WAN → sqm's `ifb4<wan>` (line-rate CAKE) → routing → LAN L3 device egress `clsact`:
-pass rules first (ARP, broadcast, one `pass` per exact LAN prefix, never a covering prefix), then a
+pass rules first (VLAN-tagged frames, ARP, broadcast, one `pass` per exact LAN prefix, never a
+covering prefix; a tagged frame on a device is a VLAN device's frame on the port below it, shaped
+on the VLAN device only, 2026-09-24), then a
 flower filter per MAC (`skbedit priority 1:<class>` + `mirred` to `ifb-pdn`), then a network default
 (`matchall`). Upload: the same on LAN ingress to `ifb-pup`. On each ifb: `htb 1: default 0`, root
 `1:1`, classes chosen by `skb->priority`. `quantum 1514` on every class; fq_codel device leaves and

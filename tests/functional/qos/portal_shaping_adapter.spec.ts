@@ -44,51 +44,53 @@ test.group('qos | portal shaping adapter (portal.md 13.7)', (group) => {
     assert.instanceOf(portalShaping(), QosPortalShaping)
   })
 
-  test('sync shapes, updates and releases by sourceRef; the quota is set once', async ({
+  test("sync shapes, updates and releases by sourceRef; a quota stays the router's", async ({
     assert,
   }) => {
     await seedSetupComplete()
     const { gateway } = await seedQosGateway()
     const shaping = new QosPortalShaping()
 
+    // An assignment an older controller made for a quota voucher.
+    await shapeDevice({
+      gatewayId: gateway.id,
+      mac: GUEST_A,
+      rate: { downloadKbit: 5000, uploadKbit: 1000 },
+      quota: { limitBytes: 500_000_000, onExhausted: 'block' },
+      source: 'portal',
+      sourceRef: 'portal-grant:1',
+    })
     await shaping.sync(gateway.id, [
       entry({ sourceRef: 'portal-grant:1', mac: GUEST_A, quotaBytes: 500_000_000 }),
       entry({ sourceRef: 'portal-local:1:abc', mac: GUEST_B, downKbps: 2000, upKbps: null }),
+      // A quota and no speed cap: nothing to shape.
+      entry({
+        sourceRef: 'portal-local:1:q',
+        mac: '02:00:00:00:0b:04',
+        downKbps: null,
+        upKbps: null,
+        quotaBytes: 20_000_000,
+      }),
     ])
     let rows = await portalRows(gateway.id)
-    // No upload cap is stored as 0 (unlimited).
+    // No upload cap is stored as 0 (unlimited). The router's portal cuts
+    // quotas itself: the shaper holds none (the older one is gone).
     assert.deepEqual(
-      rows.map((r) => [
-        r.sourceRef,
-        r.mac,
-        r.downKbit,
-        r.upKbit,
-        r.quotaBytes && Number(r.quotaBytes),
-      ]),
+      rows.map((r) => [r.sourceRef, r.mac, r.downKbit, r.upKbit, r.quotaBytes]),
       [
-        ['portal-grant:1', GUEST_A, 5000, 1000, 500_000_000],
+        ['portal-grant:1', GUEST_A, 5000, 1000, null],
         ['portal-local:1:abc', GUEST_B, 2000, 0, null],
       ]
     )
-    assert.equal(rows[0].quotaOnExhausted, 'block')
 
-    // The portal's "bytes left" shrinks; the assignment keeps counting against
-    // the first limit. A new rate is applied.
+    // A new rate is applied.
     await shaping.apply(
       gateway.id,
-      [
-        entry({
-          sourceRef: 'portal-grant:1',
-          mac: GUEST_A,
-          downKbps: 8000,
-          quotaBytes: 300_000_000,
-        }),
-      ],
+      [entry({ sourceRef: 'portal-grant:1', mac: GUEST_A, downKbps: 8000 })],
       []
     )
     rows = await portalRows(gateway.id)
     assert.equal(rows[0].downKbit, 8000)
-    assert.equal(Number(rows[0].quotaBytes), 500_000_000)
 
     // A full sync without the local grant releases it; an admin cap is untouched.
     await shapeDevice({
@@ -161,9 +163,15 @@ test.group('qos | portal shaping adapter (portal.md 13.7)', (group) => {
     const { gateway, collector } = await seedQosGateway()
     const stop = watchPortalQuotaExhaustion()
     try {
-      await new QosPortalShaping().sync(gateway.id, [
-        entry({ sourceRef: 'portal-local:1:q1', mac: GUEST_A, quotaBytes: 10_000_000 }),
-      ])
+      // An assignment with a quota from an older controller.
+      await shapeDevice({
+        gatewayId: gateway.id,
+        mac: GUEST_A,
+        rate: { downloadKbit: 5000, uploadKbit: 1000 },
+        quota: { limitBytes: 10_000_000, onExhausted: 'block' },
+        source: 'portal',
+        sourceRef: 'portal-local:1:q1',
+      })
       await handleQosEvent(collector.id, {
         type: 'quota_exhausted',
         at: '2026-09-23T12:00:05Z',
@@ -224,7 +232,8 @@ test.group('qos | portal shaping adapter (portal.md 13.7)', (group) => {
     await new QosPortalShaping().sync(gateway.id, [
       // A voucher with a speed cap (above the network's per-device cap up).
       entry({ sourceRef: `portal-grant:${grant.id}`, mac: GUEST_A, downKbps: 2000, upKbps: 3000 }),
-      // A voucher with a quota only, not yet bound to a grant id.
+      // A voucher with a quota only: no assignment, the network default
+      // shapes it like any device there.
       entry({
         sourceRef: `portal-local:${portal.id}:q1`,
         mac: GUEST_B,
@@ -237,6 +246,6 @@ test.group('qos | portal shaping adapter (portal.md 13.7)', (group) => {
     const plan = planQos(input)
     const byMac = new Map(plan.devices.map((d) => [d.mac, d]))
     assert.include(byMac.get(GUEST_A)!, { bucket: 'b12', downKbit: 2000, upKbit: 1000 })
-    assert.include(byMac.get(GUEST_B)!, { bucket: 'b12', downKbit: 5000, upKbit: 1000 })
+    assert.isUndefined(byMac.get(GUEST_B))
   })
 })

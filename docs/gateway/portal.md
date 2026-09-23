@@ -1343,14 +1343,16 @@ Every call is best effort: errors are logged, never fail a delivery.
 **Wired** (integration, 2026-09-23): the default is `QosPortalShaping`
 (`portal_qos_shaping.ts`) over `qos_shaping.ts`. Each entry becomes a
 `source: 'portal'` device assignment with the entry's `sourceRef`, its own
-rate (`downKbps`/`upKbps` in kbit/s, no tier policies), `expiresAt`, and a
-`block` quota when `quotaBytes` is given. Rules: only a gateway in managed
-mode is shaped (otherwise a no-op); an admin's cap on the MAC wins
-(`qos_mac_assigned`, logged); refusals (e.g. a rate below the device floor)
-are logged and skipped; the quota is set once, when the assignment first
-gets it, and kept on later updates (QoS counts the bytes from then on, so the
-portal's shrinking "bytes left" would count the usage twice); an entry past
-its expiry, or with nothing left to shape, is released. `sync` releases the
+rate (`downKbps`/`upKbps` in kbit/s, no tier policies) and `expiresAt`. Rules:
+only a gateway in managed mode is shaped (otherwise a no-op); an admin's cap on
+the MAC wins (`qos_mac_assigned`, logged); refusals (e.g. a rate below the
+device floor) are logged and skipped; an entry past its expiry, or without a
+speed cap, is released. `quotaBytes` is not handed to the shaper (2026-09-24):
+the router's portal cuts a quota itself, exactly, in the kernel (section 13 of
+the collector's portal, nft quota objects, shared vouchers included). The
+shaper's copy counted link-layer bytes, ran out first, and blocked a device the
+portal still showed as active; an assignment that carries one from before loses
+it at its next update. `sync` releases the
 gateway's portal assignments (`portal-grant:*`, `portal-local:*`) missing
 from the set. The shaper's `quota_exhausted` for a portal assignment is
 written to `portal_events` as `shaping_quota_exhausted` (`grant_id` from
