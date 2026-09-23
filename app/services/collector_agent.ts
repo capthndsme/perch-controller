@@ -12,7 +12,10 @@ import {
 } from '#services/collector_poller'
 import { keysMatch } from '#services/collector_announce'
 import { handleAgentObservation } from '#services/gateway_observe'
-import { captureExcludeFor } from '#services/gateway_network_accounting'
+import {
+  _resetNetworkAccountingState,
+  captureExcludeFor,
+} from '#services/gateway_network_accounting'
 import {
   configureBlockFor,
   type GatewayConfigureBlock,
@@ -134,6 +137,9 @@ function stateFor(collectorId: number): PushState {
 export function _resetCollectorAgentState(): void {
   states.clear()
   sessionKeys.clear()
+  // The capture exclusions are cached per collector id; ids repeat after a
+  // truncate, so a stale entry would leak into the next test's configure.
+  _resetNetworkAccountingState()
   sessionCapabilityLists.clear()
 }
 

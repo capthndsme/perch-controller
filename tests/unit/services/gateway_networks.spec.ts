@@ -150,14 +150,12 @@ test.group('networks domain | claims and round trip (plan 1 section 8.1)', () =>
     assert.isFalse(networksDomain.claims({ ...wan2, config: 'network' }, noFw))
   })
 
-  test('the default registry holds networks and dhcp_pools after the first domains', ({
-    assert,
-  }) => {
+  test('the default registry holds networks and dhcp_pools first (apply order)', ({ assert }) => {
     assert.deepEqual(
       DOMAINS.map((d) => d.key),
-      ['dhcp_hosts', 'dns_records', 'dhcp_pools', 'networks']
+      ['networks', 'dhcp_pools', 'dhcp_hosts', 'dns_records', 'firewall', 'sqm']
     )
-    assert.deepEqual(domainRegistry().configs(), ['network', 'dhcp'])
+    assert.deepEqual(domainRegistry().configs(), ['network', 'dhcp', 'firewall', 'sqm'])
   })
 
   test('round-trips the whole DSA config, VLANs via bridge-vlan included, exactly', ({
