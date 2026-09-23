@@ -3,10 +3,12 @@ import type { AgentEndpoint } from '#services/agent_gateway'
 import {
   forgetSessionKey,
   handleCollectorPush,
+  rememberSessionCapabilities,
   rememberSessionKey,
   sendCollectorConfigure,
   syncCollectorProtocols,
 } from '#services/collector_agent'
+import { handleAgentObservation } from '#services/gateway_observe'
 import collectorHub, {
   type AgentConnection,
   type AgentSession,
@@ -99,6 +101,10 @@ export function collectorAgentEndpoint(): AgentEndpoint<CollectorPrincipal> {
     attach() {
       collectorHub.onNotification('collector.push', async (collectorId, params) => {
         await handleCollectorPush(collectorId, params)
+      })
+      // The observation channel (docs/gateway/observation.md).
+      collectorHub.onNotification('gateway.observed', async (collectorId, params) => {
+        await handleAgentObservation(collectorId, params)
       })
     },
 
@@ -366,6 +372,7 @@ async function handleHello(
   })
   bind(session)
   rememberSessionKey(row.id, principal.bearer)
+  rememberSessionCapabilities(row.id, hello.capabilities ?? [])
   sendCollectorConfigure(row)
   logger.info(
     { collectorId: row.id, lifecycle: outcome.lifecycle, address },
