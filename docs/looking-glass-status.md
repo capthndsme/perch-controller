@@ -1618,3 +1618,513 @@ strongly recommend a management VLAN, and the dashboard warns.
   keeps the old tunnels, the controller was restarted (11:57 UTC): all four devices
   were back within 16 s, reporting `secure: true`, so no badges or install warnings
   show on this box.
+
+## 2026-09-22 — Wi-Fi client counts: one definition of "connected"
+
+The dashboard's Wi-Fi panel disagreed with itself: the tile and "now" said 34, the
+peak over 24 h said 23, the SSID rows added up to 77 and the signal line to 74.
+
+- **Cause:** `wifi_station_latest` keeps one row per MAC for the whole snapshot
+  retention (14 d). A client that disassociates just drops out of its AP's station
+  list; its row keeps the last report's values, a small `inactive_ms` included.
+  Every "right now" read counted those rows. The SSID rows, the signal mix, the AP
+  and RF counts and `totalClients` counted all 77 (42 older than a day, hence
+  "Weak 42"). The tile's `activeOnly` checked `inactive_ms < 30 s` but not whether
+  the AP still listed the station: 20 real clients plus 15 frozen ones. Only the
+  history was right (per-report snapshots, idle < 200 s: 21, peak 23). The 30 s rule
+  also diverged from the history's 200 s on its own: ~15 % of the day's reports are
+  idle 30–200 s. Not a regression: the query before the latest table (newest snapshot
+  per MAC over all history) had no time bound either. The 2026-09-18 panel put "now"
+  next to "peak" and made it visible.
+- **Fix:** `app/services/wifi_presence.ts`. A station is connected when its AP
+  listed it within max(3 × the AP's interval, 30 s) (the agent staleness bound; the
+  constants are now shared with `ap_agent_metrics.ts`) and it is idle < 200 s (the
+  history rollup's threshold, shared with `client_distribution_rollup.ts`). It is
+  evaluated in SQL against `UTC_TIMESTAMP()`: mysql2 parses DATETIME in the process's
+  zone, and this host is UTC+8. All current reads use it: the overview (`totalClients`,
+  signal mix, SSID rows, AP counts), `/wifi/ssids`, `/wifi/ssids/:ssid/clients`,
+  `/wifi/rf`, `/wifi/aps`, `/wifi/clients?activeOnly` and `active`, the client
+  detail's `active`, `/devices` `wifi.connected`. Without `activeOnly`,
+  `/wifi/clients` still returns every row (search, last known state), flagged. The
+  today/7 d/all-time peaks are floored at the current count, because the rollup
+  refreshes every 5 min.
+- **Dashboard** (fork, reviewed): the tile and "now" come from
+  `overview.totalClients`, the same response as the SSID rows and the signal line;
+  the separate `/wifi/clients` request is gone. On a live window, peak = max(history,
+  now). The Wi-Fi page card says "connected now" instead of "latest per MAC".
+- **Tests:** `tests/functional/wifi/connected_clients.spec.ts`. Six stations cover
+  fresh, idle 60 s, idle 250 s, left 10 min ago, left 3 d ago, and one on an AP with
+  a 60 s interval. It checks that every count sums to `totalClients`. It also runs the
+  ingest path: a phone drops out of the AP's report. The file fails on the old code
+  (6 vs 3, 2 vs 1). A devices test covers a stale station → `connected: false`.
+  `wifi/read_api.spec.ts` now seeds stations 2 s back instead of at the minute start,
+  and resets the query cache. Suite: 380.
+- **Deployed** 12:26 UTC; all four devices back within a second. Live: 20 connected
+  (active list, SSID rows 11/6/3/0, APs 7/1/12, signal 10/5/5, RF, all 20), history
+  24 h peak 23, peaks today/7 d/all-time 23/45/45, `wifi.connected` on 20 of 56
+  devices.
+- **Not done:** the client page shows the last AP, SSID and signal of a client that
+  left without saying so (the API has `latest.active`). The device list shows a Wi-Fi
+  device that left as "LAN/unknown": `{ connected: false }` carries no last-known AP.
+
+## 2026-09-22 — Connected / Disconnected everywhere, a memory for Wi-Fi devices
+
+Follow-up to the client counts. The Wi-Fi client page showed the last AP and signal of a
+client that had left as if it were there. After the fix above, a Wi-Fi device that left
+read "Wired / unknown" in the device list. The owner asked for "Disconnected" (and the
+same for wired devices quiet for 30+ min) and for a memory of the Wi-Fi ("Last seen: WiFi").
+
+- **One rule, `devicePresence()` in `wifi_presence.ts`:** a device its AP lists is
+  connected, however quiet its traffic (one phone had been silent 5.5 h on Wi-Fi). A
+  device whose traffic stopped within 10 min of its last Wi-Fi sighting left over Wi-Fi.
+  Measured: the gateway keeps forwarding to a departed client's cached address for 0–7
+  min, and one device went on for 3 h (another network or a cable). Anything else goes by
+  traffic: connected while the collector saw it in the last 30 min, else disconnected,
+  `via: 'lan'` ("Wired / unknown"). `lastSeenAt` is when the AP last heard it (last
+  listing minus idle time) for Wi-Fi, and the last traffic otherwise. Trailing frames to
+  a gone device are not a sighting.
+- **API:** `/devices` rows carry `presence`, and a disconnected row's `wifi` carries
+  `last` (AP, SSID, band, last seen; the latest table keeps it 14 d). New `GET
+  /api/v1/devices/:mac/presence`, polled every 10 s by the device page whatever window it
+  shows. Wi-Fi `lastSeenAt` everywhere now means "last heard". Presence and Wi-Fi context
+  are read per request, never from the cached device list (a past window's rows are
+  cached 6 h). Ages come from the database (`TIMESTAMPDIFF` against `UTC_TIMESTAMP()`),
+  because mysql2 parses DATETIME in the process's zone and this host is UTC+8.
+  `device_identities.mac` (general_ci) and `wifi_station_latest.mac` (unicode_ci) cannot
+  be joined without `COLLATE`; the controller merges in JS as before.
+- **"Now" rates that were hours old:** the device list's Down/Up now came from a device's
+  latest bucket in the window, however old: a device quiet for 3 h showed "5.31 Mbps
+  now". It now reads 0 once that bucket is more than three intervals before the window's
+  end (`latestIsCurrent`), so the Top talkers "now" column and the devices page's "Active
+  now" filter mean now. Live after the deploy: 18 devices with a rate, all connected; 0
+  disconnected ones with a rate.
+- **Dashboard** (fork, reviewed; one follow-up round):
+  - Wi-Fi client page: a status badge ("Disconnected · last seen 10.2 h ago"), "Last on
+    <AP>", no signal badge while gone, Kick/Steer disabled ("Not connected right now.").
+  - Device page: status badge in the header, Location tile by presence, and a Wi-Fi panel
+    with Status, "Last access point", "Last signal" and "Last PHY rate".
+  - Devices page: "Last seen on WiFi · <AP> · 3.3 h ago", "Wired / unknown · last seen
+    5.2 h ago"; the WiFi/Wired filter follows `presence.via`, so departed Wi-Fi devices
+    stay under WiFi. Shared wording in `dashboard/src/lib/presence.ts`.
+- **Tests:** a unit spec for the rule (`tests/unit/services/wifi_presence.spec.ts`).
+  Functional: a device that left keeps its last AP; traffic long after Wi-Fi reads
+  connected over the LAN; `:mac/presence` (quiet wired is disconnected, a listed station
+  is connected, an unknown MAC 404s); a quiet device reads 0 Mbps now; the departed
+  client's `lastSeenAt`. Suite: 387.
+- **Deployed** in two rounds (presence, then the rate fix), the last at 13:09 UTC; all
+  four devices back within a second each time. Checked on the live stack in headless Firefox with a dev token (read-only,
+  no second API): the four screens above. Live classes over 24 h: 20 connected over
+  Wi-Fi, 15 left Wi-Fi (with `last`), 12 connected and 9 disconnected over the LAN.
+- **Seen, not changed:** a client that walks away is listed by two APs with growing idle
+  times until hostapd drops it, and each AP's report flips its location, so the client
+  page shows a burst of "ap_roam" events seconds apart (First Floor ↔ Garage at 02:50
+  UTC). Roaming events should probably require the new AP to have heard the client
+  recently.
+
+## 2026-09-23 — Presence thresholds are settings
+
+The owner wants tunables such as the 30-minute wired quiet window to be controller
+settings, not constants. The presence thresholds that apply when data is read are now
+Settings → Presence.
+
+- **Settings:** `app/services/presence_settings.ts`, one `system_settings` row
+  (`presence`), typed defaults and a limits table that the validator and the dashboard
+  form both use. Admin-only `GET` / `PATCH /api/v1/settings/presence`. PATCH takes any
+  subset of the fields; the others keep their value. A value out of range or not a whole
+  number returns 422 and nothing is stored. The response carries `settings`, `defaults`,
+  `limits` and the fixed `wifiIdleSeconds`.
+
+  | Setting | Default | Range | Decides |
+  |---|---|---|---|
+  | `lanQuietMinutes` | 30 | 1–1440 | a device not on a Perch AP counts as connected while its traffic is this recent |
+  | `wifiTrailingTrafficMinutes` | 10 | 1–60 | traffic this long after the last Wi-Fi sighting still belongs to that visit |
+  | `apStaleIntervals` / `apStaleMinSeconds` | 3 / 30 s | 2–10 / 10–600 | when an AP is silent: its clients stop counting (`stationConnectedSql`) and an agent AP is flagged (`checkAgentPushFreshness`); one bound, `apStaleSeconds()` |
+  | `nowRateIntervals` | 3 | 2–20 | the device list's "now" rates read 0 past this many sample intervals |
+
+- **Applied per request:** the rule functions take the thresholds as a parameter
+  (`devicePresence(input, thresholds)`, `stationConnectedSql(thresholds, …)`). Every
+  reader loads the row once per request: a primary-key lookup, with no cache.
+  - The Wi-Fi station cache key includes the silence bound.
+  - The device list's cached rows carry `latestLagSeconds` (from the latest bucket to
+    the window's end) in place of the old SQL `latestIsCurrent`. That flag is now decided
+    per request, so a save applies to the next request, even for a past window cached
+    6 h.
+- **Still constants:**
+  - The 200 s idle limit (`CONNECTED_INACTIVE_MS`). The client-count rollup stores
+    counts made with it, so a new value would only reach recomputed slots. The page shows
+    it read-only.
+  - The collector's own silence bound (`collector_agent.ts`, the same max(3 × interval,
+    30 s)). It only flags collector health and is left as a candidate.
+- **Dashboard** (fork, reviewed; one follow-up round): Settings → Presence
+  (`/settings/presence`), linked from Admin configuration.
+  - Three groups: Devices, Access points, Traffic rates.
+  - Whole-number inputs with the server's ranges and "Default N (min–max)" hints.
+  - A live example of the AP rule ("An AP reporting every 5 s is silent after 30 s;
+    every 60 s, after 180 s"), and the idle limit shown read-only.
+  - "Reset to defaults" only fills the form; Save applies it.
+  - A save refetches the device and Wi-Fi queries.
+  - Review fix: the first version sent an out-of-range number for an unparsable field,
+    to draw the server's 422. The page now checks locally and sends nothing.
+- **Tests:**
+  - Unit: the thresholds passed in move both presence windows, and `apStaleSeconds`.
+    Stored values: garbage reads as the default, out of range is clamped, and the
+    defaults lie inside the ranges.
+  - Settings API: 401 and 403, the defaults, a partial PATCH that persists, and 422s that
+    store nothing.
+  - Behaviour: a saved `lanQuietMinutes` or `nowRateIntervals` changes the next (cached)
+    device list and `:mac/presence`. A saved `apStaleMinSeconds` brings a silent AP's
+    client back into the count at once. The agent freshness check follows the setting.
+  - Suite: 399.
+- **Deployed** 16:04 UTC (00:04 local). All four devices were back within a second.
+  - Live: the endpoint returns the defaults (nothing stored). A PATCH without a token
+    returns 401; `lanQuietMinutes: 0` returns 422.
+  - The numbers match the snapshot taken before the deploy, apart from churn: Wi-Fi 21 →
+    20 (a phone passed the 200 s idle limit between snapshots), wired 14 connected and 6
+    disconnected both times.
+  - Checked in headless Firefox at desktop and 390 px widths: the Settings row and the
+    Presence page.
+
+## 2026-09-23 — Mark a device as Ethernet
+
+The owner asked for a "mark as Ethernet device" in the device labelling (name, type, tags,
+notes). Without it, a device no Perch AP lists reads "Wired / unknown", because Perch cannot
+tell a cable from Wi-Fi it does not read. The operator can now settle that.
+
+- **Label:** `device_labels.connection` (migration `…043`, nullable string), exposed as
+  `connection: 'ethernet' | null` on every label. `DEVICE_CONNECTIONS` in
+  `app/services/device_labels.ts` is append-only like `DEVICE_TYPES`, so a later "Wi-Fi on an
+  AP Perch does not read" needs no migration. PATCH merges it like the other fields: omitted
+  keeps it, `null` clears it, and any other value is a 422. A label holding only the mark is
+  kept.
+- **Presence** (`devicePresence`), in order:
+  1. An AP lists it right now: `via: 'wifi'`, whatever the mark says.
+  2. Marked Ethernet: `via: 'ethernet'`, connected while its traffic is within the wired
+     timeout (Settings → Presence). It never reads "Last seen on WiFi": after a Wi-Fi visit,
+     its traffic counts as on the cable straight away, with no trailing window.
+  3. Otherwise the rule is unchanged.
+
+  `/devices` rows and the overview's identity rows carry `connection`; `/devices` and
+  `/devices/:mac/presence` apply it. Labels are read per request (with their own cache,
+  cleared on save), so a mark shows on the next refresh.
+- **Dashboard** (fork, reviewed; one wording round):
+  - An "Ethernet device" switch in the label editor, and a Connection row in the label
+    summary ("Ethernet" / "Detected automatically").
+  - The devices page and the device page's Location tile say "Ethernet" for marked
+    devices; the Wired filter includes them.
+  - The wording lives in one helper (`connectionLabel` in `lib/presence.ts`).
+  - Settings → Presence: "Wired timeout" now covers both Ethernet and Wired / unknown, and
+    the Wi-Fi grace notes that marked devices skip it.
+- **Tests:**
+  - Unit: the mark against the Wi-Fi memory, and an AP listing a marked device.
+  - Functional: storing, merging and clearing the mark with a 422 for other values, and a
+    marked device reading `ethernet` in the list, in `:mac/presence` and in the overview.
+  - Also fixed a race in `ap_agent/push.spec.ts`: it waited for the snapshot and then read
+    `wifi_station_latest`, which the ingest writes a step later. It failed once in a full
+    run. It now waits for the last write.
+  - Suite: 402.
+- **Deployed** 16:37 UTC (00:37 local). The migration applied in 173 ms, and all four
+  devices reconnected.
+  - Live: the 6 labels read `connection: null` and are otherwise unchanged; all 55 device
+    rows carry the field; nothing reads `ethernet` until the owner marks a device. A bad
+    value (`bluetooth`) returns 422 and writes nothing.
+  - Checked in headless Firefox: the label editor's switch and the Connection row on a
+    labelled server.
+
+## 2026-09-23 — Infrastructure view v1: ports from every agent, a network map, rolled out
+
+The owner asked for a network layout configurator: the Ethernet ports the AP agent can
+see, a generic "shape" per device, routers and unmanaged switches wired in by hand, and
+the collector on the router presented as the **Gateway agent**. Design first
+(`docs/infrastructure-view.md`, from a read-only survey of the four real devices), then
+four streams built in parallel by subagents from its contracts, reviewed, and rolled out.
+Amendments A1–A3 in the doc record the lead's build rules, the kit as built, and the
+controller's deviations. The owner then authorised updating the physical network, so
+the new agents are installed.
+
+- **Kit** (`perch-agentkit/hoststat/ports.go`, uncommitted):
+  - `PortReader` classifies `/sys/class/net` by §2.1: DSA user ports, device-backed NICs,
+    and veths/macvlans whose peer is in another namespace (a router in a container);
+    never conduits, bridges, VLANs, tunnels, ifb or Wi-Fi.
+  - It reads labels from the device tree and roles from `board.json`, hardware ports only
+    (a container's `board.json` is its host's).
+  - A2 refinements: an LTE modem is a `wireless` port and does not hide veths; a VLAN
+    handed in from the host is a virtual NIC.
+  - The facts are cached by name + ifindex; link state is read fresh with small syscall
+    reads. Tested on six fixture shapes, a mutation check, `-race`, and the Go 1.22 floor.
+- **perch-apd 0.2.0-pre.1:** `metrics.push` carries an optional `ports` array. Absent
+  means the agent does not report ports; `[]` means it has none. `system.info` gains the
+  `ports` capability, the config `option ports '1'`, and a `perch-apd ports` CLI. Binary
+  +13 KB gzip on mipsle.
+- **perch-collector 0.3.0-pre.1:**
+  - The gateway report carries `ports` on both transports; knob `ports: auto|on|off`
+    (auto = with gateway stats); a `perch-collector ports` CLI that exits before any
+    config, capture or network work (proven by a test and strace).
+  - The daemon now refuses stray positional arguments.
+  - `make build` is not a no-cgo build (libpcap); CLAUDE.md corrected.
+- **Controller:**
+  - Migration `…044`: `infra_nodes`, `infra_ports`, `infra_links`. Agent-row deletes
+    detach a node (SET NULL) instead of dropping its cabling.
+  - `recordAgentPorts` runs after the Wi-Fi ingest and the gateway sample, non-fatal. It
+    writes only when a report's fingerprint changes (bounded 256-entry cache), so steady
+    state costs zero writes. A missing `ports` never erases anything.
+  - `/api/v1/infra`: `layout` and `state` (read per request) for any signed-in user;
+    node/port/link CRUD, bind and positions for admins. Link state includes `mismatch`
+    when two live ends disagree.
+  - `collectors:merge` moves the Gateway agent's node (`NON_HISTORY_TABLES`). Presence
+    queries moved to `device_presence_query.ts` with a batch variant.
+  - Suite: 468 (66 new).
+- **Dashboard:**
+  - `/infrastructure` is the first lazy route: React Flow 12.11.6 + dagre 3.1.1 in their
+    own 328 kB chunk (100 kB gzip); the main bundle grew 5 kB.
+  - Device boxes with port strips and link LEDs, cables by medium and state, host frames,
+    an inspector, and a table fallback. Edit mode (admins, md+) covers moving, cabling,
+    add device, add ports, hide, bind, "Inside host", and auto-arrange.
+  - "Gateway agent" wording on the Collectors and Gateway pages.
+  - 173/174 checks against a §7 mock. The one miss is React Flow's own ResizeObserver
+    notice when a frame is resized.
+- **Deployed** 19:05 UTC. Migration applied, four devices reconnected. The layout
+  created four nodes by itself (gateway = root, three APs); no ports until the upgrades.
+- **Device rollout** (owner-authorised; one device at a time, each verified before the
+  next):
+  - APs: First Floor 19:06, Second Floor 19:06, Garage 19:08. Gateway: 19:09.
+  - APs: `/usr/bin/perch-apd` swapped for the static 0.2.0-pre.1 build (stop, remove,
+    copy, start; the AX23's 4.2 MB of flash cannot hold both). The installed package, its
+    init script and conffile stay, so opkg/apk still list 0.1.2-r1 until a real release
+    is installed over it. The AX23 ended with 4.3 MB free.
+  - Gateway: the static nDPI 0.3.0-pre.1 binary swapped in; the old one kept at
+    `/root/perch-collector-0.2.0.bak` in the container. It re-adopted as collector 1,
+    and traffic accounting resumed at once.
+  - Rollback copies of all four previous binaries are in the session scratchpad.
+  - Live afterwards: every node online with `portsSupported: true`; no controller
+    warnings.
+- **What the ports show:**
+  - First Floor AP: `lan2` (the uplink) up 1G with **101 carrier changes since boot**,
+    worth checking its cable. `lan3` up 1G, `eth1` (WAN socket) and `lan1` no link.
+  - Second Floor AP: `wan` up 2.5G (the uplink, bridged), lan1–4 no link.
+  - Garage AP: `lan4` up 1G (uplink), `lan1` up at 100M (the partner only advertises
+    100M, not a cable fault), `wan`, `lan2` and `lan3` no link.
+  - Gateway: nine veths at 10G, `wan0`/`wan2` as WAN. The physical NICs are the host's;
+    model them with a host frame and virtual switches (doc Appendix A), and hide the
+    zone veths you don't want.
+- **Not done / pending (owner's call):**
+  - Release: tag `perch-agentkit` v0.2.0, bump both daemons' `go.mod`, point `go.work`
+    at it, then tag perch-apd v0.2.0, perch-collector v0.3.0 and the controller. Until
+    the kit tag exists, the daemons' CI (`GOWORK=off`) fails to build.
+  - Nothing is committed.
+  - `generatedAt` changes every `layout`/`state` body, so their ETags never give a 304.
+  - The controller README's REST table does not list `/infra` yet.
+  - v1.x candidates (§11): link diagnostics, per-port traffic, port-flap alerting (as a
+    setting), FDB link suggestions.
+
+## 2026-09-23 — Devices on the map, the Wi-Fi overlay, and whose cameras are whose
+
+After drawing the first layout (a 2.5 Gb/s switch, this host as a frame around the
+gateway, four cables), the owner asked to bind boxes to known devices ("Anton's PC" as a
+desktop on the switch; the Garage AP's 100 Mb/s client as "our wired Tapo"), and for a
+toggle that shows which Wi-Fi devices sit on which AP. It is spelled out as amendment A4
+in `docs/infrastructure-view.md` and was built by two parallel subagent streams from it
+(deviations recorded as A5). No agent changes: `/wifi/clients` already carried everything.
+
+- **Controller:**
+  - `deviceMac` on every manual box kind except `isp`, one box per device (409
+    `infra_device_already_placed`).
+  - Migration `…045` swaps the plain index for a unique one. It clears duplicates first
+    and is idempotent: the entrypoint loops on migrations, so it must not fail.
+  - Box names follow the device: label name, then hostname, then MAC. `device` now also
+    carries `hostname` and `primaryIp`.
+  - `POST /infra/nodes` takes `linkTo`: create a box and cable it to a port in one
+    transaction, and nothing is created when the cable is refused.
+  - `DeviceAttachment` (the box, and the far end of its first cable with live link state)
+    on every `/devices` row and on `/devices/:mac/presence`: 1–5 extra queries per list
+    request, read per request.
+  - Presence: a box cabled on the map counts as wired, like the Ethernet mark. A quiet
+    wired device on a live agent port with link reads connected. Traffic never loses to
+    the drawing, and link only ever adds.
+  - Suite 484 (16 new).
+- **Dashboard:**
+  - "Connect a device…" on any free port: a picker over the device list (placed devices
+    shown as placed), an optional "What is it?" that writes the device label's type, and
+    the box appears already cabled.
+  - Bound boxes show the device's type icon, name and presence.
+  - The devices page reads "Ethernet · Garage AP · lan1 · 100 Mb/s"; the device page's
+    Location tile has "Show on the map" (`/infrastructure?node=`).
+  - A "WiFi clients" toggle draws each AP's connected clients as chips with signal-coloured
+    wireless lines, "+N more" past 11, and devices already on the map linked directly.
+  - The canvas code stayed in the page's chunk (+30 kB); main bundle +1 kB.
+- **Deployed** 20:33 UTC. Migration 045 applied, the owner's layout came through intact
+  (6 boxes, 4 cables, 35 ports), and all four devices reconnected.
+- **Which Tapo is wired:**
+  - The Garage AP cannot say: on its DSA switch `lan1`↔`lan4` traffic is forwarded in
+    hardware, so the software bridge's FDB and the netdev byte counters never see the
+    client. That also limits any future FDB-based cable suggestions on DSA gear.
+  - This host's Frigate config (read with stream credentials stripped) names four
+    cameras. `garage_inwards` = the wired, unnamed device with a TP-Link OUI,
+    the 100 Mb/s device on Garage AP `lan1`. `garage_outwards` = the Tapo C200 on the
+    Garage AP's 2.4 GHz Wi-Fi (no Ethernet port on that model). `terrace_sides` and
+    `terrace_back` are on the Second Floor AP's 2.4 GHz Wi-Fi.
+  - All four got device labels (type camera, notes naming the Frigate camera; the wired
+    one marked Ethernet).
+  - The wired one was connected to Garage AP `lan1` through the new API as the live
+    end-to-end check. It reads connected, Ethernet, uplink Garage AP · lan1 · 100 Mb/s
+    full, live.
+- **Camera traffic, for the record:**
+  - The cameras sent 15 GB/day each until 2026-09-21, then under 1 MB/day. That was
+    Frigate's RTSP pulls, seen only while the collector ran on the hypervisor; since it
+    moved into the gateway LXC, LAN-local traffic stays out of Perch, which the owner
+    counts as a feature.
+  - Their internet traffic is ~0.4–0.8 MB/day each, all to TP-Link's cloud on AWS, with
+    the `lan` zone forwarding to every WAN unrestricted. The owner keeps it for the Tapo
+    app as a backup.
+- **Overlay on the real layout:** wireless lines rendered over other boxes (chips are
+  child nodes, so React Flow lifts their edges), and "always below the AP" put the
+  Second Floor AP's 14 clients under the Garage AP. Fixed and redeployed at 20:59 UTC:
+  - Wireless lines always render beneath boxes (z-index −2000).
+  - Each AP's chips go to the nearest free side (below, then the roomier side, then
+    above), clear of boxes and of other APs' chips, and no line runs through a box.
+  - The view refits once the first chips arrive.
+  - Mock of the real geometry: 18 line/box crossings before, 0 after.
+  - Live: Second Floor's clients sit to its right, First Floor's below it, the Garage
+    AP's one Wi-Fi client beside it, nothing crossing a box.
+
+## 2026-09-23 — Managed gateway: plan drafted, device lab built
+
+- **Scope.** The owner's next direction: the collector on the router becomes a managed gateway.
+  Planned: multi-LAN/VLAN (native OpenWrt), WAN SQM/CAKE, per-device and per-LAN caps
+  (individual vs bucket), a captive portal (controller logins, time/data vouchers, per-MAC
+  authorize API with custom HTML for Piso-WiFi-style integrations), and DHCP/DNS/firewall/routing
+  and other native OpenWrt sync.
+- **Two-way sync.** Sync is two-way, with a per-gateway "Authoritative Mode" setting that can only
+  be enabled once both sides are in sync.
+- **Plan.** Four designs plus a merged overview with one milestone order (M0–M11), the
+  cross-plan decisions, and 29 owner questions. They live in `docs/design/gateway/` at the
+  workspace root, outside the repos. Contracts move here per milestone when built. Nothing in any
+  repo was changed.
+- **Device lab** (`lab/` at the workspace root, outside the repos):
+  - The lab router runs OpenWrt 24.10.8, with its WAN on the home LAN as a DHCP client only.
+  - lan, guest and iot networks, plus a bridge-vlan trunk with VLANs 110/120.
+  - Seven Alpine clients with 02:00:00 MACs.
+  - `clean` snapshots and up/down/reset/destroy/status/traffic scripts.
+  - CAKE, ifb and sqm-scripts are verified inside the unprivileged container.
+  - No collector on it yet: that waits for the lab-controller decision. The live controller keeps
+    exactly one collector.
+
+## 2026-09-23 — Dashboard: lazy pages, vendor chunks, loading spinners
+
+The owner, looking at the build's chunk-size warning: time for lazy loading, code
+splitting, and spinners while a page loads. Built by a subagent, reviewed, deployed
+22:08 UTC.
+
+- **Before:** one 1,369 kB entry (376 kB gzip) holding every page, Recharts (398 kB),
+  react-dom (190 kB) and the icons (185 kB). The infrastructure page was the only lazy
+  one.
+- **After:**
+  - Every page is its own chunk: `React.lazy` + a keyed `Suspense` per route, so the shell
+    stays and the content area shows a spinner. The gates and the first page's chunk load
+    in parallel.
+  - Vendor chunks through Vite 8/Rolldown `codeSplitting.groups`: react (286 kB), query,
+    radix, ui-utils, d3-shared, recharts (387 kB). Their hashes stay stable across app
+    deploys, and Recharts loads only with pages that draw charts.
+  - Entry **118 kB (32 kB gzip)**. The login page's first load went from 393 kB to 183 kB
+    gzip; the dashboard's is 332 kB over 33 files. No chunk-size warning, limit untouched.
+  - The name helpers moved out of `lib/device-labels.ts` into `device-names.ts`, which
+    keeps 17 type icons out of the entry.
+- **Loading:**
+  - `PageSpinner` fades in after 150 ms, and is static with a label under reduced motion.
+  - The plain-text page loaders (gates, setup, presence, hostname enrichment, users, the
+    map) use it too.
+  - `scrollbar-gutter: stable` stops the 12 px shift when a short spinner view drops the
+    scrollbar.
+  - A page that was already prefetched opens with no spinner at all.
+- **Prefetch:** hover, focus or touch on links (and on device rows and search results),
+  then idle prefetch of dashboard, devices, traffic and wifi after the first render
+  (skipped under Save-Data).
+- **Redeploys:**
+  - The server now answers 404 for a missing `/assets/*` file. It used to be 200 with
+    index.html, which a tab open across a deploy then tried to run as a chunk.
+  - The route error element reloads once per build (the entry URL is kept in
+    sessionStorage), never while offline, then shows "This page could not be loaded" with
+    a Reload button.
+  - A render error in a page now stays inside the shell.
+  - Controller suite 485.
+- **Verified:**
+  - In the subagent's harness: 176/176 route checks, 32 UX, 22 recovery (one reload, no
+    loop, recovery after a second redeploy), 26 phone/dark, 17 StrictMode.
+  - Live after the deploy: headless Firefox through all 18 routes with real data. Every
+    route rendered, no chunk failed, and no error screen appeared.
+- **Incident:** the subagent's first harness build read the git-ignored `dashboard/.env`
+  (`VITE_API_URL` = the live API's public origin). For 6 minutes (21:36–21:43 UTC) its
+  headless browser sent read-only GETs there (setup status and 401s). Nothing was written.
+  Harness builds now force `VITE_API_URL=`, and CLAUDE.md says so. The Docker image is not
+  affected (`.dockerignore` excludes that file).
+
+## 2026-09-23 — Device summary in the map's side panel
+
+Owner: clicking a device on the Infrastructure page should show "a summary version of
+download/upload speed, signal/roam history if wifi, top applications gb, with a toggle of
+maybe today, this week, this month". Dashboard only, from existing endpoints; built by a
+subagent, reviewed, deployed 22:59 UTC.
+
+- **Where:** an "Activity" section for device boxes and Wi-Fi client chips, with a
+  Today / This week / This month toggle.
+- **Periods:** calendar periods in the site timezone, read from
+  `/usage/intervals` (no endpoint exposes it alone; the browser's zone is the fallback,
+  and the panel says so). New `periodStart()` in `lib/usage.ts` with a Monday week start;
+  checked against luxon on 287,874 cases.
+- **Speed:** totals, the current rate (the last complete minute), the peak, labelled
+  with its bucket average, and an inline-SVG sparkline (no Recharts in the map chunk).
+- **Top applications:** the top 5 by GB with category chips and share bars.
+- **Wi-Fi:** the current AP, band and signal, a signal sparkline, and the roams in the
+  window, 5 shown with the count. Wired devices get their "Ethernet · AP · port · speed"
+  line from the map instead.
+- **Cost:** the infra chunk grew 360 → 379 kB. Requests run only while the panel is
+  open.
+- **Colour:** the download/upload colour pair fails a colour-blindness check, so download
+  also gets a fill and the labels carry ↓/↑.
+- **Verified:** 140 mock checks; live, the wired garage camera (today: ~200 KB through the
+  gateway, HTTPS, STUN relay, NTP) and a Wi-Fi phone.
+- **Seen live:** that phone shows "30+ roams today", five of them in one minute, bouncing
+  between two APs. That is the roaming-event noise noted on 2026-09-22: when a client
+  leaves, both APs list it for a while, and each report flips its location. The panel now
+  makes it prominent. Fix: record a roam only when the new AP heard the client more
+  recently than the current owner.
+
+## 2026-09-23 — Roaming noise fixed: the AP that heard a client last owns it
+
+The device side panel showed a phone with "30+ roams today", five in one minute. The
+cause was noted on 2026-09-22: a client that walks to another AP stays in the old AP's
+station list, idle, until hostapd drops it minutes later. Every AP report compared the
+station against the last report of any AP, so the two APs' alternating reports moved it
+back and forth. Each flip wrote a roaming event, and `wifi_station_latest` flipped its
+`ap_id` too: the map, the overlay and the panel showed the wrong AP every other push.
+
+- **Measured before the fix** (per-client roam lists, capped at 30 by the API):
+  - 60+ events in the last hour, 58 of them within a minute of the previous one;
+  - 136+ in 24 h (121 within a minute);
+  - Robert's phone and the S23 Ultra each at the cap within the hour.
+- **Fix** (`resolveStationOwners` in `wifi_metrics_poller.ts`):
+  - Each station's location now records when its AP last heard it (report time minus
+    the reported idle time).
+  - Another AP takes the station over only if it heard it more than 2 s after the
+    current owner. A stale listing's idle time only grows, so it never wins it back.
+  - The owner AP's own report stays authoritative for moves between its radios (band
+    steer).
+  - A MAC listed on two radios in one report counts once, by its fresher entry.
+  - `wifi_station_latest` only takes rows from the owning AP, checked again right before
+    the upsert. Snapshots still keep every AP's listing, so history is not rewritten.
+  - The in-memory location map, which was unbounded, is capped at 4,096 stations (the
+    day-old go first).
+  - After a restart the map starts empty, so at most one spurious roam per client.
+  - The 2 s margin is a measurement-jitter constant, not a user preference, so it is not
+    a setting (candidate if that ever changes).
+- **Tests:**
+  - A unit spec covers ownership, the margin, band steer, two radios in one report and
+    the bound.
+  - A functional spec pushes seven alternating reports through the real ingest and gets
+    one roam, with the latest row on the right AP after every report. The old code gave
+    six roams.
+  - Suite 493. Deployed 23:18 UTC.
+- **Measured after the fix** (23:18–23:30 UTC, 18 clients): **1** roam event, isolated,
+  none within a minute of another. Before: ~12 per 12 minutes, 58 of every 60 in bursts.
+  The one event was the S23 Ultra moving to the Second Floor AP at −72 dBm, 4.5 minutes
+  after the restart: a real edge-of-coverage roam. The bogus events already stored stay
+  in history (offered: collapse each ping-pong burst into its net move).
