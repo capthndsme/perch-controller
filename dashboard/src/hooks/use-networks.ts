@@ -12,6 +12,7 @@ import { ApiError, apiFetch } from '@/lib/api'
 import { applyWindowToParams, shouldAutoRefresh, windowKey, type RefreshInterval, type TimeWindow } from '@/lib/time-window'
 import type {
   DeviceNetworks,
+  FirewallZoneOption,
   GatewayBrief,
   GatewayNetwork,
   NetworkCreate,
@@ -67,6 +68,25 @@ export function useGatewayNetworks(gatewayId: number | null, options: { enabled?
     queryFn: () => apiFetch<GatewayNetwork[]>(base(gatewayId!)),
     enabled: gatewayId !== null && options.enabled !== false,
     refetchInterval: LIVE_POLL_MS,
+  })
+}
+
+/**
+ * The gateway's firewall zones for the network dialog's zone picker (the
+ * firewall overview, docs/gateway/firewall.md section 6): name, WAN, the
+ * management zone, and whether Perch syncs it (only synced zones can take a
+ * network).
+ */
+export function useFirewallZones(gatewayId: number | null, options: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: [...gatewaysKey, gatewayId ?? 0, 'firewall', 'zones'] as const,
+    queryFn: async () => {
+      const overview = await apiFetch<{ zones: FirewallZoneOption[] }>(`/api/v1/gateways/${gatewayId}/firewall`)
+      return overview.zones.map((z) => ({ name: z.name, wan: z.wan, management: z.management, sync: { owner: z.sync.owner } }))
+    },
+    enabled: gatewayId !== null && options.enabled !== false,
+    staleTime: 30_000,
+    retry: false,
   })
 }
 

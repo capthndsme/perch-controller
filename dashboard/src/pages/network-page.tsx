@@ -54,7 +54,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
  * One network (docs/gateway/networks.md): its traffic history with the scope
  * change marks (decision 8), the devices the capture saw on it (`/devices`
  * rows' `network`), the capture switch (decision 21), its config (kind, VLAN,
- * ports, subnet, DHCP pool; the firewall zone read-only) and, for admins,
+ * ports, subnet, DHCP pool, firewall zone) and, for admins,
  * edit and delete.
  */
 export function NetworkPage() {
@@ -398,10 +398,7 @@ function ConfigPanel({ network }: { network: GatewayNetwork }) {
           )}
         </Row>
         <Row label="Firewall zone">
-          <span className="flex flex-col items-end">
-            <span className="font-mono">{network.firewallZone ?? '—'}</span>
-            <span className="text-[11px] text-muted-foreground">read-only; firewall management comes later</span>
-          </span>
+          <span className="font-mono">{network.firewallZone ?? '—'}</span>
         </Row>
         <Row label="Config state">
           {network.status ? <SectionStatusBadge status={network.status} /> : <span className="text-muted-foreground">—</span>}

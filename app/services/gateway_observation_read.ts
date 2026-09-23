@@ -1,5 +1,10 @@
 import Collector from '#models/collector'
-import { gatewayForCollector, resolveGateway } from '#services/gateway_config/gateway_registry'
+import {
+  gatewayForCollector,
+  normalizeMode,
+  resolveGateway,
+} from '#services/gateway_config/gateway_registry'
+import { deviceWanBlock, type WanAccessView } from '#services/gateway_config/firewall_service'
 import collectorHub from '#services/collector_agent_hub'
 import { sessionCapabilities } from '#services/collector_agent'
 import { getDeviceLabels } from '#services/device_labels'
@@ -706,8 +711,11 @@ export async function readObservationOverview(collector: Collector, gatewayId: n
  * GET /devices/:mac/network: what the gateway knows of one device. The
  * gateway is the adopted collector that listed the MAC most recently;
  * `gatewayId` is its `gateways.id` (null without a gateway row).
- * `reservation`, `dnsName` and `wanBlocked` belong to the config plane and
- * read null until it exists.
+ * `reservation` and `dnsName` belong to the config plane and read null
+ * here (the device page's Reservation card reads them). `wanBlocked` is the
+ * firewall's per-device WAN block (`deviceWanBlock`, docs/gateway/firewall.md
+ * section 5) on a gateway the config plane observes or manages; null in mode
+ * `off` or without a gateway row.
  */
 export async function readDeviceNetwork(mac: string) {
   const rows = rawRows<HostRow>(
@@ -730,7 +738,7 @@ export async function readDeviceNetwork(mac: string) {
       lease: null,
       reservation: null,
       dnsName: null,
-      wanBlocked: null,
+      wanBlocked: null as WanAccessView | null,
       neighbor: null,
       network: null,
       seenAt: null,
@@ -750,13 +758,15 @@ export async function readDeviceNetwork(mac: string) {
     ? (leasesOf(row, device).find((l) => l.family === 4) ?? null)
     : null
   const gateway = await gatewayForCollector(Number(row.collectorId))
+  const wanBlocked =
+    gateway && normalizeMode(gateway.mode) !== 'off' ? await deviceWanBlock(gateway, mac) : null
   return {
     gatewayId: gateway?.id ?? null,
     collectorId: Number(row.collectorId),
     lease,
     reservation: null,
     dnsName: null,
-    wanBlocked: null,
+    wanBlocked,
     neighbor: truthy(row.neighborPresent)
       ? {
           ipv4: row.neighborIpv4,

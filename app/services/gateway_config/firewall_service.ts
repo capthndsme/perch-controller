@@ -12,6 +12,7 @@ import {
   type DhcpReservation,
 } from '#services/gateway_config/domains/dhcp_hosts'
 import {
+  addNetworkToZone,
   BLOCK_RULE_PREFIX,
   BLOCK_SET_NAME,
   checkRulePath,
@@ -27,6 +28,7 @@ import {
   redirectMatch,
   redirectShadows,
   redirectsOverlap,
+  removeNetworkFromZone,
   ruleMatch,
   ruleShadows,
   truthy,
@@ -34,8 +36,10 @@ import {
   wordsOf,
   zoneInfo,
   zoneOfNetwork,
+  zoneObjectsForNetwork,
   zonesOf,
   type FirewallObject,
+  type NetworkPurpose,
   type ZoneInfo,
 } from '#services/gateway_config/domains/firewall'
 import { GatewayPlaneError, planeError } from '#services/gateway_config/errors'
@@ -1552,4 +1556,106 @@ function firstTowardWan(desired: string[], states: SectionState[], wans: string[
     return dest !== null && (dest === '*' || wans.includes(dest))
   })
   return index === -1 ? desired.length : index
+}
+
+// ── zone membership of networks (docs/gateway/networks.md 1.3) ────────────
+
+/**
+ * What a network write asks of the firewall: `zone` names the zone the
+ * network should be in (null = in none), `createZone` makes a new zone of
+ * that name with the purpose's defaults (`zoneObjectsForNetwork`: zone, a
+ * forwarding to each WAN zone, DHCP/DNS input rules on guest/IoT).
+ */
+export type NetworkZoneRequest = {
+  network: string
+  purpose: NetworkPurpose
+  zone: string | null
+  createZone?: boolean
+}
+
+/**
+ * The firewall edits that put `network` into the requested zone (and out of
+ * any other), for the same `editDomainSections` call as the network's own
+ * sections, so a new network, its pool and its zone go in one apply. Pure
+ * over the gateway's section states. A zone Perch does not sync (the
+ * router's) cannot be edited: 409 `not_synced`. No edits when the network
+ * is already where it should be.
+ */
+export function networkZoneEdits(
+  states: SectionState[],
+  request: NetworkZoneRequest
+): SectionEdit[] {
+  const zoneStates = fwStates(states).filter((s) => contentOf(s)!.type === 'zone')
+  const zones = allZones(states)
+  const target = request.zone
+  const edits: SectionEdit[] = []
+  const put = (s: SectionState, obj: FirewallObject): SectionEdit => ({
+    op: 'put',
+    perchId: s.perchId,
+    config: 'firewall',
+    type: 'zone',
+    options: obj.options,
+  })
+
+  if (target !== null && request.createZone) {
+    if (zones.some((z) => z.name === target)) {
+      throw planeError(409, 'firewall_zone_exists', `A firewall zone "${target}" exists already.`, {
+        field: 'firewallZone',
+      })
+    }
+    try {
+      for (const obj of zoneObjectsForNetwork({
+        network: request.network,
+        purpose: request.purpose,
+        zoneName: target,
+        wanZones: wanZones(zones),
+        existingZones: zones.map((z) => z.name),
+      })) {
+        edits.push({
+          op: 'put',
+          perchId: null,
+          config: 'firewall',
+          type: obj.type,
+          options: obj.options,
+        })
+      }
+    } catch (error) {
+      throw planeError(422, 'firewall_zone_invalid', (error as Error).message, {
+        field: 'firewallZone',
+      })
+    }
+  } else if (target !== null) {
+    checkZone(zones, target, 'firewallZone')
+  }
+
+  for (const s of zoneStates) {
+    const obj = objectOf(s)
+    const info = zoneInfo(obj.options)
+    const listed = info.networks.includes(request.network)
+    if (info.name === target && !request.createZone) {
+      if (listed) continue
+      requireZoneSynced(s, info.name)
+      edits.push(put(s, addNetworkToZone(obj, request.network)))
+    } else if (listed) {
+      requireZoneSynced(s, info.name)
+      edits.push(put(s, removeNetworkFromZone(obj, request.network)))
+    }
+  }
+  return edits
+}
+
+function requireZoneSynced(s: SectionState, zone: string) {
+  if (s.scope !== 'synced') {
+    throw planeError(
+      409,
+      'not_synced',
+      `Firewall zone "${zone}" is the router’s: include it in Perch first.`,
+      { perchId: s.perchId, issue: s.issue, field: 'firewallZone' }
+    )
+  }
+}
+
+/** The zone a network is in now (desired side), or null. */
+export function currentZoneOf(states: SectionState[], network: string): string | null {
+  return zoneOfNetwork(allZones(states), network)
 }

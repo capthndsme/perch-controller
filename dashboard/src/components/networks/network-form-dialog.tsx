@@ -16,7 +16,7 @@ import { Segmented } from '@/components/ui/segmented'
 import { Checkbox, ErrorNote, FormField, selectClassName } from '@/components/networks/network-ui'
 import { IssueList, NetworkWriteResult } from '@/components/networks/network-write-result'
 import { useInfraLayout } from '@/hooks/use-infra'
-import { useCreateNetwork, useUpdateNetwork } from '@/hooks/use-networks'
+import { useCreateNetwork, useFirewallZones, useUpdateNetwork } from '@/hooks/use-networks'
 import { apiErrorCode } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import {
@@ -89,6 +89,9 @@ type NetworkFormDialogProps = {
  * write the dialog shows the result: warnings, the conversion and the apply,
  * which the app-wide banner then follows through its confirm.
  */
+/** The zone picker's "a zone of its own" choice. */
+const NEW_ZONE = '\u0000new'
+
 export function NetworkFormDialog({ gateway, networks, network, onClose }: NetworkFormDialogProps) {
   const uid = useId()
   const editing = Boolean(network)
@@ -115,7 +118,9 @@ export function NetworkFormDialog({ gateway, networks, network, onClose }: Netwo
   const [dhcpLimit, setDhcpLimit] = useState(String(network?.dhcp?.limit ?? 150))
   const [dhcpLease, setDhcpLease] = useState(network?.dhcp?.leaseTime ?? '12h')
   const [untaggedText, setUntaggedText] = useState('1')
-  const [zone, setZone] = useState(network?.firewallZone ?? '')
+  // '' = no zone; NEW_ZONE = a zone of its own, named after the network (purpose defaults).
+  const [zone, setZone] = useState(network ? (network.firewallZone ?? '') : NEW_ZONE)
+  const zones = useFirewallZones(gateway.id)
   const [capture, setCapture] = useState(true)
   const [captureTouched, setCaptureTouched] = useState(false)
   const [applyNow, setApplyNow] = useState(true)
@@ -237,7 +242,10 @@ export function NetworkFormDialog({ gateway, networks, network, onClose }: Netwo
     body.ipv4 = ipv4.trim() || null
     if (dhcpOn && ipv4.trim()) body.dhcp = dhcpInput()
     if (conversion) body.untaggedVlan = Number(untaggedText)
-    if (zone.trim()) body.firewallZone = zone.trim()
+    if (zone === NEW_ZONE) {
+      body.firewallZone = key
+      body.createZone = true
+    } else if (zone.trim()) body.firewallZone = zone.trim()
     return body
   }
 
@@ -245,7 +253,12 @@ export function NetworkFormDialog({ gateway, networks, network, onClose }: Netwo
     const patch: NetworkPatch = {}
     if (label.trim() && label.trim() !== n.label) patch.label = label.trim()
     if (purpose !== n.purpose) patch.purpose = purpose
-    if ((zone.trim() || null) !== n.firewallZone) patch.firewallZone = zone.trim() || null
+    if (!configDisabled) {
+      if (zone === NEW_ZONE) {
+        patch.firewallZone = n.key
+        patch.createZone = true
+      } else if ((zone.trim() || null) !== n.firewallZone) patch.firewallZone = zone.trim() || null
+    }
     if (configDisabled) return patch
     if ((ipv4.trim() || null) !== n.ipv4) patch.ipv4 = ipv4.trim() || null
     if (hasVlan && n.vlanId !== null && vlanId !== n.vlanId) patch.vlanId = vlanId
@@ -656,15 +669,46 @@ export function NetworkFormDialog({ gateway, networks, network, onClose }: Netwo
                   <FormField
                     label="Firewall zone"
                     htmlFor={`${uid}-zone`}
-                    hint="Firewall management comes later: leave this empty and put the network into a zone on the router (LuCI) for now."
+                    hint={
+                      zone === NEW_ZONE
+                        ? `A zone “${key || network?.key || '…'}” of its own: internet access, and for guest and IoT networks no access to the router beyond DHCP and DNS.`
+                        : zones.data
+                          ? 'Zones the router has; the router’s own zones must be included in Perch before a network can join them.'
+                          : 'The zone’s name on the router.'
+                    }
                   >
-                    <Input
-                      id={`${uid}-zone`}
-                      value={zone}
-                      onChange={(e) => setZone(e.target.value)}
-                      placeholder="guest"
-                      className="font-mono"
-                    />
+                    {zones.data ? (
+                      <select
+                        id={`${uid}-zone`}
+                        className={selectClassName}
+                        value={zone}
+                        onChange={(e) => setZone(e.target.value)}
+                        disabled={configDisabled}
+                      >
+                        <option value="">No zone</option>
+                        {zones.data
+                          .filter((z) => !z.wan)
+                          .map((z) => (
+                            <option key={z.name} value={z.name} disabled={z.sync.owner !== 'perch' && z.name !== network?.firewallZone}>
+                              {z.name}
+                              {z.management ? ' (management)' : ''}
+                              {z.sync.owner !== 'perch' ? ' (router’s)' : ''}
+                            </option>
+                          ))}
+                        {zones.data.some((z) => z.name === (key || network?.key)) ? null : (
+                          <option value={NEW_ZONE}>New zone “{key || network?.key || '…'}”</option>
+                        )}
+                      </select>
+                    ) : (
+                      <Input
+                        id={`${uid}-zone`}
+                        value={zone === NEW_ZONE ? '' : zone}
+                        onChange={(e) => setZone(e.target.value)}
+                        placeholder="guest"
+                        className="font-mono"
+                        disabled={configDisabled}
+                      />
+                    )}
                   </FormField>
                 </div>
 
@@ -749,9 +793,11 @@ export function NetworkFormDialog({ gateway, networks, network, onClose }: Netwo
               {localError ? <p className="text-xs text-destructive">{localError}</p> : null}
               <ErrorNote error={mutation.error} />
               {issues.length > 0 ? <IssueList issues={issues} /> : null}
-              {apiErrorCode(mutation.error) === 'firewall_not_managed' ? (
+              {['firewall_zone_exists', 'firewall_zone_unknown', 'firewall_zone_invalid'].includes(
+                apiErrorCode(mutation.error) ?? '',
+              ) ? (
                 <Button type="button" size="xs" variant="outline" onClick={() => setZone(network?.firewallZone ?? '')}>
-                  Clear the zone
+                  Keep the current zone
                 </Button>
               ) : null}
             </DialogBody>

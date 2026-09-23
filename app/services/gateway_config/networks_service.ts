@@ -11,6 +11,9 @@ import { recordGatewayEvent } from '#services/gateway_config/events'
 import { editDomainSections, findGateway } from '#services/gateway_config/gateway_config_service'
 import { normalizeMode } from '#services/gateway_config/gateway_registry'
 import { loadSections } from '#services/gateway_config/gateway_store'
+import type { SectionEdit } from '#services/gateway_config/domain'
+import { FIREWALL_DOMAIN_KEY } from '#services/gateway_config/domains/firewall'
+import { networkZoneEdits } from '#services/gateway_config/firewall_service'
 import {
   composeNetworks,
   planCreateNetwork,
@@ -411,20 +414,26 @@ function requireDeviceSyntax(gateway: Gateway) {
 }
 
 /**
- * Firewall zone membership needs a firewall domain, which the config plane
- * does not have yet (README M7). Until then a request naming a zone is
- * refused before anything changes; the network's zone is shown read-only
- * (`firewallZone`, from the router's config). TODO(M7): route this through
- * the firewall domain's `zone.network` list (set semantics) in the same
- * `editDomainSections` call.
+ * Firewall zone membership (docs/gateway/networks.md 1.3): `firewallZone`
+ * names the zone the network should be in (null = none; left out = no
+ * change), `createZone` makes that zone with the purpose's defaults. The
+ * firewall domain's edits go into the same `editDomainSections` call as the
+ * network's own sections, so network, pool and zone reach the router in one
+ * apply. Zone changes need managed mode like any other config change.
  */
-function refuseFirewallZone(zone: string | null | undefined) {
-  if (zone === undefined || zone === null) return
-  throw planeError(
-    409,
-    'firewall_not_managed',
-    'Perch does not manage firewall zones yet: add the network to a zone on the router.'
-  )
+function zoneEditsFor(
+  states: Parameters<typeof networkZoneEdits>[0],
+  network: string,
+  purpose: GatewayNetworkPurpose,
+  input: { firewallZone?: string | null; createZone?: boolean }
+): SectionEdit[] {
+  if (input.firewallZone === undefined) return []
+  return networkZoneEdits(states, {
+    network,
+    purpose,
+    zone: input.firewallZone,
+    createZone: input.createZone === true,
+  })
 }
 
 /**
@@ -473,10 +482,16 @@ async function applyNow(
   }
 }
 
-async function writePlan(gatewayId: number, userId: number, plan: NetworkPlan) {
+async function writePlan(
+  gatewayId: number,
+  userId: number,
+  plan: Pick<NetworkPlan, 'network' | 'pools'>,
+  firewall: SectionEdit[] = []
+) {
   return editDomainSections(gatewayId, userId, [
     { domain: 'networks', edits: plan.network },
     { domain: 'dhcp_pools', edits: plan.pools },
+    ...(firewall.length > 0 ? [{ domain: FIREWALL_DOMAIN_KEY, edits: firewall }] : []),
   ])
 }
 
@@ -527,8 +542,11 @@ async function saveMeta(
   return true
 }
 
+export type NetworkZoneInput = { firewallZone?: string | null; createZone?: boolean }
+
 export type NetworkCreateInput = NetworkCreate &
-  NetworkMeta & { firewallZone?: string | null; apply?: boolean }
+  NetworkMeta &
+  NetworkZoneInput & { apply?: boolean }
 
 /** `POST /gateways/:id/networks`. */
 export async function createGatewayNetwork(
@@ -538,11 +556,11 @@ export async function createGatewayNetwork(
 ): Promise<NetworkWriteResult> {
   const gateway = await findGateway(gatewayId)
   requireManagedMode(gateway)
-  refuseFirewallZone(input.firewallZone)
   requireDeviceSyntax(gateway)
   const { states } = await loadSections(gateway.id)
   const plan = planCreateNetwork(states, input)
-  const outcome = await writePlan(gateway.id, userId, plan)
+  const zoneEdits = zoneEditsFor(states, input.key, input.purpose ?? guessPurpose(input.key), input)
+  const outcome = await writePlan(gateway.id, userId, plan, zoneEdits)
   const unknownPorts = await portWarnings(gateway, input.ports)
 
   const after = await loadSections(gateway.id)
@@ -588,8 +606,7 @@ export async function createGatewayNetwork(
   }
 }
 
-export type NetworkUpdateInput = NetworkPatch &
-  NetworkMeta & { firewallZone?: string | null; apply?: boolean }
+export type NetworkUpdateInput = NetworkPatch & NetworkMeta & NetworkZoneInput & { apply?: boolean }
 
 /** `PATCH /gateways/:id/networks/:networkId`: metadata alone works in any mode. */
 export async function updateGatewayNetwork(
@@ -599,24 +616,26 @@ export async function updateGatewayNetwork(
   input: NetworkUpdateInput
 ): Promise<NetworkWriteResult> {
   const { gateway, view } = await networkById(gatewayId, networkId)
-  refuseFirewallZone(input.firewallZone)
-  const configChange =
+  const sectionChange =
     input.ipv4 !== undefined ||
     input.ports !== undefined ||
     input.vlanId !== undefined ||
     input.dhcp !== undefined
+  const zoneChange = input.firewallZone !== undefined
   let issues: Issue[] = []
   let perchIds: string[] = []
-  if (configChange) {
+  if (sectionChange || zoneChange) {
     requireManagedMode(gateway)
     if (!view.perchId) {
       throw planeError(409, 'network_not_managed', `${view.key} is known from the report only.`)
     }
-    requireDeviceSyntax(gateway)
     const { states } = await loadSections(gateway.id)
-    const plan = planUpdateNetwork(states, view.key, input)
-    if (plan.network.length + plan.pools.length > 0) {
-      const outcome = await writePlan(gateway.id, userId, plan)
+    const plan = sectionChange
+      ? (requireDeviceSyntax(gateway), planUpdateNetwork(states, view.key, input))
+      : { network: [], pools: [], warnings: [] as Issue[] }
+    const zoneEdits = zoneEditsFor(states, view.key, input.purpose ?? view.purpose, input)
+    if (plan.network.length + plan.pools.length + zoneEdits.length > 0) {
+      const outcome = await writePlan(gateway.id, userId, plan, zoneEdits)
       issues = [...outcome.issues, ...plan.warnings, ...(await portWarnings(gateway, input.ports))]
       perchIds = outcome.perchIds
     }
@@ -648,7 +667,21 @@ export async function deleteGatewayNetwork(
   }
   const { states } = await loadSections(gateway.id)
   const plan = planDeleteNetwork(states, view.key, gateway.managementPath)
-  const outcome = await writePlan(gateway.id, userId, plan)
+  // Out of its zone too; a zone Perch does not sync stays as it is (a warning).
+  const zoneWarnings: Issue[] = []
+  let zoneEdits: SectionEdit[] = []
+  try {
+    zoneEdits = networkZoneEdits(states, { network: view.key, purpose: view.purpose, zone: null })
+  } catch (error) {
+    if (!(error instanceof GatewayPlaneError) || error.code !== 'not_synced') throw error
+    zoneWarnings.push({
+      severity: 'warning',
+      code: 'firewall_zone_not_synced',
+      message: `${error.message} The zone still lists ${view.key}.`,
+      config: 'firewall',
+    })
+  }
+  const outcome = await writePlan(gateway.id, userId, plan, zoneEdits)
   const { apply, applyError } = await applyNow(
     gateway.id,
     userId,
@@ -658,7 +691,7 @@ export async function deleteGatewayNetwork(
   const views = await networksOf(gateway)
   return {
     object: views.find((v) => v.id === networkId) ?? null,
-    issues: [...outcome.issues, ...plan.warnings],
+    issues: [...outcome.issues, ...plan.warnings, ...zoneWarnings],
     converted: null,
     apply,
     applyError,

@@ -11,7 +11,8 @@ import { cn } from '@/lib/utils'
  * Device page: what the gateway knows of this device, from the observation
  * channel (`/devices/:mac/network`): its DHCP lease, neighbour entry,
  * network, last gateway sighting and the ports it opened with UPnP.
- * Reservation, DNS name and WAN block come with gateway management.
+ * The reservation has its own card (config plane); the WAN block shows here
+ * when the gateway's config plane is on.
  */
 export function DeviceNetworkCard({ mac }: { mac: string | undefined }) {
   const query = useDeviceNetwork(mac)
@@ -73,9 +74,29 @@ export function DeviceNetworkCard({ mac }: { mac: string | undefined }) {
           <FactRow label="Reservation">
             <span className="text-muted-foreground">
               {data.lease?.staticName ? 'static host on the router' : 'none'}
-              <span className="block text-[11px]">Perch manages reservations once gateway management ships.</span>
+              <span className="block text-[11px]">A managed gateway's reservation is on the Reservation card.</span>
             </span>
           </FactRow>
+          {data.wanBlocked ? (
+            <FactRow label="Internet access">
+              {data.wanBlocked.blocked ? (
+                <span className="text-status-serious">
+                  blocked
+                  <span className="block text-[11px] text-muted-foreground">
+                    {data.wanBlocked.ruleEnabled === false
+                      ? 'block rule disabled on the router'
+                      : data.wanBlocked.applied
+                        ? data.wanBlocked.since
+                          ? `since ${formatLastSeen(data.wanBlocked.since)}`
+                          : 'on the router'
+                        : 'waiting for the apply'}
+                  </span>
+                </span>
+              ) : (
+                <span className="text-muted-foreground">{data.wanBlocked.applied ? 'allowed' : 'unblocking…'}</span>
+              )}
+            </FactRow>
+          ) : null}
           <FactRow label="Neighbour entry">
             {data.neighbor ? (
               <>

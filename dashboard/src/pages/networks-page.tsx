@@ -27,7 +27,7 @@ import type { GatewayBrief, GatewayNetwork } from '@/types/networks'
 
 /**
  * Networks (plan 1 section 12.4): every gateway's LAN-side networks with their
- * kind, VLAN, subnet, DHCP pool, firewall zone (read-only), live rates and
+ * kind, VLAN, subnet, DHCP pool, firewall zone, live rates and
  * device counts, the capture switch, and the admin's create dialog.
  */
 export function NetworksPage() {
@@ -278,7 +278,7 @@ function NetworksTable({
       <p className="flex items-center gap-1.5 border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
         <Info className="size-3.5" />
         Rates are the router’s interface counters (every 30 s); devices are those the capture saw on the network.
-        Firewall zones are read-only for now.
+        Change a network’s firewall zone from its Edit dialog.
       </p>
     </div>
   )

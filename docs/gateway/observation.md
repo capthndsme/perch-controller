@@ -237,7 +237,7 @@ type BackupSummary = { id: number; createdAt: string; size: number; sha256: stri
 | GET `/gateways/:gatewayId/backups` | admin | – | `BackupSummary[]`, newest first (never the content) |
 | POST `/gateways/:gatewayId/backups` | admin | `{ note?: string (≤ 200), redact?: boolean (default true) }` | 201 `BackupSummary`. Errors: 409 `gateway_offline`, 409 `gateway_capability_missing {capability: 'gateway.backup'}`, 409 `backup_redaction_required`, 504 `agent_timeout`, 502 `backup_failed`, 413 `backup_too_large` |
 | GET `/gateways/:gatewayId/backups/:backupId/download` | admin | – | `application/gzip` attachment (`X-Content-SHA256`), the one non-`{data}` route. 404 `backup_not_found` |
-| GET `/devices/:mac/network` | user | – | `{ gatewayId: number \| null /* gateways.id */, collectorId: number \| null, lease: DhcpLease \| null, reservation: null, dnsName: null, wanBlocked: null /* config plane */, neighbor: { ipv4, ipv6, ifname, reachable, seenAt } \| null, network: string \| null, seenAt: string \| null, upnp: UpnpMapping[] }`. 400 `invalid_mac` |
+| GET `/devices/:mac/network` | user | – | `{ gatewayId: number \| null /* gateways.id */, collectorId: number \| null, lease: DhcpLease \| null, reservation: null, dnsName: null, wanBlocked: WanAccessView \| null /* firewall.md section 5; null in mode off */, neighbor: { ipv4, ipv6, ifname, reachable, seenAt } \| null, network: string \| null, seenAt: string \| null, upnp: UpnpMapping[] }`. 400 `invalid_mac` |
 | GET / PATCH `/settings/gateway-observations` | admin | PATCH any subset of section 6's keys | `{ settings, defaults, limits }`; 422 out of range |
 | GET / PATCH `/settings/presence` | admin | adds `gatewaySightings: 0 \| 1` | unchanged shape, one more key |
 

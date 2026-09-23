@@ -161,6 +161,8 @@ export type NetworkCreate = {
   purpose?: NetworkPurpose
   capture?: boolean
   firewallZone?: string | null
+  /** Make `firewallZone` a new zone with the purpose's defaults (networks.md 1.3). */
+  createZone?: boolean
 }
 
 export type NetworkPatch = {
@@ -173,6 +175,8 @@ export type NetworkPatch = {
   purpose?: NetworkPurpose
   capture?: boolean
   firewallZone?: string | null
+  /** Make `firewallZone` a new zone with the purpose's defaults (networks.md 1.3). */
+  createZone?: boolean
 }
 
 export type NetworkHistoryPoint = {
@@ -266,4 +270,13 @@ export type GatewayBrief = {
     | 'sign_key_unknown'
     | null
   pendingApply: NetworkApply | null
+}
+
+/** A firewall zone as the network dialog's picker needs it (`GET /gateways/:id/firewall` → `zones`). */
+export type FirewallZoneOption = {
+  name: string
+  wan: boolean
+  management: boolean
+  /** `perch` = synced (a network can join it); `router` = the router's own. */
+  sync: { owner: 'perch' | 'router' }
 }

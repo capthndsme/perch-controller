@@ -149,8 +149,10 @@ export function configWriteHardBlocked(gateway: GatewayBrief | undefined): boole
 const REFUSALS: Record<string, string> = {
   not_managed: 'The gateway is not in managed mode. Labels and capture work anyway; config fields need managed mode.',
   openwrt_too_old: 'The router runs an OpenWrt release before 21.02, which lacks the `config device` syntax networks need.',
-  firewall_not_managed:
-    'Firewall management comes later: Perch cannot put a network into a firewall zone yet. Leave the zone empty and add the network to a zone on the router (LuCI) for now.',
+  firewall_zone_unknown: 'The router has no firewall zone of that name.',
+  firewall_zone_exists: 'A firewall zone of that name exists already: pick it instead of making a new one.',
+  firewall_zone_invalid: 'A zone name is letters, digits and _ (starting with a letter), at most 11 characters.',
+  not_synced: 'That firewall zone is the router’s: include it in Perch (Gateway → Configuration → Sections) before a network can join it.',
   network_key_taken: 'The router already has a network section with that name.',
   dhcp_pool_exists: 'The router already has a DHCP pool for that name.',
   network_not_managed:

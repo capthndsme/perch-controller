@@ -79,13 +79,28 @@ drift). `dhcp_option` merges per option code. Identity key `pool:<interface>`. V
 `duplicate_pool`, `invalid_pool_range`, `invalid_leasetime` (errors); `pool_outside_subnet`,
 `pool_includes_router` (warnings).
 
-### 1.3 Firewall zones (not yet)
+### 1.3 Firewall zones
 
-There is no firewall domain yet (README M7). A network's zone is shown read-only
-(`firewallZone`: the zone whose `network` list names it). A write that names a zone is refused with
-409 `firewall_not_managed` before anything changes; add the network to a zone on the router (LuCI)
-meanwhile. When the firewall domain lands, the same `editDomainSections` call carries the zone's
-`network` list edit, so network, pool and zone stay one apply (plan 1 section 8.1 "wizard").
+A network's zone is `firewallZone`: the zone whose `network` list names it. Writes go through the
+firewall domain (docs/gateway/firewall.md; helpers `addNetworkToZone`, `removeNetworkFromZone`,
+`zoneObjectsForNetwork` in `domains/firewall.ts`, composed by `networkZoneEdits` in
+`firewall_service.ts`), in the same `editDomainSections` call as the network's own sections, so
+network, pool and zone stay one draft change and one apply request (plan 1 section 8.1 "wizard"):
+
+- `firewallZone` left out: no zone change. `null`: the network leaves every zone that lists it.
+- `firewallZone: "<name>"`: the network joins that zone and leaves any other. Unknown zone: 422
+  `firewall_zone_unknown`.
+- With `createZone: true`: a new zone of that name with the purpose's defaults (zone, a forwarding to
+  each WAN zone, `<Zone>-DHCP` / `<Zone>-DNS` input rules for guest and IoT; table in
+  `zoneObjectsForNetwork`). A taken name: 409 `firewall_zone_exists`; an invalid one: 422
+  `firewall_zone_invalid`.
+- A zone Perch does not sync (the router's, excluded or unmodeled) is never edited: 409 `not_synced`.
+  A router zone that is still anonymous is adopted by the planner (renamed `perch_<id>`), which may
+  put it into a follow-on job of the same request.
+- `DELETE` takes the network out of its zone(s) too; a zone Perch does not sync stays as it is
+  (warning `firewall_zone_not_synced`).
+- Zone changes are config changes: they need managed mode (409 `not_managed`), and the firewall
+  domain's own checks (management path, `firewall_controller_path`) apply to the draft.
 
 ### 1.4 Perch-only metadata (`gateway_networks`)
 
@@ -210,12 +225,14 @@ type NetworkCreate = {
   dhcp?: { enabled?: boolean; start: number; limit: number; leaseTime: string } | null   // needs ipv4
   untaggedVlan?: number              // bridge_vlan conversion only (default 1)
   label?: string; purpose?: GatewayNetwork['purpose']; capture?: boolean
-  firewallZone?: string | null       // non-null: 409 firewall_not_managed (section 1.3)
+  firewallZone?: string | null       // section 1.3: join that zone (null = none); absent = no change
+  createZone?: boolean               // make `firewallZone` a new zone with the purpose's defaults
 }
 type NetworkPatch = {                // every field optional; label/purpose/capture work in any mode
   ipv4?: string | null; ports?: NetworkPort[]; vlanId?: number
   dhcp?: { enabled?: boolean; start: number; limit: number; leaseTime: string } | null   // null = remove the pool
-  label?: string; purpose?: GatewayNetwork['purpose']; capture?: boolean; firewallZone?: string | null }
+  label?: string; purpose?: GatewayNetwork['purpose']; capture?: boolean
+  firewallZone?: string | null; createZone?: boolean }   // zone changes need managed mode
 type NetworkHistory = { gatewayId: number; range: string | null; from: string; to: string
   resolution: string; resolutionSeconds: 60 | 300 | 900 | 3600
   scopeAtStart: 'routed' | 'legacy' | null   // the scope rule in force at `from`
@@ -237,7 +254,7 @@ type DeviceNetworkInterval = { gatewayId: number; network: string; startedAt: st
 |---|---|
 | 409 `not_managed` | the gateway is not in mode `managed` (config fields; metadata alone never needs it) |
 | 409 `openwrt_too_old` | the router's release predates 21.02 (`config device` syntax) |
-| 409 `firewall_not_managed` | `firewallZone` given (section 1.3) |
+| 422 `firewall_zone_unknown`, `firewall_zone_invalid`; 409 `firewall_zone_exists`, `not_synced` | zone requests (section 1.3) |
 | 409 `network_key_taken` | a `network` section of that name exists |
 | 409 `dhcp_pool_exists` | the router already has a pool for the new key |
 | 409 `network_not_managed` | the network (or its bridge VLAN / VLAN device) is not synced, or known from the report only |

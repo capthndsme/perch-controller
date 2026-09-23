@@ -217,8 +217,9 @@ config rule 'perch_block_wan_wan'        # one per WAN zone (masq '1', else the 
 - A household control, not a security boundary: a random or spoofed MAC evades it.
 - Metadata (who, when, note, last flush): `gateway_wan_blocks`; events `wan_blocked`,
   `wan_unblocked`, `conntrack_flushed`.
-- For the device page's network card (`GET /devices/:mac/network`, `wanBlocked`), the service
-  exports `deviceWanBlock(gateway, mac): Promise<WanAccessView>`.
+- The device page's network card (`GET /devices/:mac/network`) carries it as `wanBlocked`
+  (`deviceWanBlock(gateway, mac): Promise<WanAccessView>`; null when the gateway is in mode `off`).
+- Networks join, leave and create zones through `networkZoneEdits` (docs/gateway/networks.md 1.3).
 
 ## 6. REST API
 

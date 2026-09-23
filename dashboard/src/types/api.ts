@@ -1979,10 +1979,22 @@ export type DeviceNetworkResponse = {
   /** The collector of that gateway; null = no gateway lists this MAC (older controllers omit it). */
   collectorId?: number | null
   lease: DhcpLease | null
-  /** Config plane; null for now. */
+  /** Read by the Reservation card (`/devices/:mac/reservation`); null here. */
   reservation: null
   dnsName: null
-  wanBlocked: null
+  /**
+   * The firewall's per-device WAN block (metrics-be docs/gateway/firewall.md
+   * section 5); null when the gateway is in mode off (older controllers: null).
+   */
+  wanBlocked: {
+    mac: string
+    blocked: boolean
+    /** The router has what Perch wants. */
+    applied: boolean
+    since: string | null
+    ruleEnabled: boolean | null
+    routerOwned: boolean
+  } | null
   neighbor: {
     ipv4: string | null
     ipv6: string[]

@@ -559,6 +559,17 @@ test.group('gateway firewall', (group) => {
       .json({ blocked: true })
     block.assertStatus(200)
     await confirmed(block.body().data.apply.id)
+    // The device page's network card carries the block (observation.md section 7).
+    const card = await client
+      .get(`/api/v1/devices/${PHONE_MAC}/network`)
+      .bearerToken(env.operatorToken)
+    card.assertStatus(200)
+    assert.equal(card.body().data.gatewayId, env.gatewayId)
+    assert.deepInclude(card.body().data.wanBlocked, {
+      mac: PHONE_MAC,
+      blocked: true,
+      applied: true,
+    })
     // First among the rules toward WAN: before LAN-to-WAN.
     assert.deepEqual(names(env.gw, 'rule'), [
       'Allow-Ping',

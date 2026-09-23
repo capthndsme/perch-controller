@@ -416,6 +416,111 @@ test.group('gateway networks: REST over the config plane', (group) => {
     assert.equal(after.body().data.dhcp.owner, 'perch')
   })
 
+  test('firewall zones: a new network, its pool and its own zone in one apply; move; delete', async ({
+    client,
+    assert,
+  }) => {
+    await SystemSetting.set(GATEWAY_CONFIG_SETTING_KEY, { confirmMode: 'agent' })
+    const env = await setup({ secure: true })
+    await toManaged(client, env)
+    const fw = () => env.gw.configs.firewall
+    const zoneNamed = (name: string) =>
+      fw().find((s) => s.type === 'zone' && s.options.name === name)
+    const wordsIn = (v: unknown) =>
+      Array.isArray(v) ? v : typeof v === 'string' ? v.split(' ') : []
+    /** Every job of the gateway confirmed (an adopted router section rides in a job of its own). */
+    const settled = async (routerHas: () => boolean) => {
+      await eventually(async () => routerHas(), Boolean, 10_000)
+      await eventually(
+        () => GatewayApply.query().where('gateway_id', env.gatewayId),
+        (rows) => rows.every((a) => a.state === 'confirmed'),
+        10_000
+      )
+    }
+    const created = await client
+      .post(`/api/v1/gateways/${env.gatewayId}/networks`)
+      .bearerToken(env.adminToken)
+      .json({
+        key: 'iot',
+        purpose: 'iot',
+        l2Mode: 'bridge_vlan',
+        bridge: 'br-trunk',
+        vlanId: 140,
+        ports: [{ port: 'trunk', tagged: true, pvid: false }],
+        ipv4: '192.168.140.1/24',
+        dhcp: { start: 100, limit: 50, leaseTime: '12h' },
+        firewallZone: 'iot',
+        createZone: true,
+      })
+    created.assertStatus(201)
+    const body = created.body().data
+    assert.isNull(body.applyError)
+    assert.sameMembers(body.apply.configs, ['network', 'dhcp', 'firewall'])
+    await settled(() => zoneNamed('iot') !== undefined)
+    const applies = await GatewayApply.query().where('gateway_id', env.gatewayId)
+    assert.lengthOf(applies, 1, 'network, pool and zone went in one apply')
+
+    assert.deepEqual(zoneNamed('iot')!.options, {
+      name: 'iot',
+      network: ['iot'],
+      input: 'REJECT',
+      output: 'ACCEPT',
+      forward: 'REJECT',
+    })
+    assert.isTrue(
+      fw().some(
+        (s) => s.type === 'forwarding' && s.options.src === 'iot' && s.options.dest === 'wan'
+      ),
+      'a forwarding to the WAN zone'
+    )
+    assert.sameMembers(
+      fw()
+        .filter((s) => s.type === 'rule' && s.options.src === 'iot')
+        .map((s) => s.options.name),
+      ['Iot-DHCP', 'Iot-DNS']
+    )
+    assert.equal(body.object.firewallZone, 'iot')
+
+    // Move it into the lan zone: out of iot, into lan, one apply.
+    const moved = await client
+      .patch(`/api/v1/gateways/${env.gatewayId}/networks/${body.object.id}`)
+      .bearerToken(env.adminToken)
+      .json({ firewallZone: 'lan' })
+    moved.assertStatus(200)
+    const movedBody = moved.body().data
+    // The iot zone's change, then the router's lan zone adopted and extended.
+    assert.deepEqual(
+      movedBody.apply.changes.map((c: any) => c.type),
+      ['zone']
+    )
+    await settled(() => wordsIn(zoneNamed('lan')?.options.network).includes('iot'))
+    assert.deepEqual(zoneNamed('lan')!.options.network, ['lan', 'vlan110', 'iot'])
+    assert.isUndefined(zoneNamed('iot')!.options.network, 'the emptied list goes')
+    const view = await client
+      .get(`/api/v1/gateways/${env.gatewayId}/networks/${body.object.id}`)
+      .bearerToken(env.operatorToken)
+    assert.equal(view.body().data.firewallZone, 'lan')
+
+    // Nothing to change: no apply.
+    const same = await client
+      .patch(`/api/v1/gateways/${env.gatewayId}/networks/${body.object.id}`)
+      .bearerToken(env.adminToken)
+      .json({ firewallZone: 'lan' })
+    same.assertStatus(200)
+    assert.isNull(same.body().data.apply)
+
+    // Delete: the network leaves the lan zone in the same apply.
+    const removed = await client
+      .delete(`/api/v1/gateways/${env.gatewayId}/networks/${body.object.id}`)
+      .bearerToken(env.adminToken)
+    removed.assertStatus(200)
+    const removedBody = removed.body().data
+    assert.include(removedBody.apply.configs, 'network')
+    await settled(() => !wordsIn(zoneNamed('lan')?.options.network).includes('iot'))
+    assert.deepEqual(zoneNamed('lan')!.options.network, ['lan', 'vlan110'])
+    assert.isUndefined(env.gw.configs.network.find((s) => s.name === 'iot'))
+  })
+
   test('converting the management bridge goes in its own protected apply, longer window', async ({
     client,
     assert,
@@ -508,9 +613,12 @@ test.group('gateway networks: REST over the config plane', (group) => {
     const overlap = await post({ key: 'x', vlanId: 111, ipv4: '192.168.1.200/24' })
     overlap.assertStatus(422)
     overlap.assertBodyContains({ error: 'subnet_overlap', network: 'lan' })
-    const zone = await post({ key: 'x', vlanId: 111, firewallZone: 'lan' })
-    zone.assertStatus(409)
-    zone.assertBodyContains({ error: 'firewall_not_managed' })
+    const zone = await post({ key: 'x', vlanId: 111, firewallZone: 'nope' })
+    zone.assertStatus(422)
+    zone.assertBodyContains({ error: 'firewall_zone_unknown' })
+    const taken = await post({ key: 'x', vlanId: 111, firewallZone: 'guest', createZone: true })
+    taken.assertStatus(409)
+    taken.assertBodyContains({ error: 'firewall_zone_exists' })
     const pvid = await post({
       key: 'x',
       vlanId: 111,

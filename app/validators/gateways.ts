@@ -198,8 +198,12 @@ const networkMeta = {
   label: vine.string().trim().minLength(1).maxLength(80).optional(),
   purpose: vine.enum(['lan', 'guest', 'iot', 'management', 'custom'] as const).optional(),
   capture: vine.boolean().optional(),
-  /** Refused until a firewall domain exists (409 `firewall_not_managed`). */
+  /**
+   * The firewall zone the network should be in (null = none; left out = no
+   * change); with `createZone` a new zone of that name (docs/gateway/networks.md 1.3).
+   */
   firewallZone: vine.string().trim().maxLength(32).nullable().optional(),
+  createZone: vine.boolean().optional(),
 }
 
 /** `POST /gateways/:id/networks` */
