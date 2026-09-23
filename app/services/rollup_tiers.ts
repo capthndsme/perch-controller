@@ -7,10 +7,9 @@ import { DateTime } from 'luxon'
  * names have one source of truth.
  *
  * The ladder is native (~5 s traffic / 1 m protocol) → 5 m → hourly → daily.
- * Tiers are listed **coarsest first**; a read picks the first tier whose
- * grain is no finer than the requested resolution and whose `minSpanSeconds`
- * the window clears (the gate keeps the ≤1-slot boundary approximation
- * negligible).
+ * Tiers are listed **coarsest first**. Chart series choose their tier in
+ * `series_buckets.ts` (per bucket width and coverage); window totals use
+ * `pickAggregateTier` below.
  */
 
 export const FIVE_MIN_ROLLUP_SECONDS = 300
@@ -55,26 +54,6 @@ export const ROLLUP_TIERS: readonly RollupTier[] = [
 
 export function windowSpanSeconds(since: DateTime, until: DateTime): number {
   return Math.max(0, until.toSeconds() - since.toSeconds())
-}
-
-/**
- * Pick the coarsest rollup tier that can serve a time-series read at this
- * resolution and window. Returns `null` to keep the read on the native table
- * (finer-than-5m grains, which are only ever requested over short windows the
- * native index handles).
- */
-export function pickSeriesTier(
-  resolutionSeconds: number,
-  since: DateTime,
-  until: DateTime
-): RollupTier | null {
-  const span = windowSpanSeconds(since, until)
-  for (const tier of ROLLUP_TIERS) {
-    if (resolutionSeconds >= tier.grainSeconds && span >= tier.minSpanSeconds) {
-      return tier
-    }
-  }
-  return null
 }
 
 /**

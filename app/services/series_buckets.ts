@@ -25,7 +25,7 @@ import { DateTime } from 'luxon'
  * tier that covers the window. The floor therefore only bites where per-poll
  * rows exist (native, `BUCKET_RETENTION_DAYS`); older windows fall to the
  * 5-minute or hourly tier at their own grain. Among the tiers that can serve
- * the width the coarsest is read (fewest rows), like `pickSeriesTier`.
+ * the width the coarsest is read (fewest rows).
  *
  * Since the Protocol mix / Top talkers fix (2026-09-24) the device series
  * read here too: `trafficSeriesTiers` (Top talkers) and `protocolSeriesTiers`
@@ -52,7 +52,7 @@ export type SeriesTier = {
   /**
    * Widest bucket this tier serves. The per-poll table only serves buckets
    * finer than 5 minutes (windows up to ~2 days at the default cap); from
-   * 5 minutes up the rollups answer, as `pickSeriesTier` does for devices.
+   * 5 minutes up the rollups answer.
    */
   maxBucketSeconds?: number
   /**

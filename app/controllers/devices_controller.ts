@@ -122,18 +122,14 @@ function scopeColumns(scope: TrafficScope): {
 }
 
 /*
- * ── Rollup routing ──────────────────────────────────────────────────────
- * Wide-window reads switch from the native bucket tables to a rollup tier
- * (see bucket_writer's ROLLUP_TIERS). This collapses millions of native rows
- * into thousands of grain rows AND, when the requested grain equals the
- * tier's grain, lets the query GROUP BY a bare indexed column instead of a
- * derived FROM_UNIXTIME(FLOOR()) expression — dropping the "Using temporary;
- * Using filesort" the native path forces.
+ * ── Series routing ──────────────────────────────────────────────────────
+ * Every time series here (traffic, top talkers, protocols) is planned by
+ * `series_buckets.ts`: one bucket width and one stored tier per window
+ * (native, 5-minute, hourly, daily), every bucket returned with the seconds
+ * it covers. Window totals without a time grain (device list, protocol
+ * summary) still switch tiers on width alone (`pickAggregateTier`).
+ * `resolveResolution` below now only guards against absurd windows.
  */
-
-// `pickSeriesTier`, `useHourlyForAggregate`, and `windowSpanSeconds` live in
-// `#services/rollup_tiers` so the devices and wifi read paths share one
-// native-vs-rollup decision.
 
 const RESOLUTION_ORDER: TrafficResolution[] = ['5s', '15s', '1m', '5m', '15m', '1h', '1d']
 
