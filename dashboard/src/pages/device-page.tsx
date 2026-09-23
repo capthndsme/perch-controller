@@ -18,6 +18,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { KpiTile } from '@/components/ui/kpi-tile'
 import { Panel } from '@/components/ui/panel'
 import { ShareBar } from '@/components/ui/share-bar'
+import { DeviceUsageCard } from '@/components/usage/device-usage-card'
 import { useDashboardScope, useDashboardTime } from '@/hooks/use-dashboard-time'
 import { useDeviceLabel } from '@/hooks/use-device-labels'
 import { useDeviceOverview, useDevicePresence, useDeviceProtocols, useDeviceTraffic } from '@/hooks/use-devices'
@@ -404,6 +405,8 @@ export function DevicePage() {
           </Panel>
         </div>
       </div>
+
+      <DeviceUsageCard mac={mac} pageWindow={window} onPageWindow={setWindow} />
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Panel

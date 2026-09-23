@@ -69,7 +69,7 @@ export function UsagePage() {
   const buckets = data?.buckets ?? []
   const hasData = buckets.length > 0 && (totals?.totalBytes ?? 0) > 0
   const topProtocol = totals?.protocols[0]
-  const peakAt = formatLocalInstant(totals?.wifiClients.peakAt)
+  const peakAt = formatLocalInstant(totals?.wifiClients?.peakAt)
 
   return (
     <div className="flex flex-col gap-5">
@@ -133,7 +133,7 @@ export function UsagePage() {
         <KpiTile
           label="Wi-Fi clients"
           value={
-            totals && totals.wifiClients.avg !== null ? (
+            totals?.wifiClients && totals.wifiClients.avg !== null ? (
               <>
                 {totals.wifiClients.avg}
                 <span className="text-base font-normal text-muted-foreground"> avg · </span>

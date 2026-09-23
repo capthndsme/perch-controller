@@ -54,7 +54,7 @@ export function UsageIntervalsPanel({ window, scope }: UsageIntervalsPanelProps)
         bytesOut: b.bytesOut,
         totalBytes: b.totalBytes,
         avgMbps: b.avgMbps,
-        activeDevices: b.activeDevices,
+        activeDevices: b.activeDevices ?? undefined,
       }
     })
   }, [data, window.kind])

@@ -3,7 +3,7 @@ import { ProtocolSegments } from '@/components/usage/protocol-segments'
 import { formatBytes, formatMbps } from '@/lib/format-bytes'
 import { bucketHint, bucketTitle, periodNoun } from '@/lib/usage'
 import { cn } from '@/lib/utils'
-import type { UsageBucket, UsagePeriod, UsageTotals } from '@/types/api'
+import type { UsageBucket, UsagePeriod, UsageTotals, UsageWifiClients } from '@/types/api'
 
 type UsageTableProps = {
   period: UsagePeriod
@@ -12,13 +12,15 @@ type UsageTableProps = {
   className?: string
 }
 
-function wifiCell(avg: number | null, max: number | null) {
-  if (avg === null && max === null) return <span className="text-muted-foreground">—</span>
+function wifiCell(clients: UsageWifiClients | null) {
+  if (!clients || (clients.avg === null && clients.max === null)) {
+    return <span className="text-muted-foreground">—</span>
+  }
   return (
     <>
-      {avg ?? '—'}
+      {clients.avg ?? '—'}
       <span className="text-muted-foreground"> / </span>
-      {max ?? '—'}
+      {clients.max ?? '—'}
     </>
   )
 }
@@ -71,9 +73,9 @@ export function UsageTable({ period, buckets, totals, className }: UsageTablePro
                 <td className="text-right font-mono tabular-nums">{formatBytes(bucket.bytesOut)}</td>
                 <td className="text-right font-mono font-medium tabular-nums">{formatBytes(bucket.totalBytes)}</td>
                 <td className="text-right font-mono tabular-nums text-muted-foreground">{formatMbps(bucket.avgMbps)}</td>
-                <td className="text-right font-mono tabular-nums">{bucket.activeDevices}</td>
+                <td className="text-right font-mono tabular-nums">{bucket.activeDevices ?? '—'}</td>
                 <td className="text-right font-mono tabular-nums">
-                  {wifiCell(bucket.wifiClients.avg, bucket.wifiClients.max)}
+                  {wifiCell(bucket.wifiClients)}
                 </td>
                 <td>
                   <ProtocolSegments protocols={bucket.protocols} other={bucket.otherProtocols} />
@@ -97,10 +99,10 @@ export function UsageTable({ period, buckets, totals, className }: UsageTablePro
               {formatMbps(totals.avgMbps)}
             </td>
             <td className="px-3 py-2 text-right font-mono tabular-nums" title="Distinct devices over the whole window">
-              {totals.activeDevices}
+              {totals.activeDevices ?? '—'}
             </td>
             <td className="px-3 py-2 text-right font-mono tabular-nums">
-              {wifiCell(totals.wifiClients.avg, totals.wifiClients.max)}
+              {wifiCell(totals.wifiClients)}
             </td>
             <td className="px-3 py-2">
               <ProtocolSegments protocols={totals.protocols} other={totals.otherProtocols} />

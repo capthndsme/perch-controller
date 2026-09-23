@@ -1,4 +1,4 @@
-import { isRelativeRange, type TimeWindow } from '@/lib/time-window'
+import { absoluteWindow, isRelativeRange, type TimeWindow } from '@/lib/time-window'
 import type {
   TrafficRange,
   UsageBucket,
@@ -320,4 +320,100 @@ export function formatLocalInstant(iso: string | null | undefined): string | nul
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+// ── The device page's Usage card ──────────────────────────────────────
+
+/**
+ * The device card offers daily and monthly buckets only (a week of one
+ * device reads better as seven days). Its state is its own: it never reads
+ * or writes the page's `?range` / `?from&to`, only `?usagePeriod` and
+ * `?usageRange` (a preset id below).
+ */
+export type DeviceUsagePeriod = Extract<UsagePeriod, 'day' | 'month'>
+
+export const DEVICE_USAGE_PERIODS: Array<{ id: DeviceUsagePeriod; label: string; title: string }> = [
+  { id: 'day', label: 'Daily', title: 'One column per local day' },
+  { id: 'month', label: 'Monthly', title: 'One column per calendar month' },
+]
+
+/**
+ * `months`: the preset spans exactly that many calendar months, the running
+ * one included (see `monthsBackRange`). Day presets are the Usage page's own.
+ */
+export type DeviceUsagePreset = { id: string; label: string; title: string; range?: string; months?: number }
+
+export const DEVICE_USAGE_PRESETS: Record<DeviceUsagePeriod, DeviceUsagePreset[]> = {
+  day: USAGE_PRESETS.day.filter((p) => p.id === '7d' || p.id === '30d'),
+  month: [3, 6, 9, 12].map((months) => ({
+    id: `${months}m`,
+    label: `${months} mo`,
+    title: `This month and the ${months - 1} before it`,
+    months,
+  })),
+}
+
+export const DEFAULT_DEVICE_USAGE_PRESET: Record<DeviceUsagePeriod, string> = { day: '30d', month: '6m' }
+
+export function parseDeviceUsagePeriod(value: string | null): DeviceUsagePeriod | null {
+  return value === 'day' || value === 'month' ? value : null
+}
+
+export function parseDeviceUsagePreset(period: DeviceUsagePeriod, value: string | null): DeviceUsagePreset | null {
+  return DEVICE_USAGE_PRESETS[period].find((p) => p.id === value) ?? null
+}
+
+export function deviceUsagePreset(period: DeviceUsagePeriod, id: string | null): DeviceUsagePreset {
+  return (
+    parseDeviceUsagePreset(period, id) ??
+    parseDeviceUsagePreset(period, DEFAULT_DEVICE_USAGE_PRESET[period]) ??
+    DEVICE_USAGE_PRESETS[period][0]
+  )
+}
+
+/**
+ * A relative range (in days) whose start falls in the calendar month
+ * `months - 1` before the current one, so a monthly report (the API snaps
+ * the start to its month) has exactly `months` columns. The start is aimed
+ * at the 15th, well clear of a month edge whatever the gap between the
+ * browser's zone and the instance timezone the buckets follow.
+ */
+export function monthsBackRange(months: number, nowMs = Date.now()): string {
+  const now = new Date(nowMs)
+  const target = new Date(
+    now.getFullYear(),
+    now.getMonth() - Math.max(0, months - 1),
+    15,
+    now.getHours(),
+    now.getMinutes(),
+  )
+  const days = Math.max(1, Math.round((nowMs - target.getTime()) / 86_400_000))
+  return `${days}d`
+}
+
+/** The card's window for a preset (always relative, so it follows now). */
+export function deviceUsageWindow(preset: DeviceUsagePreset, nowMs = Date.now()): TimeWindow {
+  return relativeWindow(preset.months ? monthsBackRange(preset.months, nowMs) : (preset.range ?? '30d'))
+}
+
+/**
+ * The page window a clicked bucket stands for: its day or month, from the
+ * bucket's own start (local midnight / the 1st, in the instance timezone)
+ * to its end, or to now (rounded up to the minute) for the running one, so
+ * the page's charts are not drawn into the future.
+ */
+export function pageWindowForBucket(bucket: Pick<UsageBucket, 'bucketStart' | 'bucketEnd'>, nowMs = Date.now()): TimeWindow {
+  const from = Date.parse(bucket.bucketStart)
+  const end = Date.parse(bucket.bucketEnd)
+  const nowCeil = Math.ceil(nowMs / 60_000) * 60_000
+  const to = Math.max(from + 60_000, Math.min(end, nowCeil))
+  return absoluteWindow(from, to)
+}
+
+/** True when the page shows exactly this bucket (as `pageWindowForBucket` set it). */
+export function isPageWindowBucket(window: TimeWindow, bucket: Pick<UsageBucket, 'bucketStart' | 'bucketEnd'>): boolean {
+  if (window.kind !== 'absolute') return false
+  const from = Date.parse(window.from)
+  const to = Date.parse(window.to)
+  return from === Date.parse(bucket.bucketStart) && to > from && to <= Date.parse(bucket.bucketEnd)
 }

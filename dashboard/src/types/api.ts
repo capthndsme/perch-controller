@@ -1356,9 +1356,10 @@ export type UsageBucket = {
   totalBytes: number
   /** totalBytes × 8 / seconds / 1e6, rounded to 2 dp. */
   avgMbps: number
-  /** Distinct MACs with traffic in the bucket. */
-  activeDevices: number
-  wifiClients: UsageWifiClients
+  /** Distinct MACs with traffic in the bucket; `null` on a per-device (`mac`) report. */
+  activeDevices: number | null
+  /** `null` on a per-device (`mac`) report. */
+  wifiClients: UsageWifiClients | null
   /** Top N, sorted desc. */
   protocols: UsageProtocol[]
   otherProtocols: UsageOtherProtocols
@@ -1379,7 +1380,8 @@ export type UsageIntervalBucket = {
   bytesOut: number
   totalBytes: number
   avgMbps: number
-  activeDevices: number
+  /** `null` on a per-device (`mac`) report. */
+  activeDevices: number | null
 }
 
 export type UsageIntervalsResponse = {
@@ -1389,6 +1391,8 @@ export type UsageIntervalsResponse = {
   from: string
   to: string
   scope: UsageScope
+  /** The device, normalised, when the request named one (`?mac=`). */
+  mac?: string
   timezone: string
   offsetMinutes: number
   buckets: UsageIntervalBucket[]
@@ -1403,6 +1407,8 @@ export type UsageResponse = {
   from: string
   to: string
   scope: UsageScope
+  /** The device, normalised, when the request named one (`?mac=`). */
+  mac?: string
   timezone: string
   offsetMinutes: number
   source: 'hourly' | 'daily'
