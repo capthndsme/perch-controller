@@ -2165,5 +2165,5 @@ back and forth. Each flip wrote a roaming event, and `wifi_station_latest` flipp
   daemons on Go 1.26 and 1.22.12, with and without the workspace. The collector's nDPI tests pass in an
   Alpine container with nDPI 5.0 (the host has 4.2).
 - **Not done here.** The live controller, gateway and APs were not touched: they still run the
-  pre-release builds (collector 0.3.0-pre.1, perch-apd 0.2.0-pre.1), which are the same code as the rc
-  under older version strings.
+  pre-release builds (collector 0.3.0-pre.1, perch-apd 0.2.0-pre.1), built from this work before it
+  was committed; moving them to the rc packages is a separate step.
