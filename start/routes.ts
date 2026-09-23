@@ -50,6 +50,13 @@ const ApJoinTokensController = () => import('#controllers/ap_join_tokens_control
 const AgentSocketsController = () => import('#controllers/agent_sockets_controller')
 const InfraController = () => import('#controllers/infra_controller')
 const VersionController = () => import('#controllers/version_controller')
+const PortalPortalsController = () => import('#controllers/portal_portals_controller')
+const PortalTemplatesController = () => import('#controllers/portal_templates_controller')
+const PortalVouchersController = () => import('#controllers/portal_vouchers_controller')
+const PortalUsersController = () => import('#controllers/portal_users_controller')
+const PortalApiClientsController = () => import('#controllers/portal_api_clients_controller')
+const PortalGrantsController = () => import('#controllers/portal_grants_controller')
+const PortalAuthorizationsController = () => import('#controllers/portal_authorizations_controller')
 
 /**
  * Setup wizard endpoints. INTENTIONALLY outside the requireSetupComplete
@@ -217,6 +224,9 @@ router
         router
           .post('collectors/:id/dismiss', [CollectorsController, 'dismiss'])
           .as('collectors.dismiss')
+
+        router.get('portal', [PortalPortalsController, 'settings']).as('portal')
+        router.patch('portal', [PortalPortalsController, 'updateSettings']).as('updatePortal')
 
         router.get('users', [UsersController, 'index']).as('users.index')
         router.post('users', [UsersController, 'store']).as('users.store')
@@ -444,6 +454,124 @@ router
       .prefix('gateways')
       .as('gatewayObservations')
       .where('gatewayId', router.matchers.number())
+      .use([middleware.auth(), middleware.requirePasswordChange()])
+
+    /**
+     * Guest portal authorize API (docs/gateway/portal.md section 11.6):
+     * outside `auth()`, because its callers are integrations (a Piso
+     * WiFi-style coin box) with their own scoped `perch_pa_` tokens;
+     * `portalApiAuth` also takes an admin's token. Rate-limited per token,
+     * failed tokens per address.
+     */
+    router
+      .group(() => {
+        router.post('authorizations', [PortalAuthorizationsController, 'store']).as('store')
+        router.get('authorizations/:mac', [PortalAuthorizationsController, 'show']).as('show')
+        router
+          .delete('authorizations/:mac', [PortalAuthorizationsController, 'destroy'])
+          .as('destroy')
+      })
+      .prefix('portal')
+      .as('portal.authorizations')
+      .use(middleware.portalApiAuth())
+
+    /**
+     * Guest portal (docs/gateway/portal.md section 11). Portals, grants and
+     * sessions are readable by any signed-in user; every write, and all of
+     * templates, vouchers, portal users and API clients (codes, passwords,
+     * tokens), is admin-only.
+     */
+    router
+      .group(() => {
+        router.get('portals', [PortalPortalsController, 'index']).as('portals.index')
+        router.get('portals/:id', [PortalPortalsController, 'show']).as('portals.show')
+        router.get('grants', [PortalGrantsController, 'index']).as('grants.index')
+        router.get('sessions', [PortalGrantsController, 'sessions']).as('sessions.index')
+        router
+          .group(() => {
+            router.post('portals', [PortalPortalsController, 'store']).as('portals.store')
+            router.patch('portals/:id', [PortalPortalsController, 'update']).as('portals.update')
+            router.delete('portals/:id', [PortalPortalsController, 'destroy']).as('portals.destroy')
+
+            router.post('grants/:id/extend', [PortalGrantsController, 'extend']).as('grants.extend')
+            router.post('grants/:id/revoke', [PortalGrantsController, 'revoke']).as('grants.revoke')
+
+            router.get('templates', [PortalTemplatesController, 'index']).as('templates.index')
+            router.post('templates', [PortalTemplatesController, 'store']).as('templates.store')
+            router.get('templates/:id', [PortalTemplatesController, 'show']).as('templates.show')
+            router
+              .patch('templates/:id', [PortalTemplatesController, 'update'])
+              .as('templates.update')
+            router
+              .delete('templates/:id', [PortalTemplatesController, 'destroy'])
+              .as('templates.destroy')
+            router
+              .post('templates/:id/duplicate', [PortalTemplatesController, 'duplicate'])
+              .as('templates.duplicate')
+            router
+              .get('templates/:id/preview', [PortalTemplatesController, 'preview'])
+              .as('templates.preview')
+            router
+              .put('templates/:id/files/:name', [PortalTemplatesController, 'putFile'])
+              .as('templates.files.put')
+            router
+              .delete('templates/:id/files/:name', [PortalTemplatesController, 'destroyFile'])
+              .as('templates.files.destroy')
+
+            router
+              .post('voucher-batches', [PortalVouchersController, 'storeBatch'])
+              .as('voucherBatches.store')
+            router
+              .get('voucher-batches', [PortalVouchersController, 'indexBatches'])
+              .as('voucherBatches.index')
+            router
+              .get('voucher-batches/:id', [PortalVouchersController, 'showBatch'])
+              .as('voucherBatches.show')
+            router
+              .get('voucher-batches/:id/codes', [PortalVouchersController, 'codes'])
+              .as('voucherBatches.codes')
+            router
+              .get('voucher-batches/:id/codes.csv', [PortalVouchersController, 'csv'])
+              .as('voucherBatches.csv')
+            router
+              .post('voucher-batches/:id/revoke', [PortalVouchersController, 'revokeBatch'])
+              .as('voucherBatches.revoke')
+            router
+              .delete('voucher-batches/:id', [PortalVouchersController, 'destroyBatch'])
+              .as('voucherBatches.destroy')
+            router.get('vouchers', [PortalVouchersController, 'index']).as('vouchers.index')
+            // Static segment before `vouchers/:id/…`.
+            router
+              .post('vouchers/lookup', [PortalVouchersController, 'lookup'])
+              .as('vouchers.lookup')
+            router
+              .post('vouchers/:id/revoke', [PortalVouchersController, 'revoke'])
+              .as('vouchers.revoke')
+
+            router.get('users', [PortalUsersController, 'index']).as('users.index')
+            router.post('users', [PortalUsersController, 'store']).as('users.store')
+            router.patch('users/:id', [PortalUsersController, 'update']).as('users.update')
+            router
+              .put('users/:id/password', [PortalUsersController, 'password'])
+              .as('users.password')
+            router.delete('users/:id', [PortalUsersController, 'destroy']).as('users.destroy')
+
+            router.get('api-clients', [PortalApiClientsController, 'index']).as('apiClients.index')
+            router.post('api-clients', [PortalApiClientsController, 'store']).as('apiClients.store')
+            router
+              .patch('api-clients/:id', [PortalApiClientsController, 'update'])
+              .as('apiClients.update')
+            router
+              .post('api-clients/:id/rotate', [PortalApiClientsController, 'rotate'])
+              .as('apiClients.rotate')
+            router
+              .delete('api-clients/:id', [PortalApiClientsController, 'destroy'])
+              .as('apiClients.destroy')
+          })
+          .use(middleware.requireAdmin())
+      })
+      .prefix('portal')
+      .as('portal')
       .use([middleware.auth(), middleware.requirePasswordChange()])
   })
   .prefix('/api/v1')

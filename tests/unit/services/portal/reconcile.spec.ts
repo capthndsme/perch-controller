@@ -826,6 +826,46 @@ test.group('reconcile: stacking (decision 23)', () => {
     })
   })
 
+  test('promoting a queued API grant starts its waiting wall clock', ({ assert }) => {
+    const g = grant(
+      5,
+      { groupKey: 'g:5', source: 'api', voucherId: null },
+      {
+        state: 'queued',
+        startedAt: null,
+      }
+    )
+    const s = state({
+      grants: [g],
+      groups: [
+        {
+          groupKey: 'g:5',
+          revision: 1,
+          limits: {
+            durationMode: 'wall_clock',
+            expiresAt: null,
+            durationSeconds: 900,
+            quotaBytes: null,
+            downKbps: null,
+            upKbps: null,
+            maxDevices: 1,
+          },
+        },
+      ],
+    })
+    const { dbChanges, desired } = reconcile(s, report(), false)
+    assert.deepEqual(dbChanges.grantClocks, [{ id: 5, expiresAt: NOW + 15 * MIN }])
+    assert.deepInclude(update(dbChanges, 5), { state: 'pending_device' })
+    assert.deepInclude(desired.groups[0], { groupKey: 'g:5', expiresAt: NOW + 15 * MIN })
+
+    // An active-time API grant has no clock to start.
+    const active = state({
+      grants: [g],
+      groups: [{ ...s.groups[0], limits: { ...s.groups[0].limits, durationMode: 'active_time' } }],
+    })
+    assert.deepEqual(reconcile(active, report(), false).dbChanges.grantClocks, [])
+  })
+
   test('two live entitlements for one device: the later in order goes back to the queue', ({
     assert,
   }) => {

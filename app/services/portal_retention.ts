@@ -13,7 +13,14 @@ import db from '@adonisjs/lucid/services/db'
 
 const BATCH = 5000
 
-export type PortalPruneResult = { cutoff: string; sessions: number; grants: number; events: number }
+export type PortalPruneResult = {
+  cutoff: string
+  sessions: number
+  grants: number
+  events: number
+  /** Authorize API ledger rows (they name guest MACs); a ref older than this may be reused. */
+  authorizations: number
+}
 
 async function deleteInBatches(sql: string, bindings: unknown[]): Promise<number> {
   let total = 0
@@ -43,5 +50,9 @@ export async function prunePortalHistory(
     [cutoff]
   )
   const events = await deleteInBatches('DELETE FROM portal_events WHERE created_at < ?', [cutoff])
-  return { cutoff, sessions, grants, events }
+  const authorizations = await deleteInBatches(
+    'DELETE FROM portal_authorizations WHERE created_at < ?',
+    [cutoff]
+  )
+  return { cutoff, sessions, grants, events, authorizations }
 }

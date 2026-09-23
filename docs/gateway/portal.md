@@ -1,6 +1,7 @@
 # Guest portal: controller domain
 
-Status: WP1 (controller domain) built on branch `gw/portal`, September 2026.
+Status: WP1 (controller domain) built on branch `gw/portal`, WP2 (REST API,
+§11–12) on `gw/portal-rest`, September 2026.
 This file is the contract for the REST layer (WP2), the collector socket
 (WP3) and the router side in perch-collector (WP4). It promotes sections 3–5
 of the portal design and applies the owner's decisions 19–25, which override
@@ -313,7 +314,7 @@ plane. The portal neither reads nor changes it. The dashboard should show the
 toggle on the portal page with a privacy note (RA 10173). Keeping it **off** on
 guest networks is the privacy-preserving default an operator can override.
 
-## 5. Data model (migrations 070–075)
+## 5. Data model (migrations 070–076)
 
 All tables are `utf8mb4_unicode_ci`. Unions are strings enforced in the app;
 JSON is stored as text and parsed by the models (`schema_rules.ts`).
@@ -330,6 +331,8 @@ JSON is stored as text and parsed by the models (`schema_rules.ts`).
 | `portal_grants`         | BIGINT id; `portal_id` → portals CASCADE; `mac` CHAR(17); `source` voucher\|user\|api\|admin; `group_key`; FKs to voucher/user/api client/user SET NULL; `external_ref` (unique with api_client_id), `local_ref` (unique with portal_id); `g:` limits; counters; `state`, `delivery`, `revision`, `started_at`, `last_seen_at`, `ended_at`, `end_reason`            |
 | `portal_sessions`       | per active stretch: `start_bytes_*` at open, `bytes_*` = end − start at close                                                                                                                                                                                                                                                                                       |
 | `portal_gateway_states` | PK `gateway_id` → gateways CASCADE; `acked_event_seq` (one journal per router, shared by its portals), `key_epoch`, `router_key_epoch`, `last_sync_at`                                                                                                                                                                                                              |
+| `portal_authorizations` | (076) authorize API ledger: idempotency per principal + `external_ref`, audit (§11.6)                                                                                                                                                                                                                                                                               |
+| `portal_outbox`         | (076) pushes waiting for the router, one per (gateway, `dedupe_key`) (§11.2)                                                                                                                                                                                                                                                                                        |
 | `portal_events`         | audit: `gateway_id` CASCADE, `portal_id` CASCADE null, `grant_id` SET NULL, `mac`, `type`, `detail` JSON                                                                                                                                                                                                                                                            |
 
 - **Merge.** Nothing here references `collectors`: the portal follows its
@@ -518,7 +521,8 @@ Absence means "not held".
 4. **Accounting.** Revoked or exhausted groups end: `revoked`, `expired` or
    `quota`. A used voucher that ran out gets `exhausted_at`.
 5. **Stacking** (§4.6): demote extra live grants, promote the next queued one,
-   and start its clock.
+   and start its clock: a first-use voucher's, or the waiting wall clock of a
+   queued API/admin grant (`grantClocks`; its `expires_at` is null until then).
 6. **Desired set:**
    - every live grant of an enabled portal, with its group and `base*`;
    - `revertExternals`, deduplicated;
@@ -533,6 +537,7 @@ PortalDbChanges = {
   ackedEventSeq: number
   grantInserts: GrantInsert[]          // offline redemptions, keyed by localRef
   grantUpdates: { id; set: Partial<GrantFields> }[]
+  grantClocks: { id; expiresAt }[]     // queued g: grant promoted: its wall clock starts (WP2)
   sessions: ({op:'open', grant: GrantRef, portalId, mac, ip, startedAt, startBytesUp, startBytesDown}
            | {op:'close', grant: GrantRef, endedAt, endReason, bytesUp, bytesDown})[]   // in order
   voucherUpdates: { id; set: {boundPortalId?, firstUsedAt?, startsAt?, expiresAt?, exhaustedAt?, revision?};
@@ -616,3 +621,514 @@ under RA 10173.
 - **`persistUsageSeconds` dropped** (README 7.18).
 - **`starts_at` on grants is `started_at`:** when the grant first became
   active.
+
+## 11. REST API (WP2, branch `gw/portal-rest`)
+
+Everything under `/api/v1`, inside the `requireSetupComplete` gate (503 with
+the wizard step before setup). Code: `start/routes.ts`,
+`app/controllers/portal_*_controller.ts`, `app/validators/portal.ts`,
+`app/transformers/portal.ts`, services `app/services/portal_{portals,
+grants,grant_admin,vouchers,users_admin,api_clients,authorize,
+templates_admin,agent_sender,queue,api_rate_limit,errors,params}.ts`,
+middleware `app/middleware/portal_api_auth_middleware.ts`, migration `076`.
+
+### 11.1 Conventions
+
+- **Envelope.** Success bodies are `{ data: … }`. Refusals are
+  `{ error: <code>, message, ...detail }` with the status in the tables below.
+  A Vine validation failure is 422 `{ errors: [{ field, rule, message }] }`
+  (no `error` key). An id route parameter that is not a positive integer reads
+  as the resource's 404.
+- **Auth levels.**
+  - **R**: `auth()` + `requirePasswordChange()`: any signed-in user (admin,
+    operator, viewer). Anonymous 401; a pending password change 403
+    `password_change_required`.
+  - **A**: R + `requireAdmin()`: non-admins get 403 `admin_required`.
+  - **K**: `portalApiAuth` (§11.6), outside `auth()`.
+- **Lists** take `limit` (1–1000, default 200) and `offset` and answer
+  `{ items, total }`, except the small admin catalogs (portals, templates,
+  batches, portal users, API clients), which are plain arrays.
+- **Times** are ISO 8601 strings in UTC (`…Z`); query and body times accept
+  `YYYY-MM-DD[THH:mm[:ss[.sss]]][Z|±hh:mm]`, else 422 `invalid_date`.
+- **MACs** are accepted as `aa:bb:…`, `aa-bb-…`, `aabb.ccdd.eeff` or 12 hex
+  digits, answered lower case with colons. Broadcast, multicast and all-zero
+  MACs are 422 `invalid_mac`.
+- **Delivery.** Every write that the router must learn about answers
+  `delivery: 'applied' | 'pending'` (§11.2). `pending` = queued, delivered
+  when the gateway is (back) online. Nothing is ever refused because a
+  gateway is offline (the design's 503 `gateway_offline` is gone).
+- **Secrets** (voucher codes, API tokens) appear only in create/rotate/codes
+  answers, all `Cache-Control: no-store`.
+
+### 11.2 Router delivery: `PortalAgentSender` (for WP3)
+
+`app/services/portal_agent_sender.ts`:
+
+```ts
+type PortalPush =
+  | { kind: 'authorize'; grantIds: number[] }   // new/extended/promoted grants: portal.authorize (delta) with their groups
+  | { kind: 'deauthorize'; grantIds: number[] } // grants to take off: reason = each grant's end_reason, or 'queued' if not ended
+  | { kind: 'configure'; portalId: number }     // portal changed/created/deleted (deleted = configure as disabled)
+  | { kind: 'template'; portalId: number }      // portal.template when the router's sha differs
+  | { kind: 'vouchers' }                        // resend the gateway's offline list (portal.vouchers)
+  | { kind: 'sync' }                            // run a full reconciliation (settings changed)
+type PortalDelivery = 'applied' | 'pending'
+interface PortalAgentSender {
+  send(gatewayId: number, push: PortalPush): Promise<PortalDelivery>
+}
+portalAgentSender(): PortalAgentSender
+setPortalAgentSender(sender): PortalAgentSender   // returns the previous one
+sendPortalPushes(gatewayId, pushes[]): Promise<PortalDelivery>  // 'applied' only if all were
+enqueuePortalPush(gatewayId, push, trx?): Promise<void>
+outboxDedupeKey(push): string                    // 'authorize' | 'deauthorize' | 'configure:<id>' | 'template:<id>' | 'vouchers' | 'sync'
+```
+
+- The REST layer calls `send` **after** its transaction committed, **inside**
+  `runInPortalQueue(gatewayId, …)` (`portal_queue.ts`: a per-gateway promise
+  chain, in-process, bounded by gateways with work in flight). WP3's
+  reconcile, redeem and login handlers must run in the same queue.
+- A push names what changed, never a wire message: signed params carry
+  `nonce`/`serverNow` and are built at send time from the rows
+  (`messages.ts`). Losing a push is safe: grants keep `delivery = 'pending'`
+  until acknowledged and every reconciliation sends the full desired set.
+- **Default sender** `OutboxPortalAgentSender`: writes `portal_outbox` and
+  answers `pending` (`applied` for a push without grant ids). One undelivered
+  row per `(gateway_id, dedupe_key)`; a new push merges into it (grant ids
+  united, sorted). Columns: `id, gateway_id, kind, dedupe_key, portal_id,
+grant_ids` (JSON text), `attempts, last_error, created_at, updated_at`.
+- **WP3 contract.** Install a sender that enqueues (same function) and, when
+  the gateway's collector is online, drains at once: inside the gateway's
+  queue, read its rows in id order, **delete** them, send; on failure
+  re-enqueue (or rely on the next full sync) and answer `pending`; answer
+  `applied` only when the router acknowledged. On every (re)connect: drain the
+  outbox after the reconciliation. `portal_outbox` rows cascade with the
+  gateway and portal.
+
+### 11.3 Shapes
+
+```ts
+type Portal = {
+  id: number
+  gatewayId: number
+  name: string
+  gateway: {
+    id: number
+    collectorId: number | null
+    name: string | null // collector name
+    online: boolean
+    mode: string
+    authoritative: boolean
+    portalCapable: boolean | null
+  } | null // gateway.capabilities.portal; null = not reported
+  network: {
+    perchId: string
+    name: string | null // interface section name (config plane mirror)
+    label: string | null
+    purpose: string | null
+  } // gateway_networks
+  enforcement: 'opennds' | 'perch_nft'
+  instance: string | null
+  methods: { voucher: boolean; password: boolean }
+  templateId: number | null
+  cspConnectSrc: string[]
+  privacyNotice: string | null
+  native: null // openNDS settings: config plane (not served yet)
+  status: {
+    openNds: 'running' | 'stopped' | 'missing' | 'unknown'
+    fas: 'ok' | 'misconfigured' | 'unknown'
+    issues: string[]
+    listen: string | null // from the last portal.configure result (WP3 writes portals.status)
+    revision: number
+    appliedRevision: number | null
+    delivery: 'applied' | 'pending'
+    clients: { authenticated: number; pending: number; paused: number; queued: number }
+    lastReportAt: string | null
+    lastConfiguredAt: string | null
+  }
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+type Group = {
+  key: string // v:<voucherId> | u:<portalUserId> | g:<grantId>
+  devices: number
+  maxDevices: number
+  timeUsedSeconds: number
+  bytesUsed: number
+  remaining: { seconds: number | null; bytes: number | null } // null = no such limit
+  durationMinutes: number | null
+  durationMode: 'wall_clock' | 'active_time'
+  expiresAt: string | null
+  quotaBytes: number | null
+  downKbps: number | null
+  upKbps: number | null
+}
+
+type PortalGrant = {
+  id: number
+  portalId: number
+  mac: string
+  ip: string | null
+  hostname: string | null
+  source: 'voucher' | 'user' | 'api' | 'admin'
+  state: 'queued' | 'pending_device' | 'active' | 'paused' | 'ended'
+  delivery: 'applied' | 'pending'
+  revision: number
+  voucher: { id: number; batchId: number; hint: string } | null
+  portalUser: { id: number; username: string } | null
+  apiClient: { id: number; name: string } | null
+  createdBy: { id: number; email: string } | null // admin grants
+  externalRef: string | null
+  note: string | null
+  startedAt: string | null
+  expiresAt: string | null // effective deadline
+  lastSeenAt: string | null
+  bytesUp: number
+  bytesDown: number
+  timeUsedSeconds: number // this device
+  group: Group | null
+  endedAt: string | null
+  endReason:
+    | 'expired'
+    | 'quota'
+    | 'revoked'
+    | 'logout'
+    | 'router_deauth'
+    | 'replaced'
+    | 'moved'
+    | 'rejected'
+    | null
+  createdAt: string | null
+}
+
+type VoucherBatch = {
+  id: number
+  portalId: number | null
+  name: string
+  note: string | null
+  count: number
+  codeLength: number
+  durationMinutes: number | null
+  durationMode: 'wall_clock' | 'active_time'
+  startMode: 'first_use' | 'creation'
+  quotaBytes: number | null
+  downKbps: number | null
+  upKbps: number | null
+  maxDevices: number
+  redeemBy: string | null
+  createdAt: string | null
+  createdBy: { id: number; email: string } | null
+  revokedAt: string | null
+  counts: { unused: number; active: number; exhausted: number; expired: number; revoked: number }
+}
+
+type Voucher = {
+  id: number
+  batchId: number
+  hint: string // last 4 characters
+  status: 'unused' | 'active' | 'exhausted' | 'expired' | 'revoked'
+  boundPortalId: number | null
+  firstUsedAt: string | null
+  startsAt: string | null
+  expiresAt: string | null
+  timeUsedSeconds: number
+  bytesUsed: number
+  devices: number
+  revokedAt: string | null
+  code?: string | null
+} // only in /codes: formatted `XXXXX-XXXXX`
+
+type PortalUser = {
+  id: number
+  username: string
+  displayName: string | null
+  enabled: boolean
+  maxDevices: number
+  sessionMinutes: number | null
+  downKbps: number | null
+  upKbps: number | null
+  portalIds: number[] | null // null = every portal
+  lastLoginAt: string | null
+  activeDevices: number
+  createdAt: string | null
+}
+
+type PortalApiClient = {
+  id: number
+  name: string
+  prefix: string // `perch_pa_` + 4 characters
+  scopes: ('authorize' | 'read')[]
+  portalIds: number[]
+  maxMinutesPerCall: number
+  maxBytesPerCall: number
+  maxActiveGrants: number
+  activeGrants: number
+  lastUsedAt: string | null
+  revokedAt: string | null
+  createdAt: string | null
+  createdByUserId: number | null
+}
+
+type PortalTemplate = {
+  id: number
+  name: string
+  builtin: boolean
+  sha256: string // set digest (§12.2); builtin: sha256("")
+  totalBytes: number
+  inUse: number[] // live portals using it
+  files: { name: string; contentType: string; bytes: number; sha256: string }[]
+  variables: string[]
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+type PortalSession = {
+  id: number
+  grantId: number
+  portalId: number
+  mac: string
+  ip: string | null
+  startedAt: string | null
+  endedAt: string | null
+  bytesUp: number
+  bytesDown: number // open session: live (grant counters − start)
+  endReason: string | null
+}
+```
+
+### 11.4 Dashboard routes
+
+| Method, path                                                         | Auth | Request                                                                                                                                                                                                                                    | Response                                                                                                                                                                                                                                          | Errors                                                                                                                                                                        |
+| -------------------------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET `/portal/portals`                                                | R    | `?gatewayId`                                                                                                                                                                                                                               | `Portal[]` (not deleted)                                                                                                                                                                                                                          | –                                                                                                                                                                             |
+| GET `/portal/portals/:id`                                            | R    | –                                                                                                                                                                                                                                          | `Portal`                                                                                                                                                                                                                                          | 404 `portal_not_found`                                                                                                                                                        |
+| POST `/portal/portals`                                               | A    | `{gatewayId, name 1–80, networkPerchId, methods? {voucher =true, password =false}, templateId? (default builtin; null = none), cspConnectSrc? ≤16, privacyNotice? ≤2000, force?}`                                                          | 201 `{portal, delivery}`; pushes `configure`, `template`                                                                                                                                                                                          | 404 `gateway_not_found`, `template_not_found`; 409 `portal_exists`; 422 `network_not_found`, `network_hosts_controller` (the gateway's management network; `force` overrides) |
+| PATCH `/portal/portals/:id`                                          | A    | same fields, all optional (`networkPerchId` moves the portal)                                                                                                                                                                              | `{portal, delivery}`; a change bumps `revision`, pushes `configure` (+ `template`)                                                                                                                                                                | 404; 409 `portal_exists`; 422 as above                                                                                                                                        |
+| DELETE `/portal/portals/:id?force=1`                                 | A    | –                                                                                                                                                                                                                                          | 204; grants ended `revoked` (with force), row soft-deleted, `configure` pushed                                                                                                                                                                    | 404; 409 `portal_active_grants` `{activeGrants}` (live grants, no force)                                                                                                      |
+| GET `/portal/grants`                                                 | R    | `?portalId&gatewayId&voucherId&state=active\|live\|queued\|ended\|all (=active: not ended)&mac&source&limit&offset`                                                                                                                        | `{items: PortalGrant[], total}` newest first                                                                                                                                                                                                      | 422 `invalid_mac`                                                                                                                                                             |
+| POST `/portal/grants/:id/extend`                                     | A    | `{minutes? 1–525600, bytes? 1–1e13}` (≥ one)                                                                                                                                                                                               | `{grant, delivery}`                                                                                                                                                                                                                               | 404 `grant_not_found`; 409 `grant_ended`, `grant_not_extendable` (voucher grant); 422 `nothing_to_extend` `{field}`                                                           |
+| POST `/portal/grants/:id/revoke`                                     | A    | –                                                                                                                                                                                                                                          | `{grant, delivery}` (ended `revoked`; the device's next queued entitlement is promoted)                                                                                                                                                           | 404                                                                                                                                                                           |
+| GET `/portal/sessions`                                               | R    | `?portalId&gatewayId&grantId&mac&from&to&limit&offset` (sessions overlapping `[from, to]`)                                                                                                                                                 | `{items: PortalSession[], total}` newest first                                                                                                                                                                                                    | 422 `invalid_range`, `invalid_date`, `invalid_mac`                                                                                                                            |
+| POST `/portal/voucher-batches`                                       | A    | `{portalId? null, name 1–80, note? ≤500, count 1–1000, codeLength 8–16 =10, durationMinutes? 1–525600, durationMode ='wall_clock', startMode ='first_use', quotaBytes? 1e6–1e13, downKbps?/upKbps? 64–1e7, maxDevices 1–10 =1, redeemBy?}` | 201 `{batch, codes: string[], delivery}` (formatted codes, once); pushes `vouchers` for a bound batch                                                                                                                                             | 404 `portal_not_found`; 422 `no_limit`, `start_mode_requires_wall_clock`, `redeem_by_past`, `invalid_date`                                                                    |
+| GET `/portal/voucher-batches`                                        | A    | `?portalId`                                                                                                                                                                                                                                | `VoucherBatch[]` newest first                                                                                                                                                                                                                     | –                                                                                                                                                                             |
+| GET `/portal/voucher-batches/:id`                                    | A    | –                                                                                                                                                                                                                                          | `{batch, vouchers: Voucher[]}`                                                                                                                                                                                                                    | 404 `batch_not_found`                                                                                                                                                         |
+| GET `/portal/voucher-batches/:id/codes`                              | A    | –                                                                                                                                                                                                                                          | `{batch, vouchers}` with `code` (print sheet)                                                                                                                                                                                                     | 404; 410 `codes_unrecoverable` (APP_KEY rotated)                                                                                                                              |
+| GET `/portal/voucher-batches/:id/codes.csv`                          | A    | –                                                                                                                                                                                                                                          | `text/csv` attachment `perch-vouchers-batch-<id>.csv`, CRLF, every cell quoted, cells starting `= + - @` prefixed `'`; columns `code,hint,status,batch_id,batch_name,duration_minutes,duration_mode,quota_bytes,max_devices,redeem_by,expires_at` | 404; 410                                                                                                                                                                      |
+| POST `/portal/voucher-batches/:id/revoke`                            | A    | –                                                                                                                                                                                                                                          | `{batch, delivery}` (idempotent; grants of its vouchers ended `revoked`)                                                                                                                                                                          | 404                                                                                                                                                                           |
+| DELETE `/portal/voucher-batches/:id`                                 | A    | –                                                                                                                                                                                                                                          | 204                                                                                                                                                                                                                                               | 404; 409 `batch_used` (a voucher was redeemed: revoke instead)                                                                                                                |
+| GET `/portal/vouchers`                                               | A    | `?batchId&portalId&status&limit&offset`                                                                                                                                                                                                    | `{items: Voucher[], total}`                                                                                                                                                                                                                       | –                                                                                                                                                                             |
+| POST `/portal/vouchers/lookup`                                       | A    | `{code}` (any spelling)                                                                                                                                                                                                                    | `{voucher, batch, grants: PortalGrant[] (≤100)}`                                                                                                                                                                                                  | 404 `voucher_not_found`                                                                                                                                                       |
+| POST `/portal/vouchers/:id/revoke`                                   | A    | –                                                                                                                                                                                                                                          | `{voucher, delivery}`                                                                                                                                                                                                                             | 404 `voucher_not_found`                                                                                                                                                       |
+| GET / POST `/portal/users`                                           | A    | POST `{username ^[a-z0-9._-]{3,32}$, password 8–64, displayName?, enabled =true, maxDevices 1–10 =2, sessionMinutes?, downKbps?, upKbps?, portalIds? (null = all)}`                                                                        | `PortalUser[]` / 201 `PortalUser`                                                                                                                                                                                                                 | 404 `portal_not_found`; 422 `username_taken`                                                                                                                                  |
+| PATCH `/portal/users/:id`                                            | A    | fields as POST, optional, no password                                                                                                                                                                                                      | `PortalUser` (limits changed: live grants resent; disabled: grants ended `revoked`)                                                                                                                                                               | 404 `portal_user_not_found`; 422 `username_taken`                                                                                                                             |
+| PUT `/portal/users/:id/password` · DELETE `/portal/users/:id`        | A    | `{password}` / –                                                                                                                                                                                                                           | 204 / 204 (grants ended)                                                                                                                                                                                                                          | 404                                                                                                                                                                           |
+| GET / POST `/portal/api-clients`                                     | A    | POST `{name, portalIds ≥1, scopes ≥1 of authorize\|read, maxMinutesPerCall 1–10080 =1440, maxBytesPerCall 1e6–1e13 =1e10, maxActiveGrants 1–5000 =500}`                                                                                    | `PortalApiClient[]` / 201 `{client, token}`                                                                                                                                                                                                       | 404 `portal_not_found`                                                                                                                                                        |
+| PATCH `/portal/api-clients/:id` · POST `/:id/rotate` · DELETE `/:id` | A    | fields / – / –                                                                                                                                                                                                                             | `PortalApiClient` / `{client, token}` / 204 (revoked; row and grants stay)                                                                                                                                                                        | 404 `api_client_not_found`; 409 `api_client_revoked`                                                                                                                          |
+| GET / PATCH `/settings/portal`                                       | A    | partial §8 settings                                                                                                                                                                                                                        | `{settings, defaults, limits}`; PATCH pushes `sync` to every gateway with a portal                                                                                                                                                                | 422                                                                                                                                                                           |
+| Templates                                                            | A    | §12.3                                                                                                                                                                                                                                      |                                                                                                                                                                                                                                                   |                                                                                                                                                                               |
+
+### 11.5 Grant rules the routes apply
+
+- **Extend** (`/grants/:id/extend`): `g:` grants grow their own limits: a
+  running wall clock moves on from `max(deadline, now)`, a waiting one
+  (queued) and an active-time budget grow the budget; bytes add to an existing
+  quota. `u:` grants move the login deadline. A limit the grant does not have
+  is `nothing_to_extend`: extending never turns "unlimited" into a limit.
+- **Revoke / end** (every path): the grant's session closes with
+  `bytes = counters − start`; a grant that was on the router is pushed as
+  `deauthorize`; then the device's next queued entitlement on that portal is
+  promoted (`authorize` push) and its waiting wall clock starts: a first-use
+  voucher's (voucher revision + 1, `vouchers` push) or an API/admin grant's.
+  Reconciliation does the same (`grantClocks`, §7).
+- A deleted portal's grants end without promotion.
+
+### 11.6 Authorize API (decision 22; the Piso WiFi hook)
+
+Routes, all **K**, `Cache-Control: no-store`:
+
+| Method, path                                   | Scope       | Request                                                                                                                                                                                          | Response                                                                                                                     | Errors                                                                                                                                                                                                                                                                                                                |
+| ---------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST `/portal/authorizations`                  | `authorize` | `{portalId, mac, minutes? 1–525600, bytes? 1–1e13, durationMode? ='wall_clock', downKbps?, upKbps? 64–1e7, mode? 'extend'\|'replace' ='extend', externalRef? [A-Za-z0-9._:-]{1,64}, note? ≤200}` | 201 created / 200 extended or replayed: `{grant: PortalGrant \| null, delivery, outcome: 'created'\|'extended'\|'replayed'}` | 401 `invalid_api_token`; 403 `scope_required` `{scope}`, `portal_not_allowed`, `admin_required`, `password_change_required`; 404 `portal_not_found`; 409 `idempotency_conflict`; 422 `no_limit`, `limit_exceeded` `{field, max}`, `too_many_active_grants` `{max}`, `invalid_mac`; 429 `rate_limited` + `Retry-After` |
+| GET `/portal/authorizations/:mac?portalId=`    | `read`      | –                                                                                                                                                                                                | `{grant: PortalGrant \| null}`: the device's live grant, else its first queued one                                           | as above; 422 without `portalId`                                                                                                                                                                                                                                                                                      |
+| DELETE `/portal/authorizations/:mac?portalId=` | `authorize` | –                                                                                                                                                                                                | `{grant, delivery}` (the live one, ended `revoked`)                                                                          | as above; 404 `no_active_grant`                                                                                                                                                                                                                                                                                       |
+
+**`portalApiAuth`.** `Authorization: Bearer <token>`:
+
+- `perch_pa_` + 32 base64url characters: an API client. Only the token's
+  SHA-256 is stored (unique index, then a constant-time compare). A revoked
+  client is 401.
+- Any other bearer: a controller access token, accepted for an **admin**
+  without a pending password change (operators and viewers: 403
+  `admin_required`). Admins act on every portal with every scope and no
+  per-call caps; their grants are `source: 'admin'`.
+- Missing or invalid: 401 `invalid_api_token`, and one failure charged to
+  the caller's address (`request.ip()`, `TRUST_PROXY` rules): 20 failures in
+  15 minutes and the address gets 429 for the rest of the window, before any
+  token lookup.
+- Every authenticated request counts against its principal (`c:<id>` /
+  `u:<id>`): `apiRequestsPerClientPerMinute` (setting, default 120) per fixed
+  minute, else 429 `rate_limited` + `Retry-After`. Both limiters are
+  in-process bounded maps (4096 principals, 1024 addresses).
+
+**Semantics.**
+
+- **Scope and portal first.** A client's `portalIds` are checked before the
+  portal is looked up: 403 `portal_not_allowed` for any id outside them, so a
+  token cannot probe which portals exist. A listed but deleted portal is 404.
+- **Ownership.** A client acts only on grants it made (`api_client_id`): it
+  extends, replaces, reads and ends its own, never a voucher, user or other
+  client's grant. An admin owns every `api`/`admin` grant (and `DELETE` with
+  an admin token ends every grant of the device on the portal).
+- **`mode: 'extend'`** (default) grows the principal's own non-ended grant for
+  the device when that grant has the limits the call adds (minutes: a timed
+  grant of the same `durationMode`; bytes: a grant with a quota); the live one
+  first, then the newest. Otherwise a **new** grant is made.
+- **`mode: 'replace'`** ends the principal's own grants for the device
+  (`replaced`) and makes a new one.
+- **A new grant** (`source: 'api'|'admin'`, group `g:<id>`): runs at once
+  when the device has nothing live on the portal (wall clock starts now).
+  Otherwise decision 23 places it: a time grant over a running data bucket
+  swaps (the bucket is queued, `deauthorize` pushed); anything else is
+  `queued` (`delivery: 'applied'`, nothing pushed) and its wall clock waits
+  (`expires_at` null, `time_budget_seconds` set) until it is promoted, so paid
+  time never runs down behind a voucher.
+- **Caps** (clients only): `minutes ≤ maxMinutesPerCall`,
+  `bytes ≤ maxBytesPerCall` (422 `limit_exceeded`); a new grant needs fewer
+  than `maxActiveGrants` non-ended grants of the client (422
+  `too_many_active_grants`; extending an existing one is still allowed).
+- **Idempotency.** `externalRef` is unique per principal in
+  `portal_authorizations` (the coin box's payment id). The same ref with the
+  same request (SHA-256 of `[portalId, mac, minutes, bytes, durationMode,
+downKbps, upKbps, mode]`; `note` excluded) answers 200 `replayed` with the
+  grant as it is now and credits nothing; a different request is 409
+  `idempotency_conflict`. A paid call is never lost: with the gateway offline
+  it is stored and answered `delivery: 'pending'`. Ledger rows are pruned with
+  the portal history (`sessionRetentionDays`), after which a ref could be
+  reused.
+- **Ledger** `portal_authorizations`: `principal, api_client_id,
+created_by_user_id, external_ref, portal_id, grant_id, mac, outcome
+(created|extended), minutes, bytes, request_sha, via (http|relay), address,
+created_at`. `api_clients.last_used_at` is updated per accepted call.
+
+**The Piso WiFi hook.** No coin component: a custom template (§12) reads
+`{{client_mac}}` / `{{status_json}}`, talks to the operator's coin box on the
+guest subnet (its origin listed in the portal's `cspConnectSrc`, which only
+takes `http(s)://` / `ws(s)://` origins without path, lower-cased, at most
+16), and the coin box calls `POST /portal/authorizations` with its own token,
+`mac`, the paid `minutes`/`bytes` and the payment id as `externalRef`. With
+the router relay (WP3/WP4, `portal.relay`), the box can stay on the guest
+network and never reach the controller.
+
+**Relay (for WP3).** The socket side calls the same service functions
+(`app/services/portal_authorize.ts`):
+
+```ts
+authenticatePortalApiToken(token: string): Promise<PortalApiClient | null>   // portal_api_clients.ts
+clientPrincipal(client): PortalPrincipal
+authorizeDevice(principal, input: AuthorizeInput, ctx: AuthorizeCallContext): Promise<AuthorizeResult>
+deviceAuthorization(principal, portalId, mac, ctx): Promise<{ grant }>
+deauthorizeDevice(principal, portalId, mac, ctx): Promise<{ grant, delivery }>
+type AuthorizeCallContext = { via: 'http' | 'relay'; address: string | null; gatewayId?: number }
+// errors: PortalError { httpStatus, code, message, extra } → relay answers {status, body: {error, message, ...extra}}
+```
+
+With `via: 'relay'` the caller must pass `gatewayId` = the relaying gateway
+(its portals only, else 403 `portal_not_allowed`), only `perch_pa_` tokens are
+accepted (never a controller access token: those must never be typed on a
+guest network), the rate limits apply per client exactly as over HTTP
+(`consumePortalApiRequest`) and failed tokens are charged per relaying
+gateway (`recordPortalApiAuthFailure('relay:<gatewayId>')`). The relay body is
+validated with `authorizeValidator` like HTTP.
+
+**Threat model (decision 22: extra scrutiny).**
+
+| Threat                                                               | Mitigation                                                                                                                                                                                                      | Residual                                                                                                                                                                         |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Leaked or stolen API token (coin box compromised, token in a script) | Scoped: its portals only, its scopes, per-call caps, `maxActiveGrants`, own grants only; rate-limited; hash-only storage; rotate (old dies at once) and revoke; every call in the ledger with address and `via` | Until revoked it can put any MAC online on its portals within the caps. It cannot read or end others' grants, see vouchers, codes, users or other clients, or change any setting |
+| Token brute force                                                    | 192-bit tokens; 20 failures / 15 min per address → 429 before any lookup                                                                                                                                        | None practical                                                                                                                                                                   |
+| Replayed or duplicated payment                                       | `externalRef` idempotency with request hash; replay answers without credit                                                                                                                                      | A box that omits `externalRef` gets no protection (documented for integrators)                                                                                                   |
+| Portal enumeration by a token                                        | 403 for every portal outside its list, existing or not                                                                                                                                                          | –                                                                                                                                                                                |
+| Admin token exposure through the relay                               | Relay accepts only `perch_pa_` tokens                                                                                                                                                                           | –                                                                                                                                                                                |
+| Integration flooding the router with grants                          | `maxActiveGrants` per client, per-minute limit, deltas coalesced in the outbox                                                                                                                                  | A client may still churn within its limits                                                                                                                                       |
+| CSP injection through `cspConnectSrc`                                | Origin-only regex (scheme, host, port), lower-cased, ≤ 16                                                                                                                                                       | –                                                                                                                                                                                |
+| Custom page script (Piso page)                                       | Runs only on the router's portal origin (§12.1); never served by the controller                                                                                                                                 | A malicious admin-uploaded page can phish guests on the portal: admins are trusted                                                                                               |
+| Guest spoofing a paying device (MAC cloning)                         | Out of scope for the API (L2 portal, §10 of the design)                                                                                                                                                         | Accepted                                                                                                                                                                         |
+
+### 11.7 Deviations from the design's §7
+
+- Portals are created on `{gatewayId, networkPerchId}` (decision 19), not
+  `{collectorId, network}`; errors `gateway_not_found`, `network_not_found`.
+- No `native` writes and no `configChange` in answers: openNDS settings are
+  native config for the config plane's openNDS domain (not built yet);
+  `native` reads null. `collector_not_capable` is not refused: the portal is
+  created and `gateway.portalCapable` shows the capability.
+- No 503 `gateway_offline`: every change is queued (`delivery`).
+- Authorize answers `delivery: 'applied' | 'pending'` (design: `'queued'`),
+  plus `outcome`.
+- `PortalGrant` gains `revision`, `createdBy`, `note`, `lastSeenAt`,
+  `timeUsedSeconds`, `state: 'queued'`, end reasons `moved`, `rejected`; no
+  `external` source (decision 25); `group` carries the limits.
+- `grant_not_extendable`, `nothing_to_extend`, `api_client_revoked`,
+  `template_file_not_found`, `duplicate_file`, `file_required`,
+  `invalid_date`, `invalid_range`, `redeem_by_past`, `no_active_grant` are new
+  codes; `DELETE /portal/api-clients/:id` revokes (row kept for the audit).
+- `GET /voucher-batches/:id/codes.csv` added (server-side CSV).
+- Grants and sessions lists also filter by `gatewayId`, `voucherId`,
+  `grantId`; grant states `live` and `queued` added.
+
+## 12. Templates (WP2)
+
+### 12.1 Isolation, not sanitising
+
+HTML is not sanitised (admins are trusted; a coin page needs scripts). It is
+isolated: on the router it runs on the portal's own origin under the design's
+CSP (`connect-src 'self' <cspConnectSrc>`), and the controller never serves
+template content as a document: there is no file download route, and the
+preview is JSON for `<iframe sandbox="allow-scripts allow-forms" srcdoc>`
+(never `allow-same-origin`, `allow-top-navigation`, `allow-popups`). Only
+admins upload; API clients cannot.
+
+### 12.2 Upload rules (`portal/templates.ts`)
+
+- ≤ 24 files, each ≤ 512 KiB (HTML ≤ 256 KiB), ≤ 2 MiB in total (413
+  `template_too_large`); `login.html` required (422 `missing_login_page`);
+  names `^[a-z0-9][a-z0-9._-]{0,63}$`, no directories (422 `bad_file_name`);
+  no duplicate names (422 `duplicate_file`).
+- Types by extension **and** content (422 `unsupported_type`): `html css js
+txt svg` must be UTF-8 without NUL (SVG must contain `<svg`); `png jpg jpeg
+gif webp ico woff2` must start with their magic bytes.
+- Variables `{{ name }}` are only substituted (and checked) in `.html`
+  files; an unknown name is 422 `unknown_variable` `{file, line, name,
+variables}`. Known: `portal_name gateway_name client_mac client_ip
+origin_url message message_code assets remaining_time remaining_data
+expires_at privacy_notice methods status_json voucher_form login_form
+logout_form`. All are HTML-escaped except `status_json` (JSON with `< > &`
+  as `< > &`) and the three snippets (raw; a method the portal
+  does not offer renders empty). `origin_url` is http(s) only.
+- **Set digest** (what `portal.configure`/`portal.template` compare):
+  `sha256( for each file sorted by name: name "\n" sha256hex(content) "\n" )`;
+  the empty set is `sha256("")` = the builtin marker.
+
+### 12.3 Routes (all A)
+
+| Method, path                               | Request                                                         | Response                                                                                                                                                                                                                                                       | Errors                                                        |
+| ------------------------------------------ | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| GET `/portal/templates` · `/:id`           | –                                                               | `PortalTemplate[]` (builtin first) · `PortalTemplate`                                                                                                                                                                                                          | 404 `template_not_found`                                      |
+| POST `/portal/templates`                   | multipart `name`, `files` (repeat the field)                    | 201 `PortalTemplate`                                                                                                                                                                                                                                           | 413, 422 as §12.2; 422 `too_many_files`                       |
+| POST `/portal/templates/:id/duplicate`     | `{name}`                                                        | 201 `PortalTemplate` (the builtin's files are copied from the compiled-in set)                                                                                                                                                                                 | 404                                                           |
+| PUT `/portal/templates/:id/files/:name`    | multipart `file` (stored under `:name`)                         | `PortalTemplate`; pushes `template` to portals using it                                                                                                                                                                                                        | 403 `builtin_template`; 413; 422 as §12.2, `file_required`    |
+| DELETE `/portal/templates/:id/files/:name` | –                                                               | `PortalTemplate`                                                                                                                                                                                                                                               | 403; 404 `template_file_not_found`; 422 `login_page_required` |
+| PATCH / DELETE `/portal/templates/:id`     | `{name}` / –                                                    | `PortalTemplate` / 204                                                                                                                                                                                                                                         | 403 `builtin_template`; 409 `template_in_use` `{portalIds}`   |
+| GET `/portal/templates/:id/preview`        | `?page=login\|status (=login)&message=<message_code>&portalId=` | `{html, page, messageCode}` (`no-store`); every `{{assets}}/<file>` becomes a data URI of that file (missing: `data:,`); sample values, or the portal's name, methods and privacy notice with `portalId`; a set without `status.html` previews the builtin one | 404 `template_not_found`, `portal_not_found`; 422             |
+
+CSS `url()` references inside a stylesheet are not rewritten in previews
+(relative URLs do not resolve inside a data URI); use `{{assets}}` in HTML.
+
+### 12.4 The builtin template (for WP4)
+
+`app/services/portal/builtin_template.ts` holds the builtin pages
+(`login.html`, `status.html`, `style.css`, no inline script), the three
+snippets (`portalSnippets(methods)`: forms posting to `/portal/voucher`,
+`/portal/login`, `/portal/logout`) and the guest message texts
+(`PORTAL_MESSAGES`, keyed by `message_code`). The collector must embed the
+same files, snippets and texts; the seeded row keeps the empty-set digest.

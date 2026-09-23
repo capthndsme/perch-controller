@@ -357,6 +357,13 @@ export async function applyPortalDbChanges(
       await trx.rawQuery(`UPDATE portal_grants SET ${sets.join(', ')} WHERE id = ?`, bind(values))
     }
 
+    for (const c of changes.grantClocks ?? []) {
+      await trx.rawQuery(
+        'UPDATE portal_grants SET expires_at = COALESCE(expires_at, ?), updated_at = ? WHERE id = ?',
+        bind([sqlTime(c.expiresAt), now, c.id])
+      )
+    }
+
     for (const s of changes.sessions) {
       const grantId = idOf(s.grant)
       if (grantId === null) continue

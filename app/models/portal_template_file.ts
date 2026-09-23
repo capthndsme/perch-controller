@@ -5,4 +5,8 @@ import { column } from '@adonisjs/lucid/orm'
 export default class PortalTemplateFile extends PortalTemplateFileSchema {
   @column({ serializeAs: null })
   declare content: Buffer
+
+  /** The naming strategy would read `sha256` as `sha_256`. */
+  @column({ columnName: 'sha256' })
+  declare sha256: string
 }

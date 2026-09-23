@@ -51,4 +51,5 @@ export const middleware = router.named({
   requireAdmin: () => import('#middleware/require_admin_middleware'),
   requireSetupComplete: () => import('#middleware/require_setup_complete_middleware'),
   requirePasswordChange: () => import('#middleware/require_password_change_middleware'),
+  portalApiAuth: () => import('#middleware/portal_api_auth_middleware'),
 })

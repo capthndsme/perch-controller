@@ -1,5 +1,6 @@
 import Gateway from '#models/gateway'
 import Portal from '#models/portal'
+import PortalAuthorization from '#models/portal_authorization'
 import PortalEvent from '#models/portal_event'
 import PortalGatewayState from '#models/portal_gateway_state'
 import PortalGrant from '#models/portal_grant'
@@ -446,6 +447,7 @@ test.group('portal store: load, reconcile, apply', (group) => {
       ackedEventSeq: 1,
       grantInserts: [],
       grantUpdates: [],
+      grantClocks: [],
       sessions: [],
       voucherUpdates: [],
       events: [
@@ -507,9 +509,25 @@ test.group('portal store: retention', (group) => {
     await PortalSession.create({ grantId: live.id, portalId: p.id, mac: MAC_B, startedAt: old })
     await PortalEvent.create({ gatewayId: gw.id, type: 'grant_lost', createdAt: old })
     await PortalEvent.create({ gatewayId: gw.id, type: 'grant_lost', createdAt: recent })
+    for (const [ref, when] of [
+      ['old', old],
+      ['new', recent],
+    ] as const) {
+      await PortalAuthorization.create({
+        principal: 'u:1',
+        externalRef: ref,
+        portalId: p.id,
+        mac: MAC_B,
+        outcome: 'created',
+        requestSha: 'a'.repeat(64),
+        via: 'http',
+        createdAt: when,
+      })
+    }
 
     const result = await prunePortalHistory(30, new Date(NOW))
-    assert.deepInclude(result, { sessions: 1, grants: 1, events: 1 })
+    assert.deepInclude(result, { sessions: 1, grants: 1, events: 1, authorizations: 1 })
+    assert.lengthOf(await PortalAuthorization.all(), 1)
     assert.isNull(await PortalGrant.find(endedOld.id))
     assert.isNotNull(await PortalGrant.find(endedRecent.id))
     assert.isNotNull(await PortalGrant.find(live.id))
