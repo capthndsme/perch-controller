@@ -166,7 +166,7 @@ export async function createGatewayBackup(
 
   const backup = await GatewayBackup.create({
     collectorId,
-    createdAt: DateTime.utc(),
+    createdAt: DateTime.utc().startOf('second'),
     size: archive.length,
     sha256,
     release,

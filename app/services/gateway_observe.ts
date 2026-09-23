@@ -368,7 +368,7 @@ export async function requestGatewayObservation(
     }
     throw error
   }
-  const receivedAt = DateTime.utc()
+  const receivedAt = DateTime.utc().startOf('second')
   const result = await recordGatewayObservationSerial(collectorId, answer, receivedAt)
   return { observedAt: receivedAt.toISO({ suppressMilliseconds: true })!, parts: result.parts }
 }
