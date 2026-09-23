@@ -1753,6 +1753,26 @@ export type PortalStatus = {
 
 export type PortalEnforcement = 'opennds' | 'perch_nft'
 
+export type PortalMethods = { voucher: boolean; password: boolean; payment: boolean; clickThrough: boolean }
+
+export type PortalPaymentSettings = {
+  /** The portal's default price table; a terminal may override it. */
+  priceTableId: number | null
+  /** 15–600 s without a coin closes a checkout (with credit: finalised). */
+  idleTimeoutSeconds: number
+}
+
+export type PortalClickThroughSettings = {
+  minutes: number
+  quotaBytes: number | null
+  downKbps: number | null
+  upKbps: number | null
+  /** At most `perWindow` grants per device in any `windowHours`. */
+  windowHours: number
+  perWindow: number
+  terms: string
+}
+
 export type Portal = {
   id: number
   gatewayId: number
@@ -1761,7 +1781,11 @@ export type Portal = {
   network: PortalNetworkRef
   enforcement: PortalEnforcement
   instance: string | null
-  methods: { voucher: boolean; password: boolean }
+  methods: PortalMethods
+  /** The payment method's settings (portal.md §14.3), kept while the method is off. */
+  payment: PortalPaymentSettings
+  /** The click-through method's limits (§14.7), kept while the method is off. */
+  clickThrough: PortalClickThroughSettings
   templateId: number | null
   cspConnectSrc: string[]
   privacyNotice: string | null
@@ -1775,7 +1799,9 @@ export type PortalPayload = {
   gatewayId?: number
   name?: string
   networkPerchId?: string
-  methods?: { voucher: boolean; password: boolean }
+  methods?: PortalMethods
+  payment?: Partial<PortalPaymentSettings>
+  clickThrough?: Partial<PortalClickThroughSettings>
   templateId?: number | null
   cspConnectSrc?: string[]
   privacyNotice?: string | null
@@ -1800,7 +1826,7 @@ export type PortalGroup = {
 }
 
 export type PortalGrantState = 'queued' | 'pending_device' | 'active' | 'paused' | 'ended'
-export type PortalGrantSource = 'voucher' | 'user' | 'api' | 'admin'
+export type PortalGrantSource = 'voucher' | 'user' | 'api' | 'admin' | 'clickthrough'
 export type PortalGrantEndReason =
   | 'expired'
   | 'quota'
@@ -1865,6 +1891,8 @@ export type VoucherStatus = 'unused' | 'active' | 'exhausted' | 'expired' | 'rev
 
 export type VoucherBatch = {
   id: number
+  /** `payment` batches (one voucher minted from a paid checkout) are not listed. */
+  kind?: 'batch' | 'payment'
   portalId: number | null
   name: string
   note: string | null
@@ -2051,4 +2079,182 @@ export type PortalNetworkOption = {
   name: string
   proto: string | null
   ipaddr: string | null
+}
+
+// ── Paid Hotspot (docs/gateway/portal.md §14) ────────────────────────────
+
+export type PriceDurationMode = 'wall_clock' | 'active_time'
+
+/** One rate: `amount` (minor units) buys `minutes`, optional data and a speed tier. */
+export type PriceEntry = {
+  amount: number
+  minutes: number
+  quotaBytes: number | null
+  downKbps: number | null
+  upKbps: number | null
+}
+
+export type PriceTable = {
+  id: number
+  name: string
+  /** ISO 4217, display only. */
+  currency: string
+  /** 0–3: amounts are integers in 10^-decimals of the currency. */
+  decimals: number
+  durationMode: PriceDurationMode
+  entries: Array<PriceEntry & { amountText: string }>
+  revision: number
+  usedBy: { portalIds: number[]; terminalIds: number[] }
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export type PriceRevision = {
+  revision: number
+  name: string
+  currency: string
+  decimals: number
+  durationMode: PriceDurationMode
+  entries: PriceEntry[]
+  createdAt: string | null
+}
+
+export type PriceTablePayload = {
+  name?: string
+  currency?: string
+  decimals?: number
+  durationMode?: PriceDurationMode
+  entries?: Array<{ amount: number; minutes: number; quotaBytes?: number | null; downKbps?: number | null; upKbps?: number | null }>
+}
+
+/** `POST /portal/price-tables/:id/quote`. */
+export type PriceQuote = {
+  amount: number
+  amountText: string
+  durationMode: PriceDurationMode
+  durationSeconds: number
+  quotaBytes: number | null
+  downKbps: number | null
+  upKbps: number | null
+  unusedAmount: number
+  /** What the running total buys, as the guest's checkout panel says it. */
+  previewText: string
+  /** Null when the amount buys nothing. */
+  text: string | null
+  priceTableId: number
+  revision: number
+}
+
+/** A price table as the router got it (snapshot on a ledger row). */
+export type PriceTableWire = {
+  priceTableId: number
+  revision: number
+  name: string
+  currency: string
+  decimals: number
+  durationMode: PriceDurationMode
+  entries: PriceEntry[]
+}
+
+export type TerminalCheckoutState = 'open' | 'finalized' | 'cancelled' | 'expired'
+
+export type HotspotTerminal = {
+  id: number
+  portalId: number
+  name: string
+  /** `perch_pt_` + 4 characters. */
+  prefix: string
+  mac: string | null
+  enabled: boolean
+  priceTableId: number | null
+  /** Its own table, else the portal's. */
+  effectivePriceTableId: number | null
+  /** The router's report is at most 90 s old and says online. */
+  online: boolean
+  lastSeenAt: string | null
+  status: {
+    acceptor: string | null
+    firmware: string | null
+    error: string | null
+    checkout: { checkoutRef: string; state: TerminalCheckoutState | string; amount: number; openedAt: string | null } | null
+    reportedAt: string | null
+  } | null
+  /** False after an APP_KEY change: rotate the token. */
+  tokenRecoverable: boolean
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export type HotspotTerminalPayload = {
+  portalId?: number
+  name?: string
+  mac?: string | null
+  enabled?: boolean
+  priceTableId?: number | null
+}
+
+export type HotspotTerminalWithToken = { terminal: HotspotTerminal; token: string; delivery: PortalDelivery }
+
+export type CheckoutKind = 'payment' | 'unclaimed'
+export type CheckoutState = 'paid' | 'voided' | 'unclaimed' | 'credited' | 'dismissed'
+export type CheckoutReason = 'done' | 'timeout' | 'terminal' | 'late' | 'full' | 'below_minimum'
+
+export type HotspotCheckout = {
+  id: number
+  kind: CheckoutKind
+  state: CheckoutState
+  gatewayId: number
+  portalId: number | null
+  terminal: { id: number | null; name: string | null }
+  checkoutRef: string | null
+  mac: string | null
+  ip: string | null
+  hostname: string | null
+  amount: number
+  amountText: string | null
+  unusedAmount: number
+  refundAmount: number | null
+  currency: string | null
+  decimals: number | null
+  price: { priceTableId: number | null; revision: number | null; snapshot: PriceTableWire | null } | null
+  entitlement: {
+    durationMode: string | null
+    durationSeconds: number | null
+    quotaBytes: number | null
+    downKbps: number | null
+    upKbps: number | null
+  } | null
+  coinCount: number
+  /** `at` in epoch ms (the router's clock). */
+  coins: Array<{ eventId: string; amount: number; at: number }>
+  reason: CheckoutReason | null
+  openedAt: string | null
+  finalizedAt: string | null
+  /** The voucher behind the reference code (payment) or the credit (unclaimed). */
+  voucher: { id: number; batchId: number; hint: string; status: VoucherStatus } | null
+  keyEpoch: number | null
+  note: string | null
+  resolvedAt: string | null
+  resolvedBy: { id: number; email: string } | null
+  createdAt: string | null
+}
+
+export type CheckoutFilters = {
+  portalId?: number
+  gatewayId?: number
+  terminalId?: number
+  kind?: CheckoutKind
+  state?: CheckoutState
+  mac?: string
+  from?: string
+  to?: string
+  limit?: number
+  offset?: number
+}
+
+export type CheckoutPage = {
+  items: HotspotCheckout[]
+  total: number
+  /** Paid rows matching the filters, per currency (minor units). */
+  totals: Array<{ currency: string; amount: number; count: number }>
 }

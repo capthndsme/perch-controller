@@ -49,7 +49,7 @@ export function useIsPortalAdmin(): { isAdmin: boolean; isPending: boolean } {
   return { isAdmin: profile.data?.role === 'admin', isPending: profile.isPending }
 }
 
-function qs(params: Record<string, string | number | boolean | null | undefined>): string {
+export function qs(params: Record<string, string | number | boolean | null | undefined>): string {
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
     if (value === null || value === undefined || value === '') continue
@@ -59,11 +59,11 @@ function qs(params: Record<string, string | number | boolean | null | undefined>
   return text ? `?${text}` : ''
 }
 
-function json(method: string, body?: unknown): RequestInit {
+export function json(method: string, body?: unknown): RequestInit {
   return { method, body: body === undefined ? undefined : JSON.stringify(body) }
 }
 
-function usePortalMutation<TVars, TResult>(fn: (vars: TVars) => Promise<TResult>) {
+export function usePortalMutation<TVars, TResult>(fn: (vars: TVars) => Promise<TResult>) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: fn,
