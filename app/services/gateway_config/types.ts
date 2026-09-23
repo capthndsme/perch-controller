@@ -130,6 +130,11 @@ export interface SectionConflict {
   detectedAt: string
   /** Set when the conflict came back from a rollback's `discarded` edits (section 5.5). */
   origin?: 'merge' | 'rollback_discarded'
+  /**
+   * `rollback_discarded` only: the router edit the rollback threw away. It is
+   * no longer on the router; "take router" puts it back into C.
+   */
+  discarded?: SectionContent | null
 }
 
 /** Gateway mode (section 2). */

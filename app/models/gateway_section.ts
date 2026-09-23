@@ -12,7 +12,7 @@ import type {
  * and 9). For synced sections: B (`baseContent`), R (`routerContent`) and C
  * (`desiredContent`), canonical `SectionContent` or null for "absent". The
  * pure merge over them is `app/services/gateway_config/sync_engine.ts`;
- * `toSectionState` there turns a row into the engine's input.
+ * `toSectionState` (`section_rows.ts`) turns a row into the engine's input.
  */
 export default class GatewaySection extends GatewaySectionSchema {
   /** Null = Perch owns the whole section. */
