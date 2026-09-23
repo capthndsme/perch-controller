@@ -2607,7 +2607,7 @@ Found in the lab and fixed:
   country on the lab AP); a disabled `sqm` init script ignores Perch's reload (re-enabled on the lab
   gateway).
 
-### Live (2026-09-24 20:50-20:57 UTC)
+### Live (2026-09-23 20:50-20:57 UTC; 2026-09-24 local)
 - **Controller** 1.1.0-pre.1 from local `main` (`docker compose up -d --build`); migrations 048-123
   in 6.7 s. Before it: rollback image `perch-controller:rollback-rc3-2026-09-24` and a full dump of the
   database (off-box, with the daemons' previous binaries and configs). The install commands still
@@ -2631,3 +2631,18 @@ Found in the lab and fixed:
   perch-qos is not installed there ("method not found" logged on the router each time). **Controller 1.1.0-pre.2**
   (controller only): a "method not found" is remembered for that collector session and asked again only after a
   reconnect (installing perch-qos restarts the collector). Test: once per session, not per sweep. Suite 1317/1317.
+- **perch-qos on the live gateway** (2026-09-23 21:57 UTC, owner: "you may install it on the edge router and
+  enable"). OpenWrt 23.05 has no package target, so the package's files went on by hand (init script enabled,
+  config, uci-defaults run, both hotplug hooks, keep file) plus `list managed_config 'perch-qos'`: the sibling
+  auto-join reads the opkg record, and a hand install has none. `qos probe` first: every kernel feature present, no
+  conflicts, clock synced. Collector restart: hello names `qos`, allowlist `dhcp firewall network perch-qos sqm
+  system`, device set revision 80 acked (empty). The controller imported `globals` (not drift) and, after its 5 min
+  retry of a `config_not_allowed` from the 22 s before the restart, wrote its default globals (apply confirmed by
+  the agent alone, as the Perch-owned package does). No caps defined, so nothing is shaped: no tc objects, sqm on
+  wan0 untouched.
+- Found on the way: with zoneinfo installed and `system.zonename` set, OpenWrt removes `/tmp/TZ` and links
+  `/tmp/localtime` to the zone file, and the shaper read only `/tmp/TZ`, so its schedules would have run on UTC.
+  Collector commit 8ed439b falls back to the TZif footer of `/etc/localtime` (not deployed yet; nothing uses
+  schedules here).
+- Seen in the ledger, left alone: a DHCP static-host apply the owner requested at 21:09:47 (device labels as host
+  names, 3 renames + 7 new hosts) rolled back at 21:11:17 on the 90 s confirm timeout; the 10 sections stay `ahead`.
