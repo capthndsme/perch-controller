@@ -2411,3 +2411,42 @@ tagged yet.
   171 → 251. Flows open across the restart stay unnamed until they end.
 - **Rollback.** `/root/perch-collector-1.0.0-rc.2.bak` in the gateway container, and the rc.2 binary,
   its UCI config and the downloaded rc.3 files in `~/metricslite-rollback/2026-09-23-rc3/`.
+
+## 2026-09-24 — Dense device, protocol and Wi-Fi series; partial first hour in lists (branch `fix/dense-series`, controller 1.0.0-rc.3)
+
+- **Report.** Protocol mix and Top talkers had the Servers-chart bug from rc.2. Protocol mix left a quiet
+  protocol out of the points, so a stacked band broke and jumped (live 24 h: a speed test in 2 of 288
+  buckets, `ookla` 1, `youtube` 246), and hashed colours put two protocols in one colour. Top talkers
+  coloured and stacked by rank, so a rank swap repainted the chart. Both rated the partial first bucket and
+  the live last one over the full width (live 1 h: first minute 0.70 Mbps against about 11), so the edges
+  moved on every refresh.
+- **Server.** Every device, protocol and Wi-Fi throughput series goes through `series_buckets.ts` (tier
+  lists, keyed sums, `planWindowSeries`); every bucket comes back with its `seconds`; the live bucket is read
+  up to the last complete poll or rollup pass. Top talkers ranks on the chart's own tier, ties by MAC; the
+  protocol breakdown is summed from the chart's buckets. An explicit `resolution=` wins over Settings →
+  Charts; the cap is 1500. Name and peer lists start at the row that holds `from` (`coveredFrom`); service
+  lists read 5-minute rows for windows up to 2 days.
+- **Dashboard.** Series keyed and zero-filled; colours and stack order sticky per key
+  (`lib/series-colors.ts`); straight segments over the requested window; gauge and count charts (clients,
+  signal, gateway) break at gaps (`breakGaps`); one AP colour per Wi-Fi page.
+- **Audit.** Also fixed: main bandwidth chart (bridged the July–September outage), device traffic, SSID/AP
+  throughput, client history, signal, gateway panel, services / destinations / peers lists (last hour listed
+  51 MB of 95 MB). **Open:** the mini-map brush is index-based; window totals on the aggregate tier drop the
+  partial first period; `/usage` daily source at UTC+8 (views over 120 d); some date conversions are right
+  only while the process runs in UTC (the container does).
+- **Tests.** 560/560, lint, typecheck, dashboard lint and build.
+
+## 2026-09-24 — Per-device usage on the device page (branch `feat/device-usage`, controller 1.0.0-rc.3)
+
+- **API.** `GET /usage` and `/usage/intervals` take `mac=` (normalised; 422 if invalid; an unknown MAC is all
+  zeros). Buckets, source tier, local-day alignment and scope are unchanged; bytes and protocols come from
+  that MAC's rows only; `activeDevices` and `wifiClients` are `null` and `mac` is echoed. Without `mac` the
+  response is byte-identical (golden test); the cache key includes the MAC.
+- **Index.** The per-device path forces `<table>_mac_time_idx` (MariaDB full-scanned the small daily protocol
+  table for the busiest device). Live: 30 d daily 0.7 + 22 ms, 12 months monthly 0.2 + 15 ms.
+- **Dashboard.** Devices → [device] has a Usage card with its own span, separate from the page window:
+  Daily 7/30 days, Monthly 3/6/9/12 months (exactly N columns), in `?usagePeriod`/`?usageRange`. Hover or ‹ ›
+  shows a bucket's categories and protocols; clicking a column sets the page window to that day or month.
+  The card always uses scope `all`.
+- **Tests.** 568/568, lint, typecheck, dashboard lint and build. Controller version 1.0.0-rc.3, pinned
+  collector 1.0.0-rc.3 (perch-apd stays 1.0.0-rc.2).
