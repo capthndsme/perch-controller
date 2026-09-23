@@ -1991,7 +1991,7 @@ in `docs/infrastructure-view.md` and was built by two parallel subagent streams 
 - **Scope.** The owner's next direction: the collector on the router becomes a managed gateway.
   Planned: multi-LAN/VLAN (native OpenWrt), WAN SQM/CAKE, per-device and per-LAN caps
   (individual vs bucket), a captive portal (controller logins, time/data vouchers, per-MAC
-  authorize API with custom HTML for Piso-WiFi-style integrations), and DHCP/DNS/firewall/routing
+  authorize API with custom HTML for paid-hotspot integrations (the Paid Hotspot API)), and DHCP/DNS/firewall/routing
   and other native OpenWrt sync.
 - **Two-way sync.** Sync is two-way, with a per-gateway "Authoritative Mode" setting that can only
   be enabled once both sides are in sync.
