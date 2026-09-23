@@ -45,12 +45,14 @@ import {
 } from '#services/gateway_config/order_store'
 import { clearPairing } from '#services/gateway_config/pairing'
 import { planRestore } from '#services/gateway_config/revisions'
+import { featureObservation, readObservedFacts } from '#services/gateway_config/observed_facts'
 import { gatewayQueue } from '#services/gateway_config/serial_queue'
 import {
   acceptDrift,
   checkEnableAuthoritative,
   checkModeChange,
   computeSyncStatus,
+  featureSyncIssues,
   computeUnledgered,
   deriveStatus,
   isGone,
@@ -305,6 +307,11 @@ async function syncStatusOf(gateway: Gateway): Promise<SyncStatus> {
     unledgered: computeUnledgered(states, gateway.observedLedger ?? []),
     registry: domainRegistry(),
     orders: await loadOrders(gateway.id),
+    features: featureSyncIssues(
+      domainRegistry(),
+      states,
+      featureObservation(await readObservedFacts(gateway.collectorId))
+    ),
   })
 }
 

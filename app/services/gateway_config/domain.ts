@@ -137,6 +137,42 @@ export interface ValidationCtx {
   managementPath?: ManagementPath | null
 }
 
+/**
+ * What the per-feature "in sync" checks see besides the sections (plan 2
+ * section 4.6 (d)): the latest observation parts the agent reported, each
+ * null when the agent does not report it or the report is stale (a check
+ * that cannot be verified is skipped, never guessed).
+ */
+export interface FeatureObservation {
+  /** `system` part: the host name the router runs with. */
+  hostname?: string | null
+  /** `resolver` part. */
+  resolver?: {
+    dnsmasqPort: number | null
+    controllerHost: { name: string | null; addresses: string[]; error: string | null } | null
+  } | null
+  /** `interfaces` part: the networks netifd knows. */
+  interfaces?: Array<{ network: string; up: boolean | null }> | null
+}
+
+/** A section as a feature check sees it: its desired content (the router's when not synced). */
+export interface FeatureSection {
+  perchId: string
+  name: string
+  type: string
+  scope: 'synced' | 'excluded' | 'unmodeled'
+  issue: string | null
+  options: UciOptions
+}
+
+/** One reason a feature is not verifiably in sync (409 `authoritative_not_in_sync` reasons). */
+export interface FeatureSyncIssue {
+  feature: string
+  objectId: string | null
+  code: string
+  message: string
+}
+
 export interface ConfigDomain<Obj = unknown> {
   /** 'networks' | 'dhcp_hosts' | 'firewall' | 'qos' | 'portal' | … (≤ 32 chars). */
   key: string
@@ -183,6 +219,14 @@ export interface ConfigDomain<Obj = unknown> {
   render(obj: Obj, current: SyncedSection[]): SectionEdit[]
   /** Cross-section checks; `error` issues block an apply. */
   validate(desired: SyncedSection[], ctx: ValidationCtx): Issue[]
+  /**
+   * The feature's own "in sync" check (plan 2 section 4.6 (d)), beyond the
+   * engine's per-section equality: runtime facts the router reports (the
+   * host name it runs with, dnsmasq answering, …). Gets every row of the
+   * domain (synced sections with their desired content; ambiguous ones are
+   * handled by the engine). An issue blocks enabling Authoritative Mode.
+   */
+  inSync?(sections: FeatureSection[], observed: FeatureObservation): FeatureSyncIssue[]
 }
 
 /** The result of claiming a router section. */
