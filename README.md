@@ -30,6 +30,12 @@ curl -fsSLO https://raw.githubusercontent.com/capthndsme/perch-controller/main/d
 docker compose up -d          # http://<host>:8080 → create the admin account, done
 ```
 
+The images are `ghcr.io/capthndsme/perch-controller` and `…/perch-collector`:
+`latest` and `1.0` follow final releases, `rc` is the newest release candidate
+(also under its version, e.g. `1.0.0-rc.1`) and `edge` is `main`. Set
+`PERCH_IMAGE_TAG` (for example `PERCH_IMAGE_TAG=1.0.0-rc.1` in `.env`) to run
+another tag than `latest`.
+
 Then add a collector. Best is the `perch-collector` OpenWrt package on your
 router: it sees all of the traffic and reports the gateway's stats too. Any
 Linux box that sees the LAN traffic (a bridge, a mirror port) works as well.

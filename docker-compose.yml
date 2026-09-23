@@ -29,6 +29,9 @@
 # Everything is optional and lives in a .env file next to this file. It is
 # the same .env the server reads (see .env.example), so one file configures
 # the whole stack:
+#   PERCH_IMAGE_TAG=latest           image tag of the server and collector: latest = the
+#                                    last final release, 1.0.0-rc.1 / rc = a release
+#                                    candidate, edge = main
 #   PERCH_HTTP_PORT=8080             port the dashboard listens on
 #   PERCH_HTTP_BIND=0.0.0.0          bind address (127.0.0.1 behind a reverse proxy)
 #   PERCH_DB_BUFFER_POOL=512M        InnoDB buffer pool of the bundled MariaDB
@@ -89,7 +92,7 @@ services:
       retries: 40
 
   server:
-    image: ghcr.io/capthndsme/perch-controller:latest
+    image: ghcr.io/capthndsme/perch-controller:${PERCH_IMAGE_TAG:-latest}
     restart: unless-stopped
     logging:
       driver: json-file
@@ -130,7 +133,7 @@ services:
 
   # Opt-in (see the top of this file): docker compose --profile collector up -d
   collector:
-    image: ghcr.io/capthndsme/perch-collector:latest
+    image: ghcr.io/capthndsme/perch-collector:${PERCH_IMAGE_TAG:-latest}
     profiles: ["collector"]
     restart: unless-stopped
     logging:

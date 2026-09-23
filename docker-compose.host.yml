@@ -57,7 +57,7 @@ services:
       retries: 40
 
   server:
-    image: ghcr.io/capthndsme/perch-controller:latest
+    image: ghcr.io/capthndsme/perch-controller:${PERCH_IMAGE_TAG:-latest}
     build: .
     restart: unless-stopped
     logging:
@@ -79,7 +79,7 @@ services:
       - ${HOME}/.ssh:/root/.ssh:ro
 
   collector:
-    image: ghcr.io/capthndsme/perch-collector:latest
+    image: ghcr.io/capthndsme/perch-collector:${PERCH_IMAGE_TAG:-latest}
     build: ../go-collector
     profiles: ["collector"]
     restart: unless-stopped
