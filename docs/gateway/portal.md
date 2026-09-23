@@ -1287,10 +1287,12 @@ offer the method (else `wrong_portal` / `disabled`).
   router applies it at once; its delivery is acknowledged by the next sync.
   Pushes for everything else the sign-in changed (the evicted device, a
   swapped bucket, the offline list) go out right after the answer.
-- **Deadline**: the router waits 8 s, then redeems offline from its own
-  list. A sign-in that has not started within 5 s (queued behind a long
-  sync) is dropped unstarted and answered `controller_unreachable`, which the
-  router shows without falling back to offline redemption, so the same code
+- **Deadline**: the router redeems offline from its own list only when the
+  controller session is gone (no socket). A live session that stays silent
+  for 8 s gets `controller_unreachable` on the guest page, never an offline
+  redemption: the controller may still be spending the code. A sign-in that
+  has not started within 5 s (queued behind a long sync) is dropped
+  unstarted and answered `controller_unreachable` as well, so the same code
   is never spent twice.
 - **Brute force**: failures only, 15-minute windows, bounded map (4096):
   `controllerFailuresPerDevicePer15Minutes` per (portal, MAC) for both;
@@ -1330,10 +1332,22 @@ quotaBytes, expiresAt}`; `quotaBytes` is what is left of a one-device group
 enforcement). Full syncs call `sync` with the complete set, deltas `apply`.
 Every call is best effort: errors are logged, never fail a delivery.
 
-**Not wired yet**: the QoS side's `qos_shaping.ts` (`shapeDevice` /
-`releaseDevice` by `sourceRef`) was not on `gw/ctl-qos` when this was built,
-so the default is `NoopPortalShaping`. Wiring it is an adapter installed with
-`setPortalShaping` that diffs by `sourceRef`.
+**Wired** (integration, 2026-09-23): the default is `QosPortalShaping`
+(`portal_qos_shaping.ts`) over `qos_shaping.ts`. Each entry becomes a
+`source: 'portal'` device assignment with the entry's `sourceRef`, its own
+rate (`downKbps`/`upKbps` in kbit/s, no tier policies), `expiresAt`, and a
+`block` quota when `quotaBytes` is given. Rules: only a gateway in managed
+mode is shaped (otherwise a no-op); an admin's cap on the MAC wins
+(`qos_mac_assigned`, logged); refusals (e.g. a rate below the device floor)
+are logged and skipped; the quota is set once, when the assignment first
+gets it, and kept on later updates (QoS counts the bytes from then on, so the
+portal's shrinking "bytes left" would count the usage twice); an entry past
+its expiry, or with nothing left to shape, is released. `sync` releases the
+gateway's portal assignments (`portal-grant:*`, `portal-local:*`) missing
+from the set. The shaper's `quota_exhausted` for a portal assignment is
+written to `portal_events` as `shaping_quota_exhausted` (`grant_id` from
+`portal-grant:<id>`). Tests can install another implementation with
+`setPortalShaping` (`NoopPortalShaping`).
 
 ### 13.8 Key epoch rotation
 

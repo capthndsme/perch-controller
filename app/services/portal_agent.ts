@@ -28,6 +28,7 @@ import { portalGatewayKeys } from '#services/portal_keys'
 import { runInPortalQueue } from '#services/portal_queue'
 import { handlePortalRelay } from '#services/portal_relay'
 import { getPortalSettings } from '#services/portal_settings'
+import { watchPortalQuotaExhaustion } from '#services/portal_qos_shaping'
 import { bestEffortShaping, shapingEntries, shapingSourceRef } from '#services/portal_shaping'
 import {
   applyPortalDbChanges,
@@ -1209,6 +1210,8 @@ async function onSessions(collectorId: number, params: unknown) {
  */
 export function attachPortalAgent(target: AgentHub = collectorHub): void {
   hub = target
+  // The shaper's quota exhaustion of portal devices goes to the event log.
+  watchPortalQuotaExhaustion()
   target.onRequest('portal.redeem', (collectorId, params) =>
     guestSignIn(collectorId, (gatewayId) => redeemVoucherOnline(gatewayId, params))
   )

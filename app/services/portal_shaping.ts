@@ -1,4 +1,5 @@
 import type { WireGrant, WireGroup } from '#services/portal/crypto'
+import { QosPortalShaping } from '#services/portal_qos_shaping'
 import logger from '@adonisjs/core/services/logger'
 
 /**
@@ -7,11 +8,11 @@ import logger from '@adonisjs/core/services/logger'
  * `upKbps`) and data quotas handed to the QoS engine as per-device
  * assignments, so the router caps them in the kernel.
  *
- * `qos_shaping.ts` (the QoS side's portal API: `shapeDevice` /
- * `releaseDevice` keyed by a `sourceRef`) is not on this branch yet, so the
- * seam ships with a no-op default. Wiring it is one adapter: `sync` diffs the
- * gateway's portal assignments by `sourceRef` and calls `shapeDevice` for
- * each entry, `releaseDevice` for the rest.
+ * The default is `QosPortalShaping` (`portal_qos_shaping.ts`), the adapter
+ * onto the QoS side's portal API (`qos_shaping.ts`: `shapeDevice` /
+ * `releaseDevice` keyed by a `sourceRef`): `sync` diffs the gateway's portal
+ * assignments by `sourceRef`, `apply` shapes and releases. Tests may install
+ * another one (`setPortalShaping`, e.g. `NoopPortalShaping`).
  *
  * The portal never depends on shaping: every call is best effort, errors are
  * logged and swallowed (the router's own tick still ends a group at its
@@ -47,7 +48,7 @@ export class NoopPortalShaping implements PortalShaping {
   async apply(): Promise<void> {}
 }
 
-let current: PortalShaping = new NoopPortalShaping()
+let current: PortalShaping = new QosPortalShaping()
 
 export function portalShaping(): PortalShaping {
   return current
