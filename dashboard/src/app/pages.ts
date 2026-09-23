@@ -53,6 +53,8 @@ export const pages = {
   portalTemplates: lazyPage(() => import('@/pages/portal-templates-page').then((m) => m.PortalTemplatesPage)),
   portalTemplate: lazyPage(() => import('@/pages/portal-template-page').then((m) => m.PortalTemplatePage)),
   settingsPortal: lazyPage(() => import('@/pages/portal-settings-page').then((m) => m.PortalSettingsPage)),
+  shaping: lazyPage(() => import('@/pages/shaping-page').then((m) => m.ShapingPage)),
+  settingsTrafficShaping: lazyPage(() => import('@/pages/qos-settings-page').then((m) => m.QosSettingsPage)),
   notFound: lazyPage(() => import('@/pages/not-found-page').then((m) => m.NotFoundPage)),
 }
 

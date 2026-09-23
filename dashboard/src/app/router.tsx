@@ -92,6 +92,8 @@ export const router = createBrowserRouter([
           { path: 'settings/gateway-observation', ...page('settingsGatewayObservation') },
           { path: 'settings/wifi-sources', ...page('settingsWifiSources') },
           { path: 'settings/portal', ...page('settingsPortal') },
+          { path: 'shaping', ...page('shaping') },
+          { path: 'settings/traffic-shaping', ...page('settingsTrafficShaping') },
           { path: '*', ...page('notFound') },
         ],
       },

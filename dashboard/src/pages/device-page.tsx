@@ -10,6 +10,7 @@ import { DeviceDestinationsTable } from '@/components/destinations/device-destin
 import { DeviceLabelCard } from '@/components/devices/device-label-editor'
 import { DeviceNetworkCard } from '@/components/gateway/device-network-card'
 import { PeersPanel } from '@/components/devices/peers-panel'
+import { DeviceSpeedLimitCard } from '@/components/qos/device-speed-limit'
 import { ProtocolsSection } from '@/components/devices/protocols-section'
 import { PageHeader } from '@/components/layout/page-header'
 import { TopDestinations } from '@/components/peers/top-destinations'
@@ -319,6 +320,8 @@ export function DevicePage() {
             hostname={identity?.hostname}
             hostnameSource={identity?.hostnameSource}
           />
+
+          <DeviceSpeedLimitCard mac={mac ?? ''} />
 
           <Panel title="Identity">
             <div className="divide-y divide-border/70">
