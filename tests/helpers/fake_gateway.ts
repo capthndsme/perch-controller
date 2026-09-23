@@ -126,6 +126,11 @@ export class FakeGateway {
     key: Buffer | null
     sas: string | null
   } | null = null
+  /** `order` ops the router ran (tests assert on them). */
+  orderOps: Array<{ config: string; type: string; sections: string[] }> = []
+  /** `net.conntrack_flush` calls (README decision 9), and the answer to give. */
+  flushes: Array<{ ips: string[] }> = []
+  flushAnswer: Record<string, unknown> | null = null
   /** The paired signing key, once the router's admin confirmed the code. */
   pairedKey: { key: Buffer; keyId: string } | null = null
 
@@ -276,6 +281,19 @@ export class FakeGateway {
     return {
       'gateway.capabilities': wrap('gateway.capabilities', () => this.#capabilities()),
       'gateway.config.read': wrap('gateway.config.read', () => this.#read()),
+      'net.conntrack_flush': (params: Record<string, unknown>) => {
+        this.calls.push({ method: 'net.conntrack_flush', params, signed: false })
+        const ips = (params.ips as string[]) ?? []
+        this.flushes.push({ ips: [...ips] })
+        return (
+          this.flushAnswer ?? {
+            flushed: true,
+            matched: ips.length * 2,
+            deleted: ips.length * 2,
+            skipped: 0,
+          }
+        )
+      },
       'gateway.config.apply': (raw: Record<string, unknown>) => {
         const { params, signed } = this.#unwrap('gateway.config.apply', raw)
         this.calls.push({ method: 'gateway.config.apply', params, signed })
@@ -563,6 +581,13 @@ export class FakeGateway {
     const secrets = (params.secrets ?? {}) as Record<string, string>
     const ops = (params.ops ?? []) as Array<Record<string, any>>
     let functional = false
+    // perch-collector's ownership rule: an existing section is written only
+    // when it is in the ledger or adopted/created earlier in the job.
+    const owned = new Set(this.ledger.map((e) => `${e.config}/${e.section}`))
+    const undo = () => {
+      this.configs = snapshot.configs
+      this.ledger = snapshot.ledger
+    }
     for (const op of ops) {
       const sections = this.configs[op.config] ?? (this.configs[op.config] = [])
       if (op.op === 'adopt') {
@@ -580,12 +605,18 @@ export class FakeGateway {
           section: s.name,
           domain: op.domain ?? '',
         })
+        owned.add(`${op.config}/${s.name}`)
       } else if (op.op === 'delete') {
         const i = sections.findIndex((x) => x.name === op.section)
         if (i >= 0) sections.splice(i, 1)
         functional = true
       } else if (op.op === 'put') {
         const existing = sections.find((x) => x.name === op.section)
+        if (existing && !owned.has(`${op.config}/${op.section}`)) {
+          undo()
+          fail('not_owned', `${op.config}.${op.section} is not in the ledger`)
+        }
+        owned.add(`${op.config}/${op.section}`)
         const options: Record<string, string | string[]> = {}
         for (const [k, v] of Object.entries(op.options as Record<string, any>)) {
           if (v && typeof v === 'object' && !Array.isArray(v)) {
@@ -601,6 +632,45 @@ export class FakeGateway {
         } else {
           sections.push({ name: op.section, type: op.type, options })
         }
+        if (op.position) {
+          const ref = op.position.after ?? op.position.before
+          const from = sections.findIndex((x) => x.name === op.section)
+          const [moved] = sections.splice(from, 1)
+          const at = sections.findIndex((x) => x.name === ref)
+          if (at === -1) {
+            undo()
+            fail('bad_params', `position: no section ${ref}`)
+          }
+          sections.splice(op.position.after ? at + 1 : at, 0, moved)
+        }
+        functional = true
+      } else if (op.op === 'order') {
+        // The listed sections take the slots they occupy together, in the
+        // listed order; nothing else moves (perch-collector simulate.go).
+        const names = (op.sections as string[]) ?? []
+        const slots: number[] = []
+        for (const name of names) {
+          const i = sections.findIndex((x) => x.name === name)
+          if (i === -1) {
+            undo()
+            fail('no_section', `order: no section ${name}`)
+          }
+          if (op.type && sections[i].type !== op.type) {
+            undo()
+            fail('bad_params', `order: ${name} is not a ${op.type}`)
+          }
+          if (!owned.has(`${op.config}/${name}`)) {
+            undo()
+            fail('not_owned', `order: ${name} is not in the ledger`)
+          }
+          slots.push(i)
+        }
+        const moved = names.map((name) => sections.find((x) => x.name === name)!)
+        slots.sort((a, b) => a - b)
+        slots.forEach((slot, k) => {
+          sections[slot] = moved[k]
+        })
+        this.orderOps.push({ config: op.config, type: op.type, sections: [...names] })
         functional = true
       }
     }
