@@ -1,5 +1,6 @@
 import { createHmac, randomBytes } from 'node:crypto'
 import type {
+  UciValue,
   SecretSlot,
   SectionContent,
   UciOptions,
@@ -21,7 +22,11 @@ import type {
  * the apply's `secrets` map over a secure session.
  */
 
-/** The kit's secret option names (section 3.1); domains may add `type.option` names. */
+/**
+ * The kit's secret option names (perch-agentkit `openwrt/uci` `SecretOptions`,
+ * section 3.1): kept identical, so the controller recognises every option
+ * the agent redacts. Domains may add `type.option` names.
+ */
 export const DEFAULT_SECRET_OPTIONS: readonly string[] = Object.freeze([
   'key',
   'password',
@@ -31,19 +36,40 @@ export const DEFAULT_SECRET_OPTIONS: readonly string[] = Object.freeze([
   'preshared_key',
   'auth_secret',
   'sae_password',
+  'faskey',
+  'api_key',
+  'r0kh',
+  'r1kh',
+])
+
+/** The kit's `SecretSuffixes`: `acct_secret`, `priv_key_pwd`, … are secrets too. */
+export const SECRET_SUFFIXES: readonly string[] = Object.freeze([
+  '_key',
+  '_secret',
+  '_password',
+  '_passwd',
+  '_psk',
+  '_pwd',
 ])
 
 export const FINGERPRINT_PREFIX = 'hmac:'
 const FINGERPRINT_PATTERN = /^hmac:[0-9a-f]{16}$/
 
-/** The `hmac:` fingerprint of one secret value (must match the agent's). */
+/**
+ * The `hmac:` fingerprint of one secret value, byte for byte the kit's
+ * `uci.Fingerprint`: HMAC-SHA256(api_key, "<config>.<section>.<option>=<value>")
+ * for a scalar, "<config>.<section>.<option>[]=" + items joined by "\n" for a
+ * list (so a string and a one-item list differ); "hmac:" + the first 16 hex
+ * digits.
+ */
 export function secretFingerprint(
   apiKey: string,
   where: { config: string; section: string; option: string },
-  value: string
+  value: UciValue
 ): string {
+  const tail = Array.isArray(value) ? `[]=${value.join('\n')}` : `=${value}`
   const digest = createHmac('sha256', apiKey)
-    .update(`${where.config}.${where.section}.${where.option}=${value}`)
+    .update(`${where.config}.${where.section}.${where.option}${tail}`)
     .digest('hex')
   return `${FINGERPRINT_PREFIX}${digest.slice(0, 16)}`
 }
@@ -53,12 +79,15 @@ export function isFingerprint(value: unknown): value is string {
 }
 
 /**
- * Whether an option is a secret: a kit name, or a domain's `type.option`
- * (or bare option) name in `extra`.
+ * Whether an option is a secret, by the kit's rule (`uci.IsSecret`: a listed
+ * name, a listed suffix, or `key1`..`key4`), or a domain's `type.option` (or
+ * bare option) name in `extra`.
  */
 export function isSecretOption(type: string, option: string, extra: readonly string[] = []) {
   return (
     DEFAULT_SECRET_OPTIONS.includes(option) ||
+    SECRET_SUFFIXES.some((suffix) => option.endsWith(suffix)) ||
+    /^key[1-4]$/.test(option) ||
     extra.includes(option) ||
     extra.includes(`${type}.${option}`)
   )
@@ -79,8 +108,7 @@ export function redactOptions(
   const secrets: Record<string, string> = {}
   for (const [option, value] of Object.entries(options)) {
     if (isSecretOption(where.type, option, extra)) {
-      const text = Array.isArray(value) ? value.join('\n') : value
-      secrets[option] = secretFingerprint(apiKey, { ...where, option }, text)
+      secrets[option] = secretFingerprint(apiKey, { ...where, option }, value)
     } else {
       kept[option] = value
     }
@@ -105,7 +133,7 @@ export function controllerSecretSlot(
   apiKey: string,
   where: { config: string; section: string; option: string },
   ref: string,
-  value: string
+  value: UciValue
 ): SecretSlot {
   return { ref, fingerprint: secretFingerprint(apiKey, where, value) }
 }

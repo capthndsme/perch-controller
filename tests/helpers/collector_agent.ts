@@ -36,6 +36,17 @@ export const DEFAULT_PROTOCOLS = [
   { protocol: 'QUIC', category: 'Web' },
 ]
 
+/** A JSON-RPC error with a code and `data`, thrown by a fake handler. */
+export class RpcFailure extends Error {
+  constructor(
+    readonly code: number,
+    message: string,
+    readonly data?: unknown
+  ) {
+    super(message)
+  }
+}
+
 export class FakeCollector {
   readonly calls: ReceivedCall[] = []
   readonly closed: Promise<{ code: number; reason: string }>
@@ -178,6 +189,17 @@ export class FakeCollector {
     try {
       this.#reply({ id: call.id, result: await handler(call.params) })
     } catch (error) {
+      if (error instanceof RpcFailure) {
+        this.#reply({
+          id: call.id,
+          error: {
+            code: error.code,
+            message: error.message,
+            ...(error.data === undefined ? {} : { data: error.data }),
+          },
+        })
+        return
+      }
       this.#reply({ id: call.id, error: { code: -32603, message: String(error) } })
     }
   }

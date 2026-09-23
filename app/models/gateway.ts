@@ -2,6 +2,7 @@ import { GatewaySchema } from '#database/schema'
 import { jsonColumn } from '#models/json_column'
 import type {
   GatewayCapabilities,
+  LedgerEntry,
   GatewayEnforcement,
   GatewayMode,
   GatewaySyncState,
@@ -31,4 +32,29 @@ export default class Gateway extends GatewaySchema {
 
   @jsonColumn('management_path')
   declare managementPath: ManagementPath | null
+
+  /** The router's sync ledger at the last read. */
+  @jsonColumn('observed_ledger')
+  declare observedLedger: LedgerEntry[] | null
+
+  /** The last read's context besides configs and ledger. */
+  @jsonColumn('observed_state')
+  declare observedState: GatewayObservedState | null
+
+  /** README 3.7: a reset or re-bound gateway is offered its last confirmed revision. */
+  @jsonColumn('rejoin_offer')
+  declare rejoinOffer: GatewayRejoinOffer | null
+}
+
+export type GatewayObservedState = {
+  luciPending: boolean
+  uncommitted: string[]
+  readAt: string | null
+}
+
+export type GatewayRejoinOffer = {
+  /** The newest confirmed revision; null when none was ever confirmed. */
+  revision: number | null
+  reason: 'ledger_reset' | 'rebound'
+  detectedAt: string
 }

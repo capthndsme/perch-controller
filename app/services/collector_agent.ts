@@ -12,6 +12,10 @@ import {
 } from '#services/collector_poller'
 import { keysMatch } from '#services/collector_announce'
 import { recordDhcpObservationSerial } from '#services/gateway_dhcp'
+import {
+  configureBlockFor,
+  type GatewayConfigureBlock,
+} from '#services/gateway_config/gateway_registry'
 import { upsertProtocolCategories, type ProtocolCategoryInput } from '#services/protocol_categories'
 import logger from '@adonisjs/core/services/logger'
 import { DateTime } from 'luxon'
@@ -46,6 +50,12 @@ const PROTOCOLS_TIMEOUT_MS = 15_000
 export type CollectorConfigureParams = {
   metricsIntervalSeconds: number
   lifecycle: string
+  /**
+   * The config plane's part (docs/gateway/config-plane.md section 4), only
+   * for a collector with a gateway row: mode `off` stops the router's
+   * watcher.
+   */
+  gatewayConfig?: GatewayConfigureBlock
 }
 
 export type CollectorPushOutcome =
@@ -144,9 +154,17 @@ export function closeSessionOnKeyMismatch(collector: Collector): boolean {
 /** Interval 0 pauses: pending, dismissed or disabled rows never push. */
 export function collectorConfigureParams(collector: Collector): CollectorConfigureParams {
   const inService = collector.lifecycle === 'adopted' && Boolean(collector.enabled)
+  const gatewayConfig = configureBlockFor(collector.id)
   return {
     metricsIntervalSeconds: inService ? collector.pollIntervalSeconds : 0,
     lifecycle: collector.lifecycle,
+    ...(gatewayConfig
+      ? {
+          gatewayConfig: inService
+            ? gatewayConfig
+            : { ...gatewayConfig, mode: 'off', authoritative: false },
+        }
+      : {}),
   }
 }
 

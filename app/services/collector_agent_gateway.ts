@@ -21,6 +21,14 @@ import {
   recordAnnounce,
 } from '#services/collector_announce'
 import { recordAgentAuthFailure } from '#services/ap_agent_rate_limit'
+import {
+  afterGatewayHello,
+  onCollectorPushAccepted,
+  onConfigChanged,
+  onConfigResult,
+  onGatewaySessionClosed,
+  prepareGatewayHello,
+} from '#services/gateway_config/gateway_plane'
 import { INSTANCE_ID_REGEX, collectorHelloValidator } from '#validators/collectors'
 import logger from '@adonisjs/core/services/logger'
 import db from '@adonisjs/lucid/services/db'
@@ -98,8 +106,13 @@ export function collectorAgentEndpoint(): AgentEndpoint<CollectorPrincipal> {
 
     attach() {
       collectorHub.onNotification('collector.push', async (collectorId, params) => {
-        await handleCollectorPush(collectorId, params)
+        const outcome = await handleCollectorPush(collectorId, params)
+        // The agent half of a config apply's confirm (config-plane.md 5.6).
+        if (outcome.status === 'ingested') await onCollectorPushAccepted(collectorId)
       })
+      // The config plane (docs/gateway/config-plane.md section 4).
+      collectorHub.onNotification('gateway.config.changed', onConfigChanged)
+      collectorHub.onNotification('gateway.config.result', onConfigResult)
     },
 
     async authenticate(request, { address }) {
@@ -215,7 +228,10 @@ export function collectorAgentEndpoint(): AgentEndpoint<CollectorPrincipal> {
         clearTimeout(helloTimer)
         if (!session) return
         const wasCurrent = collectorHub.unregister(session)
-        if (wasCurrent) forgetSessionKey(session.id)
+        if (wasCurrent) {
+          forgetSessionKey(session.id)
+          onGatewaySessionClosed(session.id)
+        }
         logger.info(
           { collectorId: session.id, code },
           'collector_agent_gateway: collector disconnected'
@@ -366,7 +382,16 @@ async function handleHello(
   })
   bind(session)
   rememberSessionKey(row.id, principal.bearer)
+  // The config plane first, so agent.configure carries its block.
+  const params = (frame.params ?? {}) as { gatewayConfig?: unknown }
+  const gateway = await prepareGatewayHello(
+    row,
+    { gatewayConfig: params.gatewayConfig, capabilities: hello.capabilities },
+    { connectedAt: session.info.connectedAt, secure }
+  )
+  if (session.closed) return
   sendCollectorConfigure(row)
+  if (gateway) void afterGatewayHello(gateway.id)
   logger.info(
     { collectorId: row.id, lifecycle: outcome.lifecycle, address },
     'collector_agent_gateway: collector connected'

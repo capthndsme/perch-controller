@@ -211,6 +211,13 @@ export const GATEWAY_EVENTS = [
   'read_refused',
   'revision_restored',
   'unmodeled_changed',
+  'rejoin_offered',
+  'rejoin_dismissed',
+  'cancelled',
+  'draft_discarded',
+  'draft_edited',
+  'bound',
+  'dns_label_names_changed',
 ] as const
 export type GatewayEventName = (typeof GATEWAY_EVENTS)[number]
 
