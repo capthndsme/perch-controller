@@ -731,9 +731,12 @@ export function reconcileRead(input: ReconcileReadInput): ReconcileReadResult {
       relinked.add(candidates[0].row.perchId)
     }
 
-    // 4. Per-row merge.
+    // 4. Per-row merge. One-way domains (README 2, Perch-owned config) are
+    // authoritative whatever the gateway's flag; a config's first import is
+    // never drift.
+    const firstOfConfig = !rows.some((r) => r.scope === 'synced')
     for (const { row, found } of pendingRows) {
-      const change = reconcileRow(row, found, config.name, all, input, events)
+      const change = reconcileRow(row, found, config.name, all, rowInput(input, row.domain), events)
       if (!change) continue
       if (relinked.has(row.perchId)) {
         change.kind = 'relinked'
@@ -752,13 +755,14 @@ export function reconcileRead(input: ReconcileReadInput): ReconcileReadResult {
     // 5. New router sections.
     for (const left of leftovers) {
       if (used.has(left.section.name)) continue
+      const claim = claimOf.get(left.section.name) ?? null
       const change = newRouterSection(
         left.section,
         left.index,
         config.name,
-        claimOf.get(left.section.name) ?? null,
+        claim,
         ambiguous.has(left.section.name),
-        input,
+        claim?.domain.oneWay && firstOfConfig ? input : rowInput(input, claim?.domain.key ?? null),
         events
       )
       changes.push(change)
@@ -809,7 +813,155 @@ function contentFromRouter(section: UciSection): SectionContent {
     : { type: section.type, options: { ...section.options } }
 }
 
+/**
+ * The read input as one row sees it: a one-way domain's rows are
+ * authoritative in managed mode, whatever the gateway's flag.
+ */
+function rowInput(input: ReconcileReadInput, domain: string | null): ReconcileReadInput {
+  if (input.authoritative || input.mode !== 'managed') return input
+  return input.registry.get(domain)?.oneWay ? { ...input, authoritative: true } : input
+}
+
+/**
+ * Whether a section is authoritative for the engine: the gateway's flag in
+ * managed mode, or a one-way domain's section in managed mode (README 2).
+ */
+export function authoritativeFor(
+  gateway: { mode: GatewayMode; authoritative: boolean },
+  registry: DomainRegistry | null,
+  domain: string | null
+): boolean {
+  if (gateway.mode !== 'managed') return false
+  return gateway.authoritative || registry?.get(domain)?.oneWay === true
+}
+
+/** A decision-15 pause change of one synced row (`routerPause`). */
+export interface PauseTransition {
+  kind: 'hold' | 'release' | 'refresh'
+  ownership: SectionOwnership | null
+}
+
+/** Does this ownership leave `option` to the router? */
+export function pauseHeld(ownership: SectionOwnership | null, option: string): boolean {
+  return ownership !== null && ownership.kind === 'options' && !ownsOption(ownership, option)
+}
+
+/**
+ * Owner decision 15 for one synced row and the router's content: the router
+ * paused (its value paused, the agreed base not) → hold the option; it
+ * resumed while held → release. Null = nothing changes. Pure.
+ */
+export function pauseTransition(
+  row: Pick<SectionState, 'config' | 'name' | 'anonymous' | 'base' | 'ownership' | 'domain'>,
+  observed: SectionContent | null,
+  registry: DomainRegistry
+): PauseTransition | null {
+  const domain = registry.get(row.domain)
+  const rule = domain?.routerPause
+  if (!domain || !rule || !observed || observed.type !== rule.type) return null
+  const held = pauseHeld(row.ownership, rule.option)
+  const routerPaused = rule.isPaused(observed.options[rule.option])
+  const claimed = () => {
+    const own =
+      domain.ownership?.({
+        config: row.config,
+        name: row.name,
+        type: observed.type,
+        anonymous: row.anonymous,
+        index: 0,
+        options: observed.options,
+      }) ?? null
+    return own && own.kind === 'options' ? own : null
+  }
+  if (held) {
+    if (!routerPaused) return { kind: 'release', ownership: null }
+    const next = claimed()
+    if (
+      next &&
+      pauseHeld(next, rule.option) &&
+      canonicalJson(next) !== canonicalJson(row.ownership)
+    ) {
+      return { kind: 'refresh', ownership: next }
+    }
+    return null
+  }
+  const basePaused =
+    row.base !== null && row.base.type === rule.type && rule.isPaused(row.base.options[rule.option])
+  if (!routerPaused || basePaused) return null
+  const next = claimed()
+  const ownership: SectionOwnership =
+    next && pauseHeld(next, rule.option)
+      ? next
+      : {
+          kind: 'options',
+          options: [
+            ...new Set([...Object.keys(observed.options), ...Object.keys(row.base?.options ?? {})]),
+          ]
+            .filter((o) => o !== rule.option)
+            .sort(),
+        }
+  return { kind: 'hold', ownership }
+}
+
+function withOption(
+  content: SectionContent | null,
+  option: string,
+  value: UciValue | undefined
+): SectionContent | null {
+  if (!content) return content
+  const options = { ...content.options }
+  if (value === undefined) delete options[option]
+  else options[option] = Array.isArray(value) ? [...value] : value
+  return { ...content, options }
+}
+
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(value ?? null)
+}
+
 function reconcileRow(
+  row0: SectionState,
+  found: { section: UciSection; index: number } | null,
+  config: string,
+  all: UciConfigSet,
+  input: ReconcileReadInput,
+  events: EngineEvent[]
+): SectionChange | null {
+  const inFlight = row0.scope === 'synced' && (input.inFlight?.get(row0.perchId) ?? null) !== null
+  const transition =
+    row0.scope === 'synced' && !inFlight && input.mode === 'managed'
+      ? pauseTransition(row0, found ? contentFromRouter(found.section) : null, input.registry)
+      : null
+  if (!transition) return reconcileRowInner(row0, found, config, all, input, events)
+  let row: SectionState = { ...row0, ownership: transition.ownership }
+  if (transition.kind === 'release') {
+    // The router resumed: B and C held the router's paused value; they take
+    // its value back, so the resume is neither drift nor a merge.
+    const option = input.registry.get(row.domain)!.routerPause!.option
+    const value = found!.section.options[option]
+    row = {
+      ...row,
+      base: withOption(row.base, option, value),
+      desired: withOption(row.desired, option, value),
+    }
+  }
+  if (transition.kind !== 'refresh') {
+    events.push({
+      event: transition.kind === 'hold' ? 'router_paused' : 'router_resumed',
+      perchId: row.perchId,
+      config,
+      section: found?.section.name ?? row.name,
+      detail: { option: input.registry.get(row.domain)!.routerPause!.option },
+    })
+  }
+  const change = reconcileRowInner(row, found, config, all, input, events)
+  const released =
+    transition.kind === 'release' && !contentsEqual(row.base, row0.base, DEFAULT_RULES)
+  if (change) return { ...change, before: row0, baseChanged: change.baseChanged || released }
+  return { perchId: row.perchId, kind: 'imported', before: row0, after: row, baseChanged: released }
+}
+
+function reconcileRowInner(
   row: SectionState,
   found: { section: UciSection; index: number } | null,
   config: string,

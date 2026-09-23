@@ -12,11 +12,13 @@ import {
   rollupSyncState,
   type SectionState,
 } from '#services/gateway_config/sync_engine'
-import type {
-  GatewayMode,
-  RevisionSource,
-  RouterAuthor,
-  SectionContent,
+import {
+  actorColumns,
+  type GatewayMode,
+  type PlaneActor,
+  type RevisionSource,
+  type RouterAuthor,
+  type SectionContent,
 } from '#services/gateway_config/types'
 import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import { randomBytes } from 'node:crypto'
@@ -134,6 +136,8 @@ export async function writeRevision(
     after: SectionState[]
     source: RevisionSource
     userId?: number | null
+    /** Instead of `userId`: a user or Perch itself (`{ system: 'qos' }`). */
+    actor?: PlaneActor | null
     routerAuthor?: RouterAuthor | null
     applyId?: number | null
     confirmed: boolean
@@ -153,7 +157,9 @@ export async function writeRevision(
   revision.gatewayId = gateway.id
   revision.number = number
   revision.source = input.source
-  revision.authorUserId = input.userId ?? null
+  const actor = input.actor !== undefined ? actorColumns(input.actor) : null
+  revision.authorUserId = actor ? actor.userId : (input.userId ?? null)
+  revision.systemActor = actor ? actor.systemActor : null
   revision.routerAuthor = input.routerAuthor ?? null
   revision.summary = summarizeDiff(diff)
   revision.note = input.note ? input.note.slice(0, 500) : null

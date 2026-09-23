@@ -16,7 +16,14 @@ import { openApplies } from '#services/gateway_config/gateway_store'
 import { pairingView } from '#services/gateway_config/pairing'
 import { toSectionState } from '#services/gateway_config/section_rows'
 import { revertDueAt } from '#services/gateway_config/sync_engine'
-import type { SecretSlot, SectionContent, UciOptions } from '#services/gateway_config/types'
+import {
+  parseSystemActor,
+  SYSTEM_ACTOR_NAME,
+  type SecretSlot,
+  type SectionContent,
+  type SystemActor,
+  type UciOptions,
+} from '#services/gateway_config/types'
 import { BaseTransformer } from '@adonisjs/core/transformers'
 import type { DateTime } from 'luxon'
 
@@ -29,6 +36,26 @@ import type { DateTime } from 'luxon'
  */
 
 type UserRef = { id: number; email: string } | null
+
+/**
+ * Who made a change, on the wire: a user, or Perch itself (section 6.8:
+ * `{ id: null, email: null, system: true, name: 'Perch (system)', via }`).
+ */
+export type ActorRef =
+  | { id: number; email: string }
+  | { id: null; email: null; system: true; name: string; via: SystemActor }
+  | null
+
+/** A user reference, or "Perch (system)" when the row names a system actor. */
+export function actorRef(
+  userId: number | null,
+  systemActor: string | null | undefined,
+  users: Map<number, UserRef>
+): ActorRef {
+  const system = parseSystemActor(systemActor)
+  if (system) return { id: null, email: null, system: true, name: SYSTEM_ACTOR_NAME, via: system }
+  return userId !== null ? (users.get(userId) ?? null) : null
+}
 
 function iso(value: DateTime | null | undefined): string | null {
   return value ? value.toUTC().toISO() : null
@@ -61,6 +88,9 @@ export function applyView(
           ? { discardedConfigs: apply.outcome.discardedConfigs }
           : {}),
         ...(apply.outcome.assumed ? { assumed: true } : {}),
+        ...(apply.outcome.data && typeof apply.outcome.data === 'object'
+          ? { data: apply.outcome.data as Record<string, unknown> }
+          : {}),
       }
     : null
   return {
@@ -77,8 +107,7 @@ export function applyView(
       admin: iso(apply.adminConfirmedAt),
     },
     agentReconnectedAt: iso(apply.agentReconnectedAt),
-    requestedBy:
-      apply.requestedByUserId !== null ? (users.get(apply.requestedByUserId) ?? null) : null,
+    requestedBy: actorRef(apply.requestedByUserId, apply.systemActor, users),
     requestedAt: iso(apply.requestedAt),
     sentAt: iso(apply.sentAt),
     finishedAt: iso(apply.finishedAt),
@@ -144,7 +173,11 @@ export function sectionView(
     routerChangedAt: iso(row.routerChangedAt),
     conflict: row.conflict,
     driftSince: iso(row.driftSince),
-    revertAt: context.authoritative ? revertDueAt(state, context.revertDelaySeconds) : null,
+    // One-way domains (README 2) are enforced without Authoritative Mode too.
+    revertAt:
+      context.authoritative || domainRegistry().get(row.domain)?.oneWay
+        ? revertDueAt(state, context.revertDelaySeconds)
+        : null,
     position: row.position,
     updatedByUserId: row.updatedByUserId,
     updatedAt: iso(row.updatedAt),
@@ -162,7 +195,7 @@ export function revisionView(
   return {
     number: revision.number,
     source: revision.source,
-    author: revision.authorUserId !== null ? (users.get(revision.authorUserId) ?? null) : null,
+    author: actorRef(revision.authorUserId, revision.systemActor, users),
     routerAuthor: revision.routerAuthor,
     summary: revision.summary,
     note: revision.note,
@@ -188,7 +221,7 @@ export function eventView(
   return {
     id: Number(event.id),
     event: event.event,
-    user: event.userId !== null ? (users.get(event.userId) ?? null) : null,
+    user: actorRef(event.userId, event.systemActor, users),
     applyId: event.applyId !== null ? (applyKeys.get(Number(event.applyId)) ?? null) : null,
     revision: event.revisionNumber,
     detail: event.detail,

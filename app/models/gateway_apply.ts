@@ -1,5 +1,7 @@
 import { GatewayApplySchema } from '#database/schema'
 import { jsonColumn } from '#models/json_column'
+import { emitApplySaved } from '#services/gateway_config/hooks'
+import { afterSave } from '@adonisjs/lucid/orm'
 import type {
   ApplyOp,
   ConfigDiffEntry,
@@ -66,4 +68,10 @@ export default class GatewayApply extends GatewayApplySchema {
   /** The request's section filter for the next job of the chain (null = all). */
   @jsonColumn('chain_perch_ids')
   declare chainPerchIds: string[] | null
+
+  /** Features follow their applies (`onApplySaved`, section 6.8). */
+  @afterSave()
+  static async notifyListeners(apply: GatewayApply) {
+    await emitApplySaved(apply)
+  }
 }

@@ -54,7 +54,13 @@ import {
   type SectionState,
   type SyncStatus,
 } from '#services/gateway_config/sync_engine'
-import type { GatewayMode, Issue, UciValue } from '#services/gateway_config/types'
+import {
+  actorColumns,
+  type GatewayMode,
+  type Issue,
+  type PlaneActor,
+  type UciValue,
+} from '#services/gateway_config/types'
 import type User from '#models/user'
 import hash from '@adonisjs/core/services/hash'
 import db from '@adonisjs/lucid/services/db'
@@ -383,17 +389,20 @@ export type EditOutcome = {
 }
 
 /**
- * `gatewayConfig.editSections(gatewayId, userId, edits)` (section 7): the
+ * `gatewayConfig.editSections(gatewayId, actor, edits)` (section 7): the
  * single write entry point for domain REST handlers. The edits become C of
  * the domain's synced sections (new sections are controller rows until an
- * apply creates them); nothing is sent to the router here.
+ * apply creates them); nothing is sent to the router here. `actor` is the
+ * admin's user id, or `{ system: 'qos' }` for a write Perch makes by itself
+ * (section 6.8; only in-process callers can name one, REST stays admin-only).
  */
 export async function editSections(
   gatewayId: number,
-  userId: number,
+  actor: PlaneActor,
   domain: string,
   edits: SectionEdit[]
 ): Promise<EditOutcome> {
+  const { userId } = actorColumns(actor)
   return gatewayQueue.run(gatewayId, async () => {
     const gateway = await findGateway(gatewayId)
     requireManaged(gateway)
@@ -439,7 +448,7 @@ export async function editSections(
     await db.transaction(async (trx) => {
       await saveStates(gateway.id, loaded.rows, changes, { userId, trx })
       await recordGatewayEvent(gateway.id, 'draft_edited', {
-        userId,
+        actor,
         detail: { domain, perchIds: touched },
         trx,
       })
@@ -645,7 +654,7 @@ export async function setSectionScope(
 /** `DELETE /gateways/:id/draft {perchIds?}`: C := B where the controller moved. */
 export async function discardDraft(
   gatewayId: number,
-  userId: number,
+  actor: PlaneActor,
   perchIds?: string[]
 ): Promise<number> {
   return gatewayQueue.run(gatewayId, async () => {
@@ -670,7 +679,7 @@ export async function discardDraft(
     if (changes.length > 0) {
       await saveWithRevision(gateway, loaded, changes, null)
       await recordGatewayEvent(gateway.id, 'draft_discarded', {
-        userId,
+        actor,
         detail: { perchIds: changes.map((c) => c.perchId) },
       })
     }

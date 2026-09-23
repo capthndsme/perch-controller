@@ -1,6 +1,7 @@
 import Gateway from '#models/gateway'
 import collectorHub, { AgentRpcError, RPC_ERRORS } from '#services/collector_agent_hub'
 import { domainRegistry } from '#services/gateway_config/domains/index'
+import { emitRouterRead } from '#services/gateway_config/hooks'
 import { recordGatewayEvent } from '#services/gateway_config/events'
 import {
   inFlightApply,
@@ -392,6 +393,10 @@ export async function mergeRead(
   })
 
   if (reset) await offerRejoin(gateway, 'ledger_reset', offered)
+
+  const perchIds: Record<string, Record<string, string>> = {}
+  for (const entry of read.ledger) (perchIds[entry.config] ??= {})[entry.section] = entry.perchId
+  await emitRouterRead({ gatewayId: gateway.id, configs: read.configs, perchIds })
 
   await refreshSyncState(gateway)
   const changedConfigs = [

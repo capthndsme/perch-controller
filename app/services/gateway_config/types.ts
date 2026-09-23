@@ -228,6 +228,8 @@ export const GATEWAY_EVENTS = [
   'pairing_failed',
   'pairing_lost',
   'unpaired',
+  'router_paused',
+  'router_resumed',
 ] as const
 export type GatewayEventName = (typeof GATEWAY_EVENTS)[number]
 
@@ -325,7 +327,14 @@ export interface LedgerChange {
 export interface GatewayCapabilities {
   protocol?: number
   access?: AgentAccess
+  /** The effective allowlist: `managed_config` plus installed sibling packages' configs. */
   allowedConfigs?: string[]
+  /**
+   * README 7.7 (decision 7): sibling packages whose config joins the
+   * allowlist once installed (`sqm-scripts` → `sqm`, `perch-qos` →
+   * `perch-qos`), and why each is or is not allowed now.
+   */
+  siblingConfigs?: SiblingConfig[]
   transportOk?: boolean
   backend?: 'ubus' | 'uci-cli' | null
   openwrt?: { release?: string; revision?: string; target?: string; arch?: string; board?: string }
@@ -343,6 +352,57 @@ export interface GatewayCapabilities {
   [key: string]: unknown
 }
 
+/** One sibling package's config on the router's allowlist (capabilities). */
+export interface SiblingConfig {
+  config: string
+  package: string
+  installed: boolean
+  allowed: boolean
+  /** `listed` (in managed_config), `installed` (joined by itself), `not_installed`, `opted_out` (UCI). */
+  reason: 'listed' | 'installed' | 'not_installed' | 'opted_out'
+}
+
 /** Storage class behind the router-side state path (README 7.18). */
 export const STORAGE_KINDS = ['spi_flash', 'emmc', 'usb', 'sata', 'ram', 'unknown'] as const
 export type StorageKind = (typeof STORAGE_KINDS)[number]
+
+// ── who changed it: users and Perch itself ───────────────────────────────
+
+/**
+ * What made a plane write that no user made (section 6.8): the QoS sender's
+ * `perch-qos` package (`qos`: an admin's policy edit is debounced into it, a
+ * portal grant or an expiry sweep changes it), the portal, Authoritative
+ * Mode's reverts (`enforcement`). Stored in `system_actor` (≤ 16 chars) of
+ * events, revisions and applies; shown as "Perch (system)".
+ */
+export const SYSTEM_ACTORS = ['qos', 'portal', 'enforcement', 'system'] as const
+export type SystemActor = (typeof SYSTEM_ACTORS)[number]
+
+/** The display name of every system actor. */
+export const SYSTEM_ACTOR_NAME = 'Perch (system)'
+
+/**
+ * Who asks for a change of a gateway's desired state: an admin (REST) or
+ * Perch itself. A bare number is a user id (the admin REST handlers).
+ * Admin-only REST stays admin-only: only in-process callers (the QoS
+ * sender, the enforcement tick) can name a system actor.
+ */
+export type PlaneActor = number | { userId: number } | { system: SystemActor }
+
+/** The stored form of an actor: `user_id` and `system_actor` columns. */
+export function actorColumns(actor: PlaneActor | null | undefined): {
+  userId: number | null
+  systemActor: SystemActor | null
+} {
+  if (actor === null || actor === undefined) return { userId: null, systemActor: null }
+  if (typeof actor === 'number') return { userId: actor, systemActor: null }
+  if ('userId' in actor) return { userId: actor.userId, systemActor: null }
+  return { userId: null, systemActor: actor.system }
+}
+
+/** `system_actor` as stored, when it is a known one. */
+export function parseSystemActor(value: string | null | undefined): SystemActor | null {
+  return value && (SYSTEM_ACTORS as readonly string[]).includes(value)
+    ? (value as SystemActor)
+    : null
+}

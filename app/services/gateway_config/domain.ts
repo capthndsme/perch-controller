@@ -119,6 +119,12 @@ export type SectionEdit =
       name?: string
       options: UciOptions
       secrets?: Record<string, SecretEdit>
+      /**
+       * Options this edit takes back from a router-side pause (decision 15,
+       * `routerPause`): only an admin's explicit resume sets it. Without it,
+       * a held option keeps the router's value whatever `options` says.
+       */
+      reclaim?: string[]
     }
   | { op: 'delete'; perchId: string }
   | { op: 'order'; config: string; type: string; perchIds: string[] }
@@ -175,12 +181,38 @@ export interface ConfigDomain<Obj = unknown> {
     section: { type: string; name: string; options: UciOptions },
     path: ManagementPath
   ): boolean
+  /**
+   * Perch-owned config (README 2: `perch-qos`): router edits of its synced
+   * sections are drift even without Authoritative Mode, and the tick
+   * reverts them (unless enforcement is suspended). A config's first import
+   * is never drift.
+   */
+  oneWay?: boolean
+  /**
+   * Owner decision 15: a router-side safety pause. When the router switches
+   * `option` of a section of `type` to a paused value while the agreed base
+   * was not paused, the engine hands that option to the router (the
+   * section's ownership, from `ownership` of the router's section, leaves it
+   * out): never drift, never a conflict, never reverted, and writes keep the
+   * router's value. The router switching it back returns it to Perch; an
+   * admin takes it back only explicitly (`reclaim` on a put). A pause Perch
+   * wrote itself (the base is paused) is not a router pause.
+   */
+  routerPause?: RouterPauseRule
   /** UCI → domain objects (reads for its REST API). */
   parse(sections: SyncedSection[]): Obj[]
   /** Domain object → section edits; options it does not model are kept verbatim from `current`. */
   render(obj: Obj, current: SyncedSection[]): SectionEdit[]
   /** Cross-section checks; `error` issues block an apply. */
   validate(desired: SyncedSection[], ctx: ValidationCtx): Issue[]
+}
+
+/** A domain's decision-15 pause option (`ConfigDomain.routerPause`). */
+export interface RouterPauseRule {
+  type: string
+  option: string
+  /** Is this value (undefined = option absent) the paused state? */
+  isPaused(value: UciValue | undefined): boolean
 }
 
 /** The result of claiming a router section. */
