@@ -1987,3 +1987,342 @@ export type DeviceNetworkResponse = {
   seenAt: string | null
   upnp: UpnpMapping[]
 }
+
+// ── Guest portal (docs/gateway/portal.md §11–12) ─────────────────────────
+
+export type PortalDelivery = 'applied' | 'pending'
+
+export type PortalGatewayRef = {
+  id: number
+  collectorId: number | null
+  /** The collector's name. */
+  name: string | null
+  online: boolean
+  mode: string
+  authoritative: boolean
+  /** `gateway.capabilities.portal`; null = not reported yet. */
+  portalCapable: boolean | null
+}
+
+export type PortalNetworkRef = {
+  perchId: string
+  /** The `interface` section's name (config plane mirror). */
+  name: string | null
+  label: string | null
+  purpose: string | null
+}
+
+export type PortalStatus = {
+  openNds: 'running' | 'stopped' | 'missing' | 'unknown'
+  fas: 'ok' | 'misconfigured' | 'unknown'
+  issues: string[]
+  listen: string | null
+  revision: number
+  appliedRevision: number | null
+  delivery: PortalDelivery
+  clients: { authenticated: number; pending: number; paused: number; queued: number }
+  lastReportAt: string | null
+  lastConfiguredAt: string | null
+}
+
+export type PortalEnforcement = 'opennds' | 'perch_nft'
+
+export type Portal = {
+  id: number
+  gatewayId: number
+  name: string
+  gateway: PortalGatewayRef | null
+  network: PortalNetworkRef
+  enforcement: PortalEnforcement
+  instance: string | null
+  methods: { voucher: boolean; password: boolean }
+  templateId: number | null
+  cspConnectSrc: string[]
+  privacyNotice: string | null
+  native: null
+  status: PortalStatus
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export type PortalPayload = {
+  gatewayId?: number
+  name?: string
+  networkPerchId?: string
+  methods?: { voucher: boolean; password: boolean }
+  templateId?: number | null
+  cspConnectSrc?: string[]
+  privacyNotice?: string | null
+  force?: boolean
+}
+
+export type PortalGroup = {
+  /** `v:<voucherId>` | `u:<portalUserId>` | `g:<grantId>` */
+  key: string
+  devices: number
+  maxDevices: number
+  timeUsedSeconds: number
+  bytesUsed: number
+  /** null = no such limit. */
+  remaining: { seconds: number | null; bytes: number | null }
+  durationMinutes: number | null
+  durationMode: 'wall_clock' | 'active_time'
+  expiresAt: string | null
+  quotaBytes: number | null
+  downKbps: number | null
+  upKbps: number | null
+}
+
+export type PortalGrantState = 'queued' | 'pending_device' | 'active' | 'paused' | 'ended'
+export type PortalGrantSource = 'voucher' | 'user' | 'api' | 'admin'
+export type PortalGrantEndReason =
+  | 'expired'
+  | 'quota'
+  | 'revoked'
+  | 'logout'
+  | 'router_deauth'
+  | 'replaced'
+  | 'moved'
+  | 'rejected'
+
+export type PortalGrant = {
+  id: number
+  portalId: number
+  mac: string
+  ip: string | null
+  hostname: string | null
+  source: PortalGrantSource
+  state: PortalGrantState
+  delivery: PortalDelivery
+  revision: number
+  voucher: { id: number; batchId: number; hint: string } | null
+  portalUser: { id: number; username: string } | null
+  apiClient: { id: number; name: string } | null
+  createdBy: { id: number; email: string } | null
+  externalRef: string | null
+  note: string | null
+  startedAt: string | null
+  /** Effective deadline. */
+  expiresAt: string | null
+  lastSeenAt: string | null
+  bytesUp: number
+  bytesDown: number
+  /** This device's charged active time. */
+  timeUsedSeconds: number
+  group: PortalGroup | null
+  endedAt: string | null
+  endReason: PortalGrantEndReason | null
+  createdAt: string | null
+}
+
+export type PortalGrantStateFilter = 'active' | 'live' | 'queued' | 'ended' | 'all'
+
+export type PortalPage<T> = { items: T[]; total: number }
+
+export type PortalSession = {
+  id: number
+  grantId: number
+  portalId: number
+  mac: string
+  ip: string | null
+  startedAt: string | null
+  endedAt: string | null
+  bytesUp: number
+  /** Open session: live (grant counters − start). */
+  bytesDown: number
+  endReason: string | null
+}
+
+export type VoucherDurationMode = 'wall_clock' | 'active_time'
+export type VoucherStartMode = 'first_use' | 'creation'
+export type VoucherStatus = 'unused' | 'active' | 'exhausted' | 'expired' | 'revoked'
+
+export type VoucherBatch = {
+  id: number
+  portalId: number | null
+  name: string
+  note: string | null
+  count: number
+  codeLength: number
+  durationMinutes: number | null
+  durationMode: VoucherDurationMode
+  startMode: VoucherStartMode
+  quotaBytes: number | null
+  downKbps: number | null
+  upKbps: number | null
+  maxDevices: number
+  redeemBy: string | null
+  createdAt: string | null
+  createdBy: { id: number; email: string } | null
+  revokedAt: string | null
+  counts: Record<VoucherStatus, number>
+}
+
+export type Voucher = {
+  id: number
+  batchId: number
+  /** Last 4 characters. */
+  hint: string
+  status: VoucherStatus
+  boundPortalId: number | null
+  firstUsedAt: string | null
+  startsAt: string | null
+  expiresAt: string | null
+  timeUsedSeconds: number
+  bytesUsed: number
+  devices: number
+  revokedAt: string | null
+  /** Only in `/codes`: formatted `XXXXX-XXXXX`. */
+  code?: string | null
+}
+
+export type CreateVoucherBatchPayload = {
+  portalId: number | null
+  name: string
+  note?: string | null
+  count: number
+  codeLength?: number
+  durationMinutes?: number | null
+  durationMode?: VoucherDurationMode
+  startMode?: VoucherStartMode
+  quotaBytes?: number | null
+  downKbps?: number | null
+  upKbps?: number | null
+  maxDevices?: number
+  redeemBy?: string | null
+}
+
+export type VoucherLookup = { voucher: Voucher; batch: VoucherBatch; grants: PortalGrant[] }
+
+export type PortalUser = {
+  id: number
+  username: string
+  displayName: string | null
+  enabled: boolean
+  maxDevices: number
+  sessionMinutes: number | null
+  downKbps: number | null
+  upKbps: number | null
+  /** null = every portal. */
+  portalIds: number[] | null
+  lastLoginAt: string | null
+  activeDevices: number
+  createdAt: string | null
+}
+
+export type PortalUserPayload = {
+  username?: string
+  password?: string
+  displayName?: string | null
+  enabled?: boolean
+  maxDevices?: number
+  sessionMinutes?: number | null
+  downKbps?: number | null
+  upKbps?: number | null
+  portalIds?: number[] | null
+}
+
+export type PortalApiScope = 'authorize' | 'read'
+
+export type PortalApiClient = {
+  id: number
+  name: string
+  /** `perch_pa_` + 4 characters. */
+  prefix: string
+  scopes: PortalApiScope[]
+  portalIds: number[]
+  maxMinutesPerCall: number
+  maxBytesPerCall: number
+  maxActiveGrants: number
+  activeGrants: number
+  lastUsedAt: string | null
+  revokedAt: string | null
+  createdAt: string | null
+  createdByUserId: number | null
+}
+
+export type PortalApiClientPayload = {
+  name?: string
+  portalIds?: number[]
+  scopes?: PortalApiScope[]
+  maxMinutesPerCall?: number
+  maxBytesPerCall?: number
+  maxActiveGrants?: number
+}
+
+export type PortalTemplateFile = { name: string; contentType: string; bytes: number; sha256: string }
+
+export type PortalTemplate = {
+  id: number
+  name: string
+  builtin: boolean
+  sha256: string
+  totalBytes: number
+  /** Live portals using it. */
+  inUse: number[]
+  files: PortalTemplateFile[]
+  variables: string[]
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export type PortalTemplatePreview = { html: string; page: 'login' | 'status'; messageCode: string | null }
+
+/** `POST /api/v1/portal/authorizations` (an admin's own token: `source: 'admin'`). */
+export type PortalAuthorizePayload = {
+  portalId: number
+  mac: string
+  minutes?: number
+  bytes?: number
+  durationMode?: VoucherDurationMode
+  downKbps?: number
+  upKbps?: number
+  mode?: 'extend' | 'replace'
+  externalRef?: string
+  note?: string
+}
+
+export type PortalAuthorizeResult = {
+  grant: PortalGrant | null
+  delivery: PortalDelivery
+  outcome: 'created' | 'extended' | 'replayed'
+}
+
+export type PortalSettings = {
+  sessionRetentionDays: number
+  enforceIntervalSeconds: number
+  usageIntervalSeconds: number
+  guestFailuresPerDevicePerMinute: number
+  guestFailuresPerDevicePerHour: number
+  guestFailuresPerPortalPerMinute: number
+  controllerFailuresPerDevicePer15Minutes: number
+  controllerFailuresPerUsernamePer15Minutes: number
+  apiRequestsPerClientPerMinute: number
+  deviceUnseenEvictMinutes: number
+  preauthDnsPerDevicePerMinute: number
+  offlineRedemption: boolean
+  offlineVoucherLimit: number
+}
+
+export type PortalSettingsView = {
+  settings: PortalSettings
+  defaults: PortalSettings
+  limits: Record<Exclude<keyof PortalSettings, 'offlineRedemption'>, { min: number; max: number }>
+}
+
+/** The parts of the config plane's `GET /api/v1/gateways` row the portal pages use. */
+export type PortalGatewayOption = {
+  id: number
+  collectorId: number | null
+  name: string
+  online: boolean
+  mode: string
+}
+
+/** A network the portal can sit on: a `network` / `interface` section of the config plane. */
+export type PortalNetworkOption = {
+  perchId: string
+  name: string
+  proto: string | null
+  ipaddr: string | null
+}

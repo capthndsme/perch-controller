@@ -257,3 +257,22 @@
     animation-duration: 1ms;
   }
 }
+
+/* Voucher print sheet (pages/portal-voucher-print-page.tsx): A4 with a small
+ * margin, white paper whatever the theme, cards never split across pages. */
+@media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  .voucher-sheet article {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

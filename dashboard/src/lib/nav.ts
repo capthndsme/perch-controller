@@ -3,6 +3,7 @@ import {
   Broadcast,
   ChartBar,
   Devices,
+  DoorOpen,
   Gauge,
   GearSix,
   Globe,
@@ -27,5 +28,6 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/wifi', label: 'WiFi', icon: Broadcast },
   { to: '/gateway', label: 'Gateway', icon: Globe },
   { to: '/infrastructure', label: 'Infrastructure', icon: TreeStructure },
+  { to: '/portal', label: 'Guest portal', icon: DoorOpen },
   { to: '/settings', label: 'Settings', icon: GearSix },
 ]

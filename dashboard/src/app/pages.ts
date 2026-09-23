@@ -39,6 +39,20 @@ export const pages = {
   settingsWifiSources: lazyPage(() =>
     import('@/pages/wifi-sources-settings-page').then((m) => m.WifiSourcesSettingsPage),
   ),
+  portal: lazyPage(() => import('@/pages/portal-page').then((m) => m.PortalPage)),
+  portalDetail: lazyPage(() => import('@/pages/portal-detail-page').then((m) => m.PortalDetailPage)),
+  portalVouchers: lazyPage(() => import('@/pages/portal-vouchers-page').then((m) => m.PortalVouchersPage)),
+  portalVoucherBatch: lazyPage(() =>
+    import('@/pages/portal-voucher-batch-page').then((m) => m.PortalVoucherBatchPage),
+  ),
+  portalVoucherPrint: lazyPage(() =>
+    import('@/pages/portal-voucher-print-page').then((m) => m.PortalVoucherPrintPage),
+  ),
+  portalUsers: lazyPage(() => import('@/pages/portal-users-page').then((m) => m.PortalUsersPage)),
+  portalApiClients: lazyPage(() => import('@/pages/portal-api-clients-page').then((m) => m.PortalApiClientsPage)),
+  portalTemplates: lazyPage(() => import('@/pages/portal-templates-page').then((m) => m.PortalTemplatesPage)),
+  portalTemplate: lazyPage(() => import('@/pages/portal-template-page').then((m) => m.PortalTemplatePage)),
+  settingsPortal: lazyPage(() => import('@/pages/portal-settings-page').then((m) => m.PortalSettingsPage)),
   notFound: lazyPage(() => import('@/pages/not-found-page').then((m) => m.NotFoundPage)),
 }
 
