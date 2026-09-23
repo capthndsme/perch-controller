@@ -32,7 +32,7 @@ the database), `app/models/portal*.ts`, `voucher*.ts`, migrations
 | Page hosting                  | Guest pages served by perch-collector on the router (`:2080`), port 80 redirected there                                                                                 |
 | Controller exposure to guests | None                                                                                                                                                                    |
 | Login identities              | `portal_users`, never controller `users`                                                                                                                                |
-| Byte counting                 | The router's kernel counters (netdev per-MAC counters), never pcap                                                                                                      |
+| Byte counting                 | The router's kernel counters (nftables: upload per MAC, download per address the device uses, on the IP hooks so shaped traffic counts), never pcap                     |
 | Authority                     | Controller: vouchers, grants (create, extend, revoke), the offline voucher list. Router: usage, session facts, offline redemptions                                      |
 | Outage                        | The router keeps grants and enforces expiry and quotas. It also redeems the vouchers it holds (decision 20). Password logins and API authorizations need the controller |
 | Scope v1                      | Several portals per gateway, one per network                                                                                                                            |

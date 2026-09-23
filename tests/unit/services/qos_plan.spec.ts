@@ -410,7 +410,10 @@ test.group('qos_plan | devices, groups and networks', () => {
       policies: [policy(2, { shared: rate(8000, 4000) }), policy(3, { shared: rate(1000, 1000) })],
       assignments: [
         network(1, 'guest', { policyId: 2 }),
-        device(2, MAC1, { target: { type: 'device', mac: MAC1, within: 'iot' }, rate: rate(2000, 0) }),
+        device(2, MAC1, {
+          target: { type: 'device', mac: MAC1, within: 'iot' },
+          rate: rate(2000, 0),
+        }),
         device(3, MAC2, { target: { type: 'device', mac: MAC2, within: 'guest' }, policyId: 3 }),
         device(4, MAC3, { rate: rate(2000, 0) }),
       ],
