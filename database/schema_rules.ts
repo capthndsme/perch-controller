@@ -60,6 +60,9 @@ export default {
     gateway_wan_blocks: {
       skipColumns: ['last_flush'],
     },
+    ap_group_states: {
+      skipColumns: ['stations'],
+    },
     gateway_applies: {
       skipColumns: [
         'post_actions',

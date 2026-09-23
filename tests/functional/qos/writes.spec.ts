@@ -1,5 +1,5 @@
 import QosAssignment from '#models/qos_assignment'
-import QosGroupMember from '#models/qos_group_member'
+import DeviceGroupMember from '#models/device_group_member'
 import QosPolicy from '#models/qos_policy'
 import QosSchedule from '#models/qos_schedule'
 import { updateQosSettings } from '#services/qos_settings'
@@ -298,7 +298,7 @@ test.group('qos | group writes', (group) => {
     assigned.assertStatus(201)
     const deleted = await client.delete(`/api/v1/qos/groups/${kids.id}`).bearerToken(adminToken)
     deleted.assertStatus(204)
-    assert.lengthOf(await QosGroupMember.query().where('groupId', kids.id), 0)
+    assert.lengthOf(await DeviceGroupMember.query().where('groupId', kids.id), 0)
     assert.isNull(await QosAssignment.find(bodyOf(assigned).data.id))
   })
 })

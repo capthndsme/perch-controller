@@ -10,6 +10,7 @@ export const controllers = {
   ApJoinTokens: () => import('#controllers/ap_join_tokens_controller'),
   Collectors: () => import('#controllers/collectors_controller'),
   Destinations: () => import('#controllers/destinations_controller'),
+  DeviceGroups: () => import('#controllers/device_groups_controller'),
   DeviceLabels: () => import('#controllers/device_labels_controller'),
   Devices: () => import('#controllers/devices_controller'),
   GatewayFirewall: () => import('#controllers/gateway_firewall_controller'),

@@ -1,7 +1,7 @@
 import Gateway from '#models/gateway'
 import QosAssignment from '#models/qos_assignment'
-import QosGroup from '#models/qos_group'
-import QosGroupMember from '#models/qos_group_member'
+import DeviceGroup from '#models/device_group'
+import DeviceGroupMember from '#models/device_group_member'
 import QosPolicy from '#models/qos_policy'
 import QosSchedule from '#models/qos_schedule'
 import { isDuplicateEntryError } from '#services/db_errors'
@@ -59,7 +59,7 @@ type Trx = TransactionClientContract
 
 export interface WriteContext {
   userId: number | null
-  source?: 'admin' | 'portal'
+  source?: 'admin' | 'portal' | 'group'
   sourceRef?: string | null
 }
 
@@ -421,7 +421,7 @@ async function policyView(gatewayId: number, id: number) {
 // Groups
 
 async function requireGroupName(gatewayId: number, name: string, selfId: number | null) {
-  const clash = await QosGroup.query()
+  const clash = await DeviceGroup.query()
     .where('gatewayId', gatewayId)
     .where('name', name)
     .if(selfId !== null, (q) => q.whereNot('id', selfId!))
@@ -437,7 +437,7 @@ async function requireGroupName(gatewayId: number, name: string, selfId: number 
 /** 409 `qos_mac_in_group` when a MAC is already in another group of the gateway. */
 async function requireMacsFree(gatewayId: number, macs: string[], selfId: number | null) {
   if (macs.length === 0) return
-  const taken = await QosGroupMember.query()
+  const taken = await DeviceGroupMember.query()
     .where('gatewayId', gatewayId)
     .whereIn('mac', macs)
     .if(selfId !== null, (q) => q.whereNot('groupId', selfId!))
@@ -462,13 +462,19 @@ export async function createGroup(
   await requireGroupName(gateway.id, input.name, null)
   await requireMacsFree(gateway.id, members, null)
   const id = await mutate(gateway.id, context.userId, async (trx) => {
-    const group = await QosGroup.create(
+    const group = await DeviceGroup.create(
       { gatewayId: gateway.id, name: input.name, notes: input.notes ?? null },
       { client: trx }
     )
     if (members.length > 0) {
-      await QosGroupMember.createMany(
-        members.map((mac) => ({ gatewayId: gateway.id, groupId: group.id, mac })),
+      await DeviceGroupMember.createMany(
+        members.map((mac) => ({
+          gatewayId: gateway.id,
+          groupId: group.id,
+          mac,
+          source: 'manual',
+          createdByUserId: context.userId,
+        })),
         { client: trx }
       )
     }
@@ -482,7 +488,7 @@ export async function updateGroup(
   input: { name?: string; notes?: string | null; addMacs?: string[]; removeMacs?: string[] },
   context: WriteContext
 ) {
-  const group = await QosGroup.find(id)
+  const group = await DeviceGroup.find(id)
   if (!group) throw notFound('group', id)
   const gateway = await gatewayOf(group.gatewayId)
   const remove = new Set(input.removeMacs ?? [])
@@ -497,20 +503,26 @@ export async function updateGroup(
     group.updatedAt = DateTime.utc()
     await group.save()
     if (remove.size > 0) {
-      await QosGroupMember.query({ client: trx })
+      await DeviceGroupMember.query({ client: trx })
         .where('groupId', group.id)
         .whereIn('mac', [...remove])
         .delete()
     }
     if (add.length > 0) {
-      const current = await QosGroupMember.query({ client: trx })
+      const current = await DeviceGroupMember.query({ client: trx })
         .where('groupId', group.id)
         .select('mac')
       const existing = new Set(current.map((m) => m.mac))
       const fresh = add.filter((mac) => !existing.has(mac))
       if (fresh.length > 0) {
-        await QosGroupMember.createMany(
-          fresh.map((mac) => ({ gatewayId: gateway.id, groupId: group.id, mac })),
+        await DeviceGroupMember.createMany(
+          fresh.map((mac) => ({
+            gatewayId: gateway.id,
+            groupId: group.id,
+            mac,
+            source: 'manual',
+            createdByUserId: context.userId,
+          })),
           { client: trx }
         )
       }
@@ -521,7 +533,7 @@ export async function updateGroup(
 
 /** Its assignment (and that assignment's schedules) cascade. */
 export async function deleteGroup(id: number, context: WriteContext) {
-  const group = await QosGroup.find(id)
+  const group = await DeviceGroup.find(id)
   if (!group) throw notFound('group', id)
   const gateway = await gatewayOf(group.gatewayId)
   await mutate(gateway.id, context.userId, async (trx) => {
@@ -656,7 +668,7 @@ export async function createAssignment(
   const now = DateTime.utc()
   const policy = await requirePolicyOf(gateway.id, input.policyId)
   if (target.type === 'group') {
-    const group = await QosGroup.find(target.groupId)
+    const group = await DeviceGroup.find(target.groupId)
     if (!group || group.gatewayId !== gateway.id) throw notFound('group', target.groupId)
   }
   const rate = rateColumns(input.rate ?? null)!

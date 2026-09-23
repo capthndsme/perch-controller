@@ -62,7 +62,7 @@ import {
 } from '#services/gateway_config/section_order'
 import { gatewayQueue } from '#services/gateway_config/serial_queue'
 import type { SectionState } from '#services/gateway_config/sync_engine'
-import type { Issue, UciOptions } from '#services/gateway_config/types'
+import type { Issue, PlaneActor, UciOptions } from '#services/gateway_config/types'
 import { resolveManagedGateway } from '#services/gateway_config/device_names'
 import db from '@adonisjs/lucid/services/db'
 import { DateTime } from 'luxon'
@@ -485,14 +485,19 @@ export type FirewallWriteResult<T> = {
 
 async function applyNow(
   gateway: Gateway,
-  userId: number,
+  userId: number | null,
   perchIds: string[],
   wanted: boolean,
   postActions?: GatewayApplyPostActions
 ): Promise<{ apply: unknown | null; applyError: FirewallWriteResult<unknown>['applyError'] }> {
   if (!wanted || perchIds.length === 0) return { apply: null, applyError: null }
   try {
-    const apply = await requestApply(gateway.id, { userId, perchIds, postActions })
+    const apply = await requestApply(gateway.id, {
+      userId,
+      ...(userId === null ? { actor: { system: 'system' as const } } : {}),
+      perchIds,
+      postActions,
+    })
     return { apply, applyError: null }
   } catch (error) {
     if (error instanceof GatewayPlaneError) {
@@ -575,7 +580,7 @@ function zoneOfAddress(states: SectionState[], zones: ZoneInfo[], ip: string): s
 /** Places new members of an order (a Perch rule on top, the block rules first toward WAN). */
 async function placeInOrder(
   gateway: Gateway,
-  userId: number,
+  userId: number | null,
   key: OrderKey,
   ids: string[],
   where: (desired: string[], states: SectionState[]) => number
@@ -1658,4 +1663,194 @@ function requireZoneSynced(s: SectionState, zone: string) {
 /** The zone a network is in now (desired side), or null. */
 export function currentZoneOf(states: SectionState[], network: string): string | null {
   return zoneOfNetwork(allZones(states), network)
+}
+
+// ── device groups: internet access (docs/gateway/device-groups.md section 5) ──
+
+/** Section names of a group's internet block: `perch_g<id>` (ipset), `perch_g<id>_<zone>` (rules). */
+export const GROUP_SECTION_PREFIX = 'perch_g'
+const GROUP_SECTION = /^perch_g(\d+)(?:_.+)?$/
+
+export type GroupFirewallSpec = {
+  groupId: number
+  name: string
+  /** No internet for the group's members. */
+  blocked: boolean
+  /** The bound members (groups without a network). */
+  macs: string[]
+  /** The group's network: its traffic is matched by zone or prefixes, not by MAC. */
+  network: { name: string; zone: string | null; ipv4: string[] } | null
+}
+
+type GroupSection = { section: string; type: 'ipset' | 'rule'; options: UciOptions }
+
+/** The sections one group's block needs (none while it may use the internet). */
+export function groupFirewallSections(spec: GroupFirewallSpec, zones: ZoneInfo[]): GroupSection[] {
+  if (!spec.blocked) return []
+  const wans = wanZones(zones)
+  const out: GroupSection[] = []
+  const setName = `${GROUP_SECTION_PREFIX}${spec.groupId}`
+  let match: UciOptions
+  if (spec.network) {
+    const zone = spec.network.zone ? zones.find((z) => z.name === spec.network!.zone) : undefined
+    if (zone && zone.networks.length === 1 && zone.networks[0] === spec.network.name) {
+      // The zone is the group's network alone: it names IPv4 and IPv6 alike.
+      match = { src: zone.name }
+    } else if (spec.network.ipv4.length > 0) {
+      match = { src: '*', src_ip: spec.network.ipv4.map((cidr) => networkPrefix(cidr)) }
+    } else {
+      return []
+    }
+  } else {
+    if (spec.macs.length === 0) return []
+    out.push({
+      section: setName,
+      type: 'ipset',
+      options: { name: setName, match: 'src_mac', entry: [...spec.macs].sort() },
+    })
+    match = { src: '*', ipset: setName }
+  }
+  for (const zone of wans) {
+    out.push({
+      section: `${setName}_${zone}`.slice(0, 64),
+      type: 'rule',
+      options: {
+        name: `Perch: ${spec.name.slice(0, 40)}, no internet (${zone})`,
+        ...match,
+        dest: zone,
+        proto: 'all',
+        target: 'REJECT',
+      },
+    })
+  }
+  return out
+}
+
+/** `192.168.20.1/24` (a router address) → `192.168.20.0/24`. */
+function networkPrefix(cidr: string): string {
+  const [ip, lenText] = cidr.split('/')
+  const len = Number(lenText)
+  if (!isIpv4(ip) || !Number.isInteger(len) || len < 0 || len > 32) return cidr
+  const n = ip.split('.').reduce((acc, o) => (acc << 8) + Number(o), 0) >>> 0
+  const mask = len === 0 ? 0 : (0xffffffff << (32 - len)) >>> 0
+  const net = (n & mask) >>> 0
+  return `${[24, 16, 8, 0].map((s) => (net >>> s) & 0xff).join('.')}/${len}`
+}
+
+function sameOptions(a: UciOptions, b: UciOptions): boolean {
+  const norm = (o: UciOptions) =>
+    JSON.stringify(
+      Object.keys(o)
+        .sort()
+        .map((k) => [k, o[k]])
+    )
+  return norm(a) === norm(b)
+}
+
+/**
+ * Brings every group's internet block of a gateway to what the specs want:
+ * missing sections are created (the rules first among the rules toward WAN
+ * zones), changed ones edited, those of blocked-no-more or deleted groups
+ * removed, all in one apply. The flush afterwards cuts the members' running
+ * connections (fw4 accepts established traffic before any rule).
+ */
+export async function reconcileGroupFirewall(
+  gatewayId: number,
+  userId: number | null,
+  specs: GroupFirewallSpec[],
+  options: { apply?: boolean } = {}
+): Promise<{
+  issues: Issue[]
+  apply: unknown | null
+  applyError: FirewallWriteResult<unknown>['applyError']
+}> {
+  const gateway = await findGateway(gatewayId)
+  requireManaged(gateway)
+  const { states } = await loadSections(gateway.id)
+  const zones = allZones(states)
+  const wanted = new Map<string, GroupSection>()
+  for (const spec of specs) {
+    for (const s of groupFirewallSections(spec, zones)) wanted.set(s.section, s)
+  }
+  const current = fwStates(states).filter((s) => GROUP_SECTION.test(s.name))
+  const edits: SectionEdit[] = []
+  const touched: string[] = []
+  const newRules: string[] = []
+  for (const s of current) {
+    const want = wanted.get(s.name)
+    const content = contentOf(s)!
+    if (!want) {
+      if (s.scope === 'synced') {
+        edits.push({ op: 'delete', perchId: s.perchId })
+        touched.push(s.perchId)
+      }
+      continue
+    }
+    wanted.delete(s.name)
+    if (content.type === want.type && sameOptions(content.options, want.options)) continue
+    if (s.scope !== 'synced') continue
+    edits.push(...firewallDomain.render({ ...objectOf(s), options: want.options }, asSynced(s)))
+    touched.push(s.perchId)
+  }
+  // Sets before the rules that use them.
+  const fresh = [...wanted.values()].sort((a, b) =>
+    a.type === b.type ? 0 : a.type === 'ipset' ? -1 : 1
+  )
+  for (const s of fresh) {
+    edits.push(
+      ...firewallDomain.render(
+        { perchId: null, section: s.section, type: s.type, options: s.options, secretNames: [] },
+        []
+      )
+    )
+    if (s.type === 'rule') newRules.push(s.section)
+  }
+  const actor: PlaneActor = userId ?? { system: 'system' }
+  // Sections already drafted but not on the router yet (an earlier apply was
+  // refused while another ran) are applied along.
+  const waiting = current
+    .filter((s) => s.scope === 'synced' && s.status === 'ahead' && !touched.includes(s.perchId))
+    .map((s) => s.perchId)
+  if (edits.length === 0) {
+    if (waiting.length === 0) return { issues: [], apply: null, applyError: null }
+    const { apply, applyError } = await applyNow(gateway, userId, waiting, options.apply !== false)
+    return { issues: [], apply, applyError }
+  }
+  const outcome = await editSections(gateway.id, actor, FIREWALL_DOMAIN_KEY, edits)
+  const created = outcome.perchIds.filter((id) => !touched.includes(id))
+  const { states: after } = await loadSections(gateway.id)
+  const createdRules = after
+    .filter((s) => created.includes(s.perchId) && newRules.includes(s.name))
+    .map((s) => s.perchId)
+  const wans = wanZones(zones)
+  await placeInOrder(gateway, userId, RULE_KEY, createdRules, (desired, now) =>
+    firstTowardWan(desired, now, wans)
+  )
+  const perchIds = [
+    ...new Set([...touched.filter((id) => !outcome.deleted.includes(id)), ...created, ...waiting]),
+  ]
+  // The members of newly blocked groups lose their running connections.
+  const ips = new Set<string>()
+  for (const spec of specs) {
+    if (!spec.blocked || spec.network) continue
+    for (const mac of spec.macs)
+      for (const ip of await deviceAddresses(gateway, mac, after)) ips.add(ip)
+  }
+  const controller = gateway.managementPath?.controllerAddress
+  const flushIps = [...ips].filter((ip) => ip !== controller)
+  const postActions: GatewayApplyPostActions | undefined =
+    flushIps.length > 0 && created.length > 0
+      ? { conntrackFlush: { mac: 'device-groups', ips: flushIps, perchIds: created } }
+      : undefined
+  const { apply, applyError } = await applyNow(
+    gateway,
+    userId,
+    perchIds,
+    options.apply !== false,
+    postActions
+  )
+  if (created.length > 0 || touched.length > 0) {
+    await recordGatewayEvent(gateway.id, 'group_firewall', { actor, detail: { perchIds } })
+  }
+  return { issues: outcome.issues, apply, applyError }
 }

@@ -64,6 +64,7 @@ const GatewayNamesController = () => import('#controllers/gateway_names_controll
 const GatewayNetworksController = () => import('#controllers/gateway_networks_controller')
 const GatewayFirewallController = () => import('#controllers/gateway_firewall_controller')
 const PortalHotspotController = () => import('#controllers/portal_hotspot_controller')
+const DeviceGroupsController = () => import('#controllers/device_groups_controller')
 
 /**
  * Setup wizard endpoints. INTENTIONALLY outside the requireSetupComplete
@@ -234,6 +235,10 @@ router
           .post('collectors/:id/dismiss', [CollectorsController, 'dismiss'])
           .as('collectors.dismiss')
 
+        router.get('device-groups', [DeviceGroupsController, 'settings']).as('deviceGroups')
+        router
+          .patch('device-groups', [DeviceGroupsController, 'updateSettings'])
+          .as('updateDeviceGroups')
         router.get('portal', [PortalPortalsController, 'settings']).as('portal')
         router.patch('portal', [PortalPortalsController, 'updateSettings']).as('updatePortal')
 
@@ -356,6 +361,8 @@ router
           .as('reservation')
         /** The per-device WAN block (docs/gateway/firewall.md section 5). */
         router.get(':mac/wan-access', [GatewayFirewallController, 'showWanAccess']).as('wanAccess')
+        /** The device's group (docs/gateway/device-groups.md section 3). */
+        router.get(':mac/group', [DeviceGroupsController, 'deviceGroup']).as('group')
         router
           .group(() => {
             router
@@ -652,6 +659,57 @@ router
       })
       .prefix('portal')
       .as('portal')
+      .use([middleware.auth(), middleware.requirePasswordChange()])
+
+    /**
+     * Device groups (docs/gateway/device-groups.md section 3): every
+     * signed-in user reads, admins write.
+     */
+    router
+      .group(() => {
+        router.get('', [DeviceGroupsController, 'index']).as('index')
+        router
+          .get(':id', [DeviceGroupsController, 'show'])
+          .as('show')
+          .where('id', router.matchers.number())
+        router
+          .group(() => {
+            router.post('', [DeviceGroupsController, 'store']).as('store')
+            router
+              .patch(':id', [DeviceGroupsController, 'update'])
+              .as('update')
+              .where('id', router.matchers.number())
+            router
+              .delete(':id', [DeviceGroupsController, 'destroy'])
+              .as('destroy')
+              .where('id', router.matchers.number())
+            router
+              .post(':id/members', [DeviceGroupsController, 'addMember'])
+              .as('members.store')
+              .where('id', router.matchers.number())
+            router
+              .delete(':id/members/:mac', [DeviceGroupsController, 'removeMember'])
+              .as('members.destroy')
+              .where('id', router.matchers.number())
+            router
+              .post(':id/keys', [DeviceGroupsController, 'createKey'])
+              .as('keys.store')
+              .where('id', router.matchers.number())
+            router
+              .get(':id/keys/:keyId/passphrase', [DeviceGroupsController, 'revealKey'])
+              .as('keys.reveal')
+              .where('id', router.matchers.number())
+              .where('keyId', router.matchers.number())
+            router
+              .delete(':id/keys/:keyId', [DeviceGroupsController, 'destroyKey'])
+              .as('keys.destroy')
+              .where('id', router.matchers.number())
+              .where('keyId', router.matchers.number())
+          })
+          .use(middleware.requireAdmin())
+      })
+      .prefix('device-groups')
+      .as('deviceGroups')
       .use([middleware.auth(), middleware.requirePasswordChange()])
 
     /**

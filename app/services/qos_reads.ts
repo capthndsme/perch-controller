@@ -1,6 +1,6 @@
 import QosAssignment from '#models/qos_assignment'
-import QosGroup from '#models/qos_group'
-import QosGroupMember from '#models/qos_group_member'
+import DeviceGroup from '#models/device_group'
+import DeviceGroupMember from '#models/device_group_member'
 import QosPolicy from '#models/qos_policy'
 import QosSchedule from '#models/qos_schedule'
 import SystemSetting from '#models/system_setting'
@@ -111,8 +111,8 @@ export async function listPolicies(ref: GatewayRef) {
 
 export async function listGroups(ref: GatewayRef) {
   const { gateway } = await resolveGateway(ref)
-  const groups = await QosGroup.query().where('gatewayId', gateway.id).orderBy('name')
-  const members = await QosGroupMember.query().where('gatewayId', gateway.id).orderBy('mac')
+  const groups = await DeviceGroup.query().where('gatewayId', gateway.id).orderBy('name')
+  const members = await DeviceGroupMember.query().where('gatewayId', gateway.id).orderBy('mac')
   const names = await labelNames(members.map((m) => m.mac))
   return groups.map((g) => ({
     id: g.id,
@@ -137,7 +137,7 @@ function targetOf(a: QosAssignment) {
 export interface AssignmentFilter extends GatewayRef {
   policyId?: number
   mac?: string
-  source?: 'admin' | 'portal'
+  source?: 'admin' | 'portal' | 'group'
 }
 
 export async function listAssignments(filter: AssignmentFilter) {
@@ -166,7 +166,7 @@ export async function listAssignments(filter: AssignmentFilter) {
             resetAt: iso(a.quotaResetAt),
           },
     expiresAt: iso(a.expiresAt),
-    source: a.source === 'portal' ? 'portal' : 'admin',
+    source: a.source === 'portal' || a.source === 'group' ? a.source : 'admin',
     sourceRef: a.sourceRef,
     createdAt: iso(a.createdAt),
     updatedAt: iso(a.updatedAt ?? a.createdAt),
@@ -325,8 +325,8 @@ export async function loadPlanInput(
   const [policies, groups, members, assignments, schedules, settings, zone, paused] =
     await Promise.all([
       QosPolicy.query(options).where('gatewayId', gatewayId),
-      QosGroup.query(options).where('gatewayId', gatewayId),
-      QosGroupMember.query(options).where('gatewayId', gatewayId),
+      DeviceGroup.query(options).where('gatewayId', gatewayId),
+      DeviceGroupMember.query(options).where('gatewayId', gatewayId),
       QosAssignment.query(options).where('gatewayId', gatewayId),
       QosSchedule.query(options).where('gatewayId', gatewayId),
       getQosSettings(),

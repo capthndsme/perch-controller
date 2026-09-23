@@ -252,6 +252,7 @@ export const GATEWAY_EVENTS = [
   // Per-device WAN block (docs/gateway/firewall.md section 5).
   'wan_blocked',
   'wan_unblocked',
+  'group_firewall',
   'conntrack_flushed',
   'router_paused',
   'router_resumed',

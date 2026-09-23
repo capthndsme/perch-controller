@@ -1,6 +1,6 @@
 import QosAssignment from '#models/qos_assignment'
-import QosGroup from '#models/qos_group'
-import QosGroupMember from '#models/qos_group_member'
+import DeviceGroup from '#models/device_group'
+import DeviceGroupMember from '#models/device_group_member'
 import QosPolicy from '#models/qos_policy'
 import QosSchedule from '#models/qos_schedule'
 import { loadPlanInput } from '#services/qos_reads'
@@ -53,8 +53,8 @@ async function seedShaping(gatewayId: number, adminId: number) {
     includeLan: true,
     classMinor: 0x14,
   })
-  const group = await QosGroup.create({ gatewayId, name: 'Kids', notes: 'tablets' })
-  await QosGroupMember.createMany([
+  const group = await DeviceGroup.create({ gatewayId, name: 'Kids', notes: 'tablets' })
+  await DeviceGroupMember.createMany([
     { gatewayId, groupId: group.id, mac: MAC1 },
     { gatewayId, groupId: group.id, mac: MAC2 },
   ])
@@ -304,7 +304,7 @@ test.group('qos | reads (decision 16: operators see every cap)', (group) => {
     await seeded.group.delete()
     assert.isNull(await QosAssignment.find(seeded.groupAssignment.id))
     assert.isNull(await QosSchedule.find(seeded.night.id))
-    assert.lengthOf(await QosGroupMember.all(), 0)
+    assert.lengthOf(await DeviceGroupMember.all(), 0)
 
     await gateway.delete()
     assert.lengthOf(await QosPolicy.all(), 0)
@@ -327,7 +327,7 @@ test.group('qos | reads (decision 16: operators see every cap)', (group) => {
       QosAssignment.create({ gatewayId: gateway.id, targetType: 'network', network: 'guest' })
     )
     await assert.rejects(() =>
-      QosGroupMember.create({ gatewayId: gateway.id, groupId: seeded.group.id, mac: MAC1 })
+      DeviceGroupMember.create({ gatewayId: gateway.id, groupId: seeded.group.id, mac: MAC1 })
     )
     await assert.rejects(() =>
       QosPolicy.create({ gatewayId: gateway.id, name: 'Other', classMinor: 0x12 })

@@ -7,6 +7,31 @@
 import { BaseModel, column } from '@adonisjs/lucid/orm'
 import { DateTime } from 'luxon'
 
+export class ApGroupStateSchema extends BaseModel {
+  static $columns = ['apId', 'appliedRevision', 'converted', 'error', 'fingerprint', 'reportedAt', 'revision', 'state', 'trunkPort', 'updatedAt'] as const
+  $columns = ApGroupStateSchema.$columns
+  @column({ isPrimary: true })
+  declare apId: number
+  @column()
+  declare appliedRevision: number | null
+  @column()
+  declare converted: boolean
+  @column()
+  declare error: string | null
+  @column()
+  declare fingerprint: string | null
+  @column.dateTime()
+  declare reportedAt: DateTime | null
+  @column()
+  declare revision: number
+  @column()
+  declare state: string
+  @column()
+  declare trunkPort: string | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
 export class ApJoinTokenSchema extends BaseModel {
   static $columns = ['createdAt', 'createdByUserId', 'expiresAt', 'id', 'label', 'lastUsedAt', 'maxUses', 'revokedAt', 'tokenEncrypted', 'tokenHash', 'tokenPrefix', 'updatedAt', 'useCount'] as const
   $columns = ApJoinTokenSchema.$columns
@@ -235,6 +260,71 @@ export class DeviceDestinationBucketsHourlySchema extends BaseModel {
   declare serverName: string
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime
+}
+
+export class DeviceGroupSchema extends BaseModel {
+  static $columns = ['createdAt', 'gatewayId', 'id', 'internet', 'name', 'networkPerchId', 'notes', 'portalBypass', 'updatedAt'] as const
+  $columns = DeviceGroupSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare internet: boolean
+  @column()
+  declare name: string
+  @column()
+  declare networkPerchId: string | null
+  @column()
+  declare notes: string | null
+  @column()
+  declare portalBypass: boolean
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class DeviceGroupKeySchema extends BaseModel {
+  static $columns = ['createdAt', 'createdByUserId', 'gatewayId', 'groupId', 'id', 'label', 'passphraseDigest', 'passphraseEncrypted'] as const
+  $columns = DeviceGroupKeySchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdByUserId: number | null
+  @column()
+  declare gatewayId: number
+  @column()
+  declare groupId: number
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare label: string
+  @column()
+  declare passphraseDigest: string
+  @column()
+  declare passphraseEncrypted: string
+}
+
+export class DeviceGroupMemberSchema extends BaseModel {
+  static $columns = ['createdAt', 'createdByUserId', 'gatewayId', 'groupId', 'id', 'mac', 'portalUserId', 'source'] as const
+  $columns = DeviceGroupMemberSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdByUserId: number | null
+  @column()
+  declare gatewayId: number
+  @column()
+  declare groupId: number
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare mac: string
+  @column()
+  declare portalUserId: number | null
+  @column()
+  declare source: string
 }
 
 export class DeviceIdentitySchema extends BaseModel {
@@ -1698,10 +1788,12 @@ export class PortalTemplateFileSchema extends BaseModel {
 }
 
 export class PortalUserSchema extends BaseModel {
-  static $columns = ['createdAt', 'displayName', 'downKbps', 'enabled', 'id', 'lastLoginAt', 'maxDevices', 'revision', 'sessionMinutes', 'upKbps', 'updatedAt', 'username'] as const
+  static $columns = ['createdAt', 'deviceGroupId', 'displayName', 'downKbps', 'enabled', 'id', 'lastLoginAt', 'maxDevices', 'revision', 'sessionMinutes', 'upKbps', 'updatedAt', 'username'] as const
   $columns = PortalUserSchema.$columns
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
+  @column()
+  declare deviceGroupId: number | null
   @column()
   declare displayName: string | null
   @column()
@@ -1815,38 +1907,6 @@ export class QosGatewayStateSchema extends BaseModel {
   declare pausedByUserId: number | null
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime | null
-}
-
-export class QosGroupSchema extends BaseModel {
-  static $columns = ['createdAt', 'gatewayId', 'id', 'name', 'notes', 'updatedAt'] as const
-  $columns = QosGroupSchema.$columns
-  @column.dateTime({ autoCreate: true })
-  declare createdAt: DateTime
-  @column()
-  declare gatewayId: number
-  @column({ isPrimary: true })
-  declare id: number
-  @column()
-  declare name: string
-  @column()
-  declare notes: string | null
-  @column.dateTime({ autoCreate: true, autoUpdate: true })
-  declare updatedAt: DateTime | null
-}
-
-export class QosGroupMemberSchema extends BaseModel {
-  static $columns = ['createdAt', 'gatewayId', 'groupId', 'id', 'mac'] as const
-  $columns = QosGroupMemberSchema.$columns
-  @column.dateTime({ autoCreate: true })
-  declare createdAt: DateTime
-  @column()
-  declare gatewayId: number
-  @column()
-  declare groupId: number
-  @column({ isPrimary: true })
-  declare id: number
-  @column()
-  declare mac: string
 }
 
 export class QosPolicySchema extends BaseModel {
