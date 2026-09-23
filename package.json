@@ -1,9 +1,9 @@
 {
   "name": "perch-controller",
-  "version": "1.0.0-rc.3",
+  "version": "1.0.0",
   "perch": {
-    "apdVersion": "1.0.0-rc.2",
-    "collectorVersion": "1.0.0-rc.3"
+    "apdVersion": "1.0.0",
+    "collectorVersion": "1.0.0"
   },
   "private": true,
   "type": "module",
