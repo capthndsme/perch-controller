@@ -164,9 +164,17 @@ test.group('networks domain | claims and round trip (plan 1 section 8.1)', () =>
         'dhcp_tags',
         'firewall',
         'sqm',
+        'perch_qos',
       ]
     )
-    assert.deepEqual(domainRegistry().configs(), ['system', 'network', 'dhcp', 'firewall', 'sqm'])
+    assert.deepEqual(domainRegistry().configs(), [
+      'system',
+      'network',
+      'dhcp',
+      'firewall',
+      'sqm',
+      'perch-qos',
+    ])
   })
 
   test('round-trips the whole DSA config, VLANs via bridge-vlan included, exactly', ({

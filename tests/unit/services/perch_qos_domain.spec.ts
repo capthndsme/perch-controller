@@ -275,8 +275,8 @@ test.group('perch_qos domain | the package the planner renders', () => {
       domainRegistry()
         .list()
         .map((d) => d.key)
-        .slice(0, 3),
-      ['dhcp_hosts', 'sqm', 'perch_qos']
+        .slice(-2),
+      ['sqm', 'perch_qos']
     )
     assert.isTrue(perchQosDomain.oneWay)
   })
