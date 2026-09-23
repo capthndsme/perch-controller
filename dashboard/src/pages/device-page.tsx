@@ -13,6 +13,7 @@ import { DeviceReservationCard } from '@/components/gateway-config/device-reserv
 import { PeersPanel } from '@/components/devices/peers-panel'
 import { DeviceSpeedLimitCard } from '@/components/qos/device-speed-limit'
 import { ProtocolsSection } from '@/components/devices/protocols-section'
+import { DeviceNetworkRow } from '@/components/networks/device-network-row'
 import { PageHeader } from '@/components/layout/page-header'
 import { TopDestinations } from '@/components/peers/top-destinations'
 import { Badge } from '@/components/ui/badge'
@@ -345,6 +346,7 @@ export function DevicePage() {
               <Row label="First seen">{formatDate(identity?.firstSeenAt)}</Row>
               <Row label="Last seen">{formatDate(identity?.lastSeenAt)}</Row>
               <Row label="Collector">{identity ? `#${identity.collectorId}` : '—'}</Row>
+              <DeviceNetworkRow mac={mac} />
             </div>
           </Panel>
 

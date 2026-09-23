@@ -23,6 +23,8 @@ export const pages = {
   wifiAp: lazyPage(() => import('@/pages/wifi-ap-page').then((m) => m.WifiApPage)),
   gateway: lazyPage(() => import('@/pages/gateway-page').then((m) => m.GatewayPage)),
   infrastructure: lazyPage(() => import('@/pages/infrastructure-page').then((m) => m.InfrastructurePage)),
+  networks: lazyPage(() => import('@/pages/networks-page').then((m) => m.NetworksPage)),
+  network: lazyPage(() => import('@/pages/network-page').then((m) => m.NetworkPage)),
   settings: lazyPage(() => import('@/pages/settings-page').then((m) => m.SettingsPage)),
   settingsCollectors: lazyPage(() =>
     import('@/pages/collectors-settings-page').then((m) => m.CollectorsSettingsPage),

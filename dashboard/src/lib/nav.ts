@@ -10,6 +10,7 @@ import {
   HardDrives,
   Speedometer,
   SlidersHorizontal,
+  Network,
   TreeStructure,
 } from '@phosphor-icons/react'
 
@@ -33,5 +34,6 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/portal', label: 'Guest portal', icon: DoorOpen },
   { to: '/shaping', label: 'Shaping', icon: Speedometer },
   { to: '/gateway/config', label: 'Gateway config', icon: SlidersHorizontal },
+  { to: '/networks', label: 'Networks', icon: Network },
   { to: '/settings', label: 'Settings', icon: GearSix },
 ]
