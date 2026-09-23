@@ -88,6 +88,7 @@ export const router = createBrowserRouter([
           { path: 'portal/templates/:id', ...page('portalTemplate') },
           { path: 'networks', ...page('networks') },
           { path: 'networks/:gatewayId/:networkId', ...page('network') },
+          { path: 'firewall', ...page('firewall') },
           { path: 'settings', ...page('settings') },
           { path: 'settings/collectors', ...page('settingsCollectors') },
           { path: 'settings/users', ...page('settingsUsers') },

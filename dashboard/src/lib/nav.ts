@@ -9,6 +9,7 @@ import {
   Globe,
   HardDrives,
   Network,
+  ShieldCheck,
   SlidersHorizontal,
   Speedometer,
   SquaresFour,
@@ -33,13 +34,14 @@ export function underPath(pathname: string, prefix: string): boolean {
 /**
  * The Gateway section: one sidebar entry, and this sub-nav above each of its
  * pages (components/layout/gateway-section-nav.tsx). The URLs stay where the
- * pages were built (`/networks`, `/shaping`, `/portal`): devices, the apply
+ * pages were built (`/networks`, `/firewall`, `/shaping`, `/portal`): devices, the apply
  * banner and the settings pages link to them.
  */
 export const GATEWAY_SECTION: NavItem[] = [
   { to: '/gateway', label: 'Overview', icon: SquaresFour, end: true },
   { to: '/gateway/config', label: 'Configuration', icon: SlidersHorizontal },
   { to: '/networks', label: 'Networks', icon: Network },
+  { to: '/firewall', label: 'Firewall', icon: ShieldCheck },
   { to: '/shaping', label: 'Shaping', icon: Speedometer },
   { to: '/portal', label: 'Guest portal', icon: DoorOpen },
 ]
