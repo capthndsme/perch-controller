@@ -21,7 +21,9 @@ import {
   type PlanSchedule,
 } from '#services/qos_plan'
 import { getQosSettings } from '#services/qos_settings'
+import QosGatewayState from '#models/qos_gateway_state'
 import db from '@adonisjs/lucid/services/db'
+import type { QueryClientContract } from '@adonisjs/lucid/types/database'
 import type { DateTime } from 'luxon'
 
 /**
@@ -161,6 +163,7 @@ export async function listAssignments(filter: AssignmentFilter) {
             onExhausted: a.quotaOnExhausted === 'block' ? 'block' : 'throttle',
             throttle: wireRate(rateFromColumns(a.throttleDownKbit, a.throttleUpKbit)),
             exhaustedAt: iso(a.exhaustedAt),
+            resetAt: iso(a.quotaResetAt),
           },
     expiresAt: iso(a.expiresAt),
     source: a.source === 'portal' ? 'portal' : 'admin',
@@ -246,16 +249,23 @@ export async function listSchedules(ref: GatewayRef, at: Date = new Date()) {
  * network list is left out until the config plane models networks (M5);
  * the planner then accepts any valid network name.
  */
-export async function loadPlanInput(gatewayId: number, at: Date = new Date()): Promise<PlanInput> {
-  const [policies, groups, members, assignments, schedules, settings, zone] = await Promise.all([
-    QosPolicy.query().where('gatewayId', gatewayId),
-    QosGroup.query().where('gatewayId', gatewayId),
-    QosGroupMember.query().where('gatewayId', gatewayId),
-    QosAssignment.query().where('gatewayId', gatewayId),
-    QosSchedule.query().where('gatewayId', gatewayId),
-    getQosSettings(),
-    controllerTimezone(),
-  ])
+export async function loadPlanInput(
+  gatewayId: number,
+  at: Date = new Date(),
+  client?: QueryClientContract
+): Promise<PlanInput> {
+  const options = client ? { client } : undefined
+  const [policies, groups, members, assignments, schedules, settings, zone, paused] =
+    await Promise.all([
+      QosPolicy.query(options).where('gatewayId', gatewayId),
+      QosGroup.query(options).where('gatewayId', gatewayId),
+      QosGroupMember.query(options).where('gatewayId', gatewayId),
+      QosAssignment.query(options).where('gatewayId', gatewayId),
+      QosSchedule.query(options).where('gatewayId', gatewayId),
+      getQosSettings(),
+      controllerTimezone(),
+      QosGatewayState.query(options).where('gatewayId', gatewayId).whereNotNull('pausedAt').first(),
+    ])
   const planPolicies: PlanPolicy[] = policies.map((p) => ({
     id: p.id,
     name: p.name,
@@ -284,6 +294,7 @@ export async function loadPlanInput(gatewayId: number, at: Date = new Date()): P
             usedBytes: num(a.quotaUsedBytes),
             onExhausted: a.quotaOnExhausted === 'block' ? 'block' : 'throttle',
             throttle: rateFromColumns(a.throttleDownKbit, a.throttleUpKbit),
+            resetAt: a.quotaResetAt ? a.quotaResetAt.toJSDate() : null,
           },
     expiresAt: a.expiresAt ? a.expiresAt.toJSDate() : null,
   }))
@@ -293,6 +304,7 @@ export async function loadPlanInput(gatewayId: number, at: Date = new Date()): P
     assignments: planAssignments,
     schedules: schedules.map(planScheduleOf),
     settings,
+    paused: paused !== null,
     at,
     timezone: zone,
   }

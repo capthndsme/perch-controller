@@ -1060,7 +1060,7 @@ export class ProtocolCategorySchema extends BaseModel {
 }
 
 export class QosAssignmentSchema extends BaseModel {
-  static $columns = ['createdAt', 'createdByUserId', 'downKbit', 'exhaustedAt', 'expiresAt', 'gatewayId', 'groupId', 'id', 'mac', 'network', 'policyId', 'quotaBytes', 'quotaOnExhausted', 'quotaUsedBytes', 'source', 'sourceRef', 'targetType', 'throttleDownKbit', 'throttleUpKbit', 'upKbit', 'updatedAt'] as const
+  static $columns = ['createdAt', 'createdByUserId', 'downKbit', 'exhaustedAt', 'expiresAt', 'gatewayId', 'groupId', 'id', 'mac', 'network', 'policyId', 'quotaBytes', 'quotaOnExhausted', 'quotaResetAt', 'quotaUsedBytes', 'source', 'sourceRef', 'targetType', 'throttleDownKbit', 'throttleUpKbit', 'upKbit', 'updatedAt'] as const
   $columns = QosAssignmentSchema.$columns
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
@@ -1088,6 +1088,8 @@ export class QosAssignmentSchema extends BaseModel {
   declare quotaBytes: bigint | number | null
   @column()
   declare quotaOnExhausted: string | null
+  @column.dateTime()
+  declare quotaResetAt: DateTime | null
   @column()
   declare quotaUsedBytes: bigint | number
   @column()
@@ -1102,6 +1104,35 @@ export class QosAssignmentSchema extends BaseModel {
   declare throttleUpKbit: number | null
   @column()
   declare upKbit: number | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class QosGatewayStateSchema extends BaseModel {
+  static $columns = ['configFingerprint', 'configRevision', 'configSubmittedAt', 'createdAt', 'devicesAckedAt', 'devicesAckedRevision', 'devicesRevision', 'gatewayId', 'id', 'pausedAt', 'pausedByUserId', 'updatedAt'] as const
+  $columns = QosGatewayStateSchema.$columns
+  @column()
+  declare configFingerprint: string | null
+  @column()
+  declare configRevision: number | null
+  @column.dateTime()
+  declare configSubmittedAt: DateTime | null
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column.dateTime()
+  declare devicesAckedAt: DateTime | null
+  @column()
+  declare devicesAckedRevision: bigint | number | null
+  @column()
+  declare devicesRevision: bigint | number
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: number
+  @column.dateTime()
+  declare pausedAt: DateTime | null
+  @column()
+  declare pausedByUserId: number | null
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime | null
 }
