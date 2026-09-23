@@ -16,6 +16,7 @@ import { formatBytes, formatMbps } from '@/lib/format-bytes'
 import {
   RATE_DIRECTION_OPTIONS,
   RATE_MODE_OPTIONS,
+  apColorMap,
   apThroughputToRateData,
   type RateChartDirection,
   type RateChartMode,
@@ -50,9 +51,21 @@ export function WifiPage() {
   const devices = useDevices({ window, refreshInterval })
   const history = useWifiClientsHistory({ window, resolution, refreshInterval })
   const apThroughput = useWifiApThroughput({ window, resolution, refreshInterval })
+  // One colour per AP across both charts (throughput and client counts).
+  const apColors = useMemo(
+    () =>
+      apColorMap([
+        ...(apThroughput.data?.aps ?? []).map((ap) => ap.friendlyName ?? ap.name),
+        ...(history.data?.allAps ?? []),
+      ]),
+    [apThroughput.data, history.data]
+  )
   const apRate = useMemo(
-    () => (apThroughput.data ? apThroughputToRateData(apThroughput.data) : { series: [], points: [] }),
-    [apThroughput.data]
+    () =>
+      apThroughput.data
+        ? apThroughputToRateData(apThroughput.data, apColors)
+        : { series: [], points: [] },
+    [apThroughput.data, apColors]
   )
 
   const mergedActiveClients = useMemo(() => {
@@ -207,6 +220,9 @@ export function WifiPage() {
             groupBy={groupBy}
             allBands={history.data?.allBands ?? []}
             allAps={history.data?.allAps ?? []}
+            range={history.data}
+            stepSeconds={history.data?.resolutionSeconds}
+            apColor={(name) => apColors.get(name) ?? 'var(--series-other)'}
             className="h-[320px] w-full"
             onZoom={setWindow}
             onResetZoom={() => setWindow(DEFAULT_WIFI_WINDOW)}

@@ -549,6 +549,8 @@ export function DevicePage() {
             ) : (
               <SignalChart
                 data={signalChartData}
+                range={wifiSignal.data}
+                stepSeconds={wifiSignal.data?.resolutionSeconds}
                 className="h-[220px] w-full"
                 onZoom={setWindow}
                 onResetZoom={() => setWindow(DEFAULT_DEVICE_WINDOW)}

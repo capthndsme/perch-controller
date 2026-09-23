@@ -7,9 +7,9 @@ import { Panel } from '@/components/ui/panel'
 import { formatLastSeen } from '@/lib/collectors'
 import { formatBytes, formatMbps } from '@/lib/format-bytes'
 import { formatCompactCount, formatSampleAge, wanSourceHint } from '@/lib/gateway'
-import { formatAxisTick, formatTooltipTimestamp } from '@/lib/time-window'
+import { breakGaps, chartTimeDomain, formatAxisTick, formatTooltipTimestamp } from '@/lib/time-window'
 import { cn } from '@/lib/utils'
-import type { RouterResponse, RouterSeriesBucket, RouterSource } from '@/types/api'
+import type { RouterResponse, RouterSource } from '@/types/api'
 
 const connectionsConfig = {
   conntrackEntries: { label: 'Connections', color: 'var(--brand)' },
@@ -33,11 +33,6 @@ function formatMbpsTick(value: number): string {
   if (!Number.isFinite(value)) return ''
   if (Math.abs(value) >= 10 || Number.isInteger(value)) return `${Math.round(value)} Mbps`
   return `${value.toFixed(1)} Mbps`
-}
-
-function spanOf(series: RouterSeriesBucket[]): number {
-  if (series.length < 2) return 0
-  return (series[series.length - 1].ts - series[0].ts) / 1000
 }
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -76,8 +71,14 @@ function SourceLine({ source }: { source: RouterSource }) {
  * reads from its own kernel every 30 s, not from the LAN capture.
  */
 export function GatewayPanel({ data, isPending, isPlaceholderData = false, error }: GatewayPanelProps) {
-  const series = useMemo(() => data?.series ?? [], [data])
-  const spanSeconds = useMemo(() => spanOf(series), [series])
+  // Samples arrive every 30 s while the gateway agent reports; a longer
+  // silence (collector offline, router restart) is unknown, drawn as a break
+  // rather than a line across it. The axis spans the requested window.
+  const series = useMemo(
+    () => breakGaps(data?.series ?? [], (data?.resolutionSeconds ?? 0) * 1000),
+    [data],
+  )
+  const { domain, spanSeconds } = useMemo(() => chartTimeDomain(series, data), [series, data])
   const latest = data?.latest ?? null
   const source = data?.source ?? null
   const memUsedPct =
@@ -143,7 +144,8 @@ export function GatewayPanel({ data, isPending, isPlaceholderData = false, error
                   <XAxis
                     dataKey="ts"
                     type="number"
-                    domain={['dataMin', 'dataMax']}
+                    domain={domain}
+                    allowDataOverflow
                     scale="time"
                     tickLine={false}
                     axisLine={false}
@@ -184,21 +186,19 @@ export function GatewayPanel({ data, isPending, isPlaceholderData = false, error
                   <Area
                     isAnimationActive={false}
                     dataKey="conntrackEntries"
-                    type="monotone"
+                    type="linear"
                     fill="var(--color-conntrackEntries)"
                     fillOpacity={0.16}
                     stroke="var(--color-conntrackEntries)"
                     strokeWidth={1.5}
-                    connectNulls
                   />
                   <Line
                     isAnimationActive={false}
                     dataKey="conntrackMax"
-                    type="monotone"
+                    type="linear"
                     stroke="var(--color-conntrackMax)"
                     strokeWidth={1}
                     dot={false}
-                    connectNulls
                   />
                 </ComposedChart>
               </ChartContainer>
@@ -224,7 +224,8 @@ export function GatewayPanel({ data, isPending, isPlaceholderData = false, error
                   <XAxis
                     dataKey="ts"
                     type="number"
-                    domain={['dataMin', 'dataMax']}
+                    domain={domain}
+                    allowDataOverflow
                     scale="time"
                     tickLine={false}
                     axisLine={false}
@@ -265,20 +266,18 @@ export function GatewayPanel({ data, isPending, isPlaceholderData = false, error
                   <Line
                     isAnimationActive={false}
                     dataKey="wanRxMbps"
-                    type="monotone"
+                    type="linear"
                     stroke="var(--color-wanRxMbps)"
                     strokeWidth={1.5}
                     dot={false}
-                    connectNulls
                   />
                   <Line
                     isAnimationActive={false}
                     dataKey="wanTxMbps"
-                    type="monotone"
+                    type="linear"
                     stroke="var(--color-wanTxMbps)"
                     strokeWidth={1.5}
                     dot={false}
-                    connectNulls
                   />
                 </LineChart>
               </ChartContainer>

@@ -539,7 +539,12 @@ export function DashboardPage() {
                   </span>
                 </div>
                 {wifiHistoryBuckets.length > 1 ? (
-                  <WifiClientsSparkline data={wifiHistoryBuckets} className="mt-1 h-16 w-full" />
+                  <WifiClientsSparkline
+                    data={wifiHistoryBuckets}
+                    range={wifiHistory.data}
+                    stepSeconds={wifiHistory.data?.resolutionSeconds}
+                    className="mt-1 h-16 w-full"
+                  />
                 ) : (
                   <p className="mt-1 text-[11px] text-muted-foreground">
                     {wifiHistory.isPending ? 'Loading history…' : 'No client history in this window yet.'}

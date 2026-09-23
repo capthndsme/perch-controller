@@ -65,21 +65,35 @@ function totalsDetail(downloadBytes: number, uploadBytes: number): string {
 }
 
 /**
- * Per-AP throughput → chart series + points. Colours follow the same rule
- * as the client-distribution chart (slot by the AP's position in the
- * alphabetically sorted display names) so an AP wears one colour across
- * the WiFi page; the series order itself is the API's busiest-first.
+ * One colour per AP name for a whole page: slot by position in the sorted
+ * union of every name the page knows (the AP throughput list and the
+ * client-distribution list), so an AP wears the same colour in both charts
+ * even when one of them has no data for it in this window.
  */
-export function apThroughputToRateData(response: WifiApThroughputResponse): {
+export function apColorMap(names: Iterable<string>): Map<string, string> {
+  const sorted = [...new Set(names)].sort()
+  return new Map(sorted.map((name, index) => [name, seriesSlotColor(index)]))
+}
+
+/**
+ * Per-AP throughput → chart series + points. Colours from `apColorMap`
+ * (by display name) when given, else the AP's position among the sorted
+ * names of this response; the series order itself is the API's
+ * busiest-first. The API returns every bucket with every AP in it.
+ */
+export function apThroughputToRateData(
+  response: WifiApThroughputResponse,
+  colors?: ReadonlyMap<string, string>,
+): {
   series: RateSeries[]
   points: RatePoint[]
 } {
   const labels = response.aps.map((ap) => ap.friendlyName ?? ap.name)
-  const colourOrder = [...labels].sort()
+  const own = apColorMap(labels)
   const series: RateSeries[] = response.aps.map((ap, index) => ({
     key: `ap_${ap.id}`,
     label: labels[index],
-    color: seriesSlotColor(colourOrder.indexOf(labels[index])),
+    color: colors?.get(labels[index]) ?? own.get(labels[index])!,
     detail: totalsDetail(ap.downloadBytes, ap.uploadBytes),
   }))
 

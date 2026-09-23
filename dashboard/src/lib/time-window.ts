@@ -372,3 +372,29 @@ export function chartTimeDomain(
   const max = points[points.length - 1].ts
   return { domain: [min, max], spanSeconds: (max - min) / 1000 }
 }
+
+/**
+ * For series whose missing bucket means "not reported" rather than zero
+ * (client counts, signal, gateway gauges): insert a row with every value
+ * `null` into each gap longer than `maxGapMs`, so a line breaks there instead
+ * of bridging it (Recharts breaks at an explicit null when `connectNulls` is
+ * off). `stepMs` places the null right after the last reported bucket.
+ */
+export function breakGaps<T extends { ts: number }>(
+  points: readonly T[],
+  stepMs: number,
+  maxGapMs = stepMs * 2,
+): T[] {
+  if (points.length < 2 || !(stepMs > 0)) return [...points]
+  const out: T[] = [points[0]]
+  for (let i = 1; i < points.length; i += 1) {
+    const prev = points[i - 1]
+    if (points[i].ts - prev.ts > maxGapMs) {
+      const gap: Record<string, unknown> = { ts: prev.ts + stepMs }
+      for (const key of Object.keys(prev)) if (key !== 'ts') gap[key] = null
+      out.push(gap as T)
+    }
+    out.push(points[i])
+  }
+  return out
+}

@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import {
   ChartContainer,
@@ -7,14 +8,17 @@ import {
 } from '@/components/ui/chart'
 import { ZoomableAreaChart } from '@/components/charts/zoomable-area-chart'
 import {
+  breakGaps,
+  chartTimeDomain,
   formatAxisTick,
   formatTooltipTimestamp,
+  type ChartRange,
   type TimeWindow,
 } from '@/lib/time-window'
 
 export type SignalPoint = {
   ts: number
-  signalDbm: number
+  signalDbm: number | null
   snrDb?: number | null
 }
 
@@ -31,16 +35,30 @@ export function SignalChart({
   onZoom,
   onResetZoom,
   canResetZoom,
+  range,
+  stepSeconds,
 }: {
   data: SignalPoint[]
   className?: string
   onZoom?: (window: TimeWindow) => void
   onResetZoom?: () => void
   canResetZoom?: boolean
+  /** The window the API read: the x-axis spans it. */
+  range?: ChartRange
+  /**
+   * Bucket width (s). A bucket exists only while an AP listed the client, so
+   * a longer gap is "not connected" and drawn as a break, not bridged.
+   */
+  stepSeconds?: number
 }) {
-  const minTs = data[0]?.ts
-  const maxTs = data[data.length - 1]?.ts
-  const spanSeconds = minTs && maxTs ? (maxTs - minTs) / 1000 : 0
+  const points = useMemo(
+    () => (stepSeconds ? breakGaps(data, stepSeconds * 1000) : data),
+    [data, stepSeconds],
+  )
+  const { domain, spanSeconds } = useMemo(
+    () => chartTimeDomain(points, range),
+    [points, range?.from, range?.to], // eslint-disable-line react-hooks/exhaustive-deps
+  )
 
   return (
     <ZoomableAreaChart
@@ -52,7 +70,7 @@ export function SignalChart({
       {({ onMouseDown, onMouseMove, onMouseUp, onMouseLeave, referenceArea }) => (
         <ChartContainer config={chartConfig} className="h-full w-full">
           <AreaChart
-            data={data}
+            data={points}
             margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
@@ -63,7 +81,7 @@ export function SignalChart({
             <XAxis
               dataKey="ts"
               type="number"
-              domain={minTs && maxTs ? [minTs, maxTs] : ['auto', 'auto']}
+              domain={domain}
               scale="time"
               tickLine={false}
               axisLine={false}
@@ -112,7 +130,7 @@ export function SignalChart({
             <Area
               isAnimationActive={false}
               dataKey="signalDbm"
-              type="monotone"
+              type="linear"
               fill="var(--color-signalDbm)"
               fillOpacity={0.2}
               stroke="var(--color-signalDbm)"

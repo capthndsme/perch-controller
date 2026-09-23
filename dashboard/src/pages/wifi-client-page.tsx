@@ -95,7 +95,7 @@ export function WifiClientPage() {
       setCommandError(wifiCommandErrorMessage(cause, 'Steer failed.'))
     }
   }
-  const signal = useWifiClientSignal(mac, { window, refreshInterval })
+  const signal = useWifiClientSignal(mac, { window, resolution, refreshInterval })
   const deviceOverview = useDeviceOverview(mac, {
     window,
     resolution,
@@ -326,6 +326,8 @@ export function WifiClientPage() {
         ) : signalChartData.length > 0 ? (
           <SignalChart
             data={signalChartData}
+            range={signal.data}
+            stepSeconds={signal.data?.resolutionSeconds}
             className="h-[300px] w-full"
             onZoom={setWindow}
             onResetZoom={() => setWindow(DEFAULT_WIFI_CLIENT_WINDOW)}

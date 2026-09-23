@@ -9,7 +9,14 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart'
 import { ZoomableAreaChart } from '@/components/charts/zoomable-area-chart'
-import { formatAxisTick, formatTooltipTimestamp, type TimeWindow } from '@/lib/time-window'
+import {
+  breakGaps,
+  chartTimeDomain,
+  formatAxisTick,
+  formatTooltipTimestamp,
+  type ChartRange,
+  type TimeWindow,
+} from '@/lib/time-window'
 import type { WifiClientHistoryBucket } from '@/types/api'
 import { formatWifiBand } from '@/lib/wifi'
 
@@ -22,6 +29,15 @@ type ClientDistributionChartProps = {
   onResetZoom?: () => void
   canResetZoom?: boolean
   className?: string
+  /** The window the API read: the x-axis spans it. */
+  range?: ChartRange
+  /** Bucket width (s): a gap longer than two buckets is "no report", drawn as a break. */
+  stepSeconds?: number
+  /**
+   * Colour of an AP by name, shared with the AP throughput chart so an AP
+   * wears one colour across the page. Defaults to its position in `allAps`.
+   */
+  apColor?: (name: string) => string
 }
 
 function sanitizeKey(key: string): string {
@@ -37,6 +53,9 @@ export function ClientDistributionChart({
   onResetZoom,
   canResetZoom,
   className,
+  range,
+  stepSeconds,
+  apColor,
 }: ClientDistributionChartProps) {
   const sanitizedSeries = useMemo(() => {
     if (groupBy === 'band') {
@@ -55,8 +74,8 @@ export function ClientDistributionChart({
   }, [groupBy, allBands, allAps])
 
   const flattenedData = useMemo(() => {
-    return data.map((bucket) => {
-      const point: Record<string, number> = {
+    const points = data.map((bucket) => {
+      const point: { ts: number } & Record<string, number> = {
         ts: bucket.ts,
         total: bucket.total,
       }
@@ -69,7 +88,10 @@ export function ClientDistributionChart({
       }
       return point
     })
-  }, [data, groupBy, sanitizedSeries])
+    // Buckets exist only where an AP reported: a longer silence is unknown,
+    // not zero clients, so the stack breaks there instead of bridging it.
+    return stepSeconds ? breakGaps(points, stepSeconds * 1000) : points
+  }, [data, groupBy, sanitizedSeries, stepSeconds])
 
   const chartConfig = useMemo(() => {
     const config: ChartConfig = {}
@@ -102,21 +124,17 @@ export function ClientDistributionChart({
       sanitizedSeries.forEach((series, index) => {
         config[series.key] = {
           label: series.label,
-          color: apColors[index % apColors.length],
+          color: apColor ? apColor(series.original) : apColors[index % apColors.length],
         }
       })
     }
     return config
-  }, [groupBy, sanitizedSeries])
+  }, [groupBy, sanitizedSeries, apColor])
 
-  const { domain, spanSeconds } = useMemo(() => {
-    if (flattenedData.length === 0) {
-      return { domain: ['auto', 'auto'] as [number | string, number | string], spanSeconds: 0 }
-    }
-    const min = flattenedData[0].ts
-    const max = flattenedData[flattenedData.length - 1].ts
-    return { domain: [min, max] as [number, number], spanSeconds: (max - min) / 1000 }
-  }, [flattenedData])
+  const { domain, spanSeconds } = useMemo(
+    () => chartTimeDomain(flattenedData, range),
+    [flattenedData, range?.from, range?.to], // eslint-disable-line react-hooks/exhaustive-deps
+  )
 
   if (flattenedData.length === 0 || sanitizedSeries.length === 0) {
     return (
@@ -208,7 +226,7 @@ export function ClientDistributionChart({
                 key={series.key}
                 isAnimationActive={false}
                 dataKey={series.key}
-                type="monotone"
+                type="linear"
                 stackId="clients"
                 fill={`var(--color-${series.key})`}
                 fillOpacity={0.4}
