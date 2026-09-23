@@ -8,6 +8,7 @@ import {
   MAX_REPORT_CLASSES,
   parseQosReport,
   qosLive,
+  routerPaused,
   wanQueueLive,
   type QosReport,
 } from '#services/qos_live'
@@ -164,6 +165,21 @@ test.group('qos_live | parseQosReport', () => {
       klass(`1:${(0x200 + i).toString(16)}`, 'down', i)
     )
     assert.lengthOf(parseQosReport({ classes })!.classes, MAX_REPORT_CLASSES)
+  })
+})
+
+test.group('qos_live | routerPaused', () => {
+  test("perch-collector's config / local, and the generic forms", ({ assert }) => {
+    const paused = (pausedBy: string | null) =>
+      parseQosReport({ epoch: 'e', state: 'paused', pausedBy })!
+    assert.isFalse(routerPaused(null, false))
+    assert.isTrue(routerPaused(paused('local'), true))
+    assert.isTrue(routerPaused(paused('router'), false))
+    assert.isTrue(routerPaused(paused('config'), false), 'globals.enabled 0 edited on the router')
+    assert.isFalse(routerPaused(paused('config'), true), "the controller's own pause")
+    assert.isFalse(routerPaused(paused('controller'), false))
+    assert.isTrue(routerPaused(paused(null), false))
+    assert.isFalse(routerPaused(parseQosReport({ epoch: 'e', state: 'active' }), false))
   })
 })
 

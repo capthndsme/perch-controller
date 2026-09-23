@@ -4,7 +4,7 @@ import QosGatewayState from '#models/qos_gateway_state'
 import type QosPolicy from '#models/qos_policy'
 import collectorHub from '#services/collector_agent_hub'
 import { resolveGateway, type GatewayRef } from '#services/qos_gateway'
-import { qosLive, classRateKey, type QosLiveEntry } from '#services/qos_live'
+import { qosLive, classRateKey, routerPaused, type QosLiveEntry } from '#services/qos_live'
 import { bucketSectionName, DEVICE_MINOR_MIN, rateFromColumns } from '#services/qos_plan'
 import { cachedShapingContext, type ShapingContext } from '#services/qos_plan_cache'
 import { listPolicies, wireRate, type QosRate } from '#services/qos_reads'
@@ -111,8 +111,7 @@ export function buildGatewayShaping(input: GatewayShapingInput): Map<string, Dev
   const reported = new Map((report?.devices ?? []).map((d) => [d.mac, d]))
   const rejected = new Map(delivery.rejected.map((r) => [r.mac, r.error]))
   const at = live?.receivedAt ? new Date(live.receivedAt).toISOString() : null
-  const paused =
-    input.controllerPaused || report?.state === 'paused' || report?.pausedBy === 'router'
+  const paused = input.controllerPaused || report?.state === 'paused' || routerPaused(report, false)
   const behind =
     delivery.state !== 'in_sync' ||
     (report !== null &&
@@ -341,9 +340,9 @@ export async function qosOverview(ref: GatewayRef) {
 
   const paused = state?.pausedAt
     ? { by: 'controller' as const, at: iso(state.pausedAt)! }
-    : report && (report.pausedBy === 'router' || report.state === 'paused')
+    : routerPaused(report, false)
       ? {
-          by: report.pausedBy === 'controller' ? ('controller' as const) : ('router' as const),
+          by: 'router' as const,
           at: live!.receivedAt ? new Date(live!.receivedAt).toISOString() : null,
         }
       : null

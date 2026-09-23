@@ -86,7 +86,12 @@ export interface QosScheduleReport {
 export interface QosReport {
   epoch: string
   state: 'active' | 'paused' | 'error'
-  pausedBy: 'controller' | 'router' | null
+  /**
+   * Who paused, as the agent says it: perch-collector sends `config`
+   * (`globals.enabled '0'`) or `local` (`perch-collector qos stop`); `router`
+   * and `controller` are accepted too. See `routerPaused`.
+   */
+  pausedBy: string | null
   configRevision: number | null
   devicesRevision: number | null
   wan: Array<{
@@ -181,7 +186,7 @@ export function parseQosReport(raw: unknown): QosReport | null {
       ? String(raw.epoch).slice(0, 64)
       : ''
   const state = raw.state === 'paused' || raw.state === 'error' ? raw.state : 'active'
-  const pausedBy = raw.pausedBy === 'router' || raw.pausedBy === 'controller' ? raw.pausedBy : null
+  const pausedBy = text(raw.pausedBy, 16)
 
   const wan: QosReport['wan'] = []
   for (const item of list(raw.wan, MAX_REPORT_WAN)) {
@@ -288,6 +293,28 @@ export function parseQosReport(raw: unknown): QosReport | null {
     quotas,
     schedules,
     errors,
+  }
+}
+
+/**
+ * Whether the router itself paused shaping (owner decision 15's spirit: a
+ * local pause is never reverted without the admin's `overrideRouter`):
+ * `local` (`qos stop`) and `router` always; `config` (`globals.enabled '0'`)
+ * unless the controller's own pause put it there; a paused state without a
+ * reason too.
+ */
+export function routerPaused(report: QosReport | null, controllerPaused: boolean): boolean {
+  if (!report) return false
+  switch (report.pausedBy) {
+    case 'local':
+    case 'router':
+      return true
+    case 'config':
+      return !controllerPaused
+    case 'controller':
+      return false
+    default:
+      return report.state === 'paused'
   }
 }
 
@@ -615,6 +642,9 @@ export const QOS_EVENT_TYPES = [
   'local_pause',
   'local_resume',
   'schedule_clock_unsynced',
+  'sqm_paused',
+  'sqm_resumed',
+  'cap_hit',
 ] as const
 
 /**

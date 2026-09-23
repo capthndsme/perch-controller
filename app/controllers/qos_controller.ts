@@ -41,7 +41,8 @@ import {
   updatePolicy,
   updateSchedule,
 } from '#services/qos_writes'
-import { qosLive } from '#services/qos_live'
+import QosGatewayState from '#models/qos_gateway_state'
+import { qosLive, routerPaused } from '#services/qos_live'
 import type { HttpContext } from '@adonisjs/core/http'
 
 /**
@@ -192,13 +193,13 @@ export default class QosController {
     const { overrideRouter, ...ref } = await request.validateUsing(qosPauseValidator)
     try {
       const { gateway } = await resolveGateway(ref)
-      const report = qosLive(gateway.collectorId)?.report
-      const routerPaused =
-        report && (report.pausedBy === 'router' || (report.state === 'paused' && !report.pausedBy))
+      const report = qosLive(gateway.collectorId)?.report ?? null
+      const state = await QosGatewayState.findBy('gatewayId', gateway.id)
+      const byRouter = routerPaused(report, Boolean(state?.pausedAt))
       await setQosPaused(ref, paused, {
         userId: auth.user?.id ?? null,
         overrideRouter,
-        routerPausedAt: routerPaused ? new Date().toISOString() : null,
+        routerPausedAt: byRouter ? new Date().toISOString() : null,
       })
       const { wan, ...overview } = await qosOverview(ref)
       return serialize({ ...overview, wan: QosWanQueueTransformer.transform(wan) })

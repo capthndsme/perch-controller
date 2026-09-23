@@ -529,7 +529,7 @@ never "no shaping". `recordQosReport()` runs in `ingestCollectorSnapshot` after 
 non-fatal (only accepted pushes; a push dropped as too early is not recorded).
 
 ```ts
-{ epoch: string | number, state: 'active' | 'paused' | 'error', pausedBy: 'controller' | 'router' | null,
+{ epoch: string | number, state: 'active' | 'paused' | 'error', pausedBy: 'config' | 'local' | 'router' | 'controller' | null,
   configRevision: number | string /* numeric */ | null, devicesRevision: number | string | null,
   wan: [{ device, section?, egress: QdiscCounters | null, ingress: QdiscCounters | null }],        // ≤ 16
   classes: [{ id: '1:2a0', key: 'd:<mac>' | 'b:<policyId>' | 'r:<policyId>' | 'n:<network>', dir: 'down' | 'up',
@@ -544,6 +544,12 @@ QdiscCounters = { kind, bandwidthKbit?, bytes, packets, drops, overlimits, backl
 Parsing is tolerant: a malformed item is dropped on its own, unknown fields are ignored, counters must
 be non-negative numbers, MACs are normalised. Counters are cumulative. `devices[].state` is the agent's
 word (`shaped`, `unshaped`, `blocked`, `throttled`), passed through as `DeviceShaping.routerState`.
+
+`pausedBy` (`routerPaused()`): perch-collector sends `config` (`globals.enabled '0'`) or `local`
+(`perch-collector qos stop`). `local` and `router` are a router-side pause; `config` is one unless the
+controller's own pause (POST `/qos/pause`) put it there; `paused` without a reason counts as the
+router's. A router-side pause shows as `paused.by 'router'` and makes `/qos/resume` need
+`overrideRouter`.
 
 ### 7.2 Rates and bounds
 
@@ -560,7 +566,7 @@ until the next push.
   when the router reports it not exhausted under a raised limit). Only device assignments with a quota.
 - **Events:** the agent's `qos.event` notification `{type, at, mac?, detail?}` (types
   `quota_exhausted`, `pool_exhausted`, `apply_failed`, `local_pause`, `local_resume`,
-  `schedule_clock_unsynced`; others are kept too) goes into a ring of the last 50 per collector
+  `schedule_clock_unsynced`, `sqm_paused`, `sqm_resumed`, `cap_hit`; others are kept too) goes into a ring of the last 50 per collector
   (`QosOverview.events`, newest first) and the log. `quota_exhausted` marks the assignment at once (with
   `detail.usedBytes` when given).
 - **`onQuotaExhausted`** listeners (the portal) hear each exhaustion once, from whichever comes first.
