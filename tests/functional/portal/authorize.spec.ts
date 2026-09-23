@@ -25,7 +25,7 @@ import { DateTime } from 'luxon'
 
 const AUTH = '/api/v1/portal/authorizations'
 
-test.group('portal | authorize API (Piso WiFi hook)', (group) => {
+test.group('portal | authorize API (Paid Hotspot API)', (group) => {
   group.each.setup(resetPortalTests)
 
   test('an API client authorizes a MAC; the router is told; the call is logged', async ({

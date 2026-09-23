@@ -10,7 +10,7 @@ import { BaseSchema } from '@adonisjs/lucid/schema'
  * - `shared_*`: the bucket everything assigned to the policy shares (an HTB
  *   inner class on the router, class minor `class_minor`).
  * - `each_*`: the cap every member gets on its own (a device leaf).
- * Both together = caps inside a ceiling (the Piso Wi-Fi case).
+ * Both together = caps inside a ceiling (the paid-hotspot case).
  *
  * Owner decisions 2026-09-23:
  * - 13: caps apply to internet traffic only; `include_lan` is the per-policy

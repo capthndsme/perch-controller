@@ -232,7 +232,7 @@ test.group('qos_plan | devices, groups and networks', () => {
     )
   })
 
-  test('shared + each on a network: the Piso Wi-Fi guest default', ({ assert }) => {
+  test('shared + each on a network: the paid-hotspot guest default', ({ assert }) => {
     const p = plan({
       policies: [policy(2, { shared: rate(50000, 10000), each: rate(5000, 1000) })],
       assignments: [network(1, 'guest', { policyId: 2 })],

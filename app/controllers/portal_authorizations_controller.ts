@@ -9,8 +9,8 @@ import type { HttpContext } from '@adonisjs/core/http'
 
 /**
  * The per-MAC authorize API (docs/gateway/portal.md section 11.6), behind
- * `portalApiAuth`: API clients with their own scoped tokens (a Piso
- * WiFi-style coin box), or an admin's token. Answers are never cached.
+ * `portalApiAuth`: API clients with their own scoped tokens (a paid-hotspot
+ * integration such as a coin-operated vending box), or an admin's token. Answers are never cached.
  */
 export default class PortalAuthorizationsController {
   /** POST /api/v1/portal/authorizations */

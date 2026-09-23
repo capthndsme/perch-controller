@@ -11,7 +11,7 @@ import {
  * controller uses for previews. Pure; the router (WP4) implements the same
  * renderer for the real pages.
  *
- * HTML is not sanitised (the admin is trusted and a Piso WiFi-style page
+ * HTML is not sanitised (the admin is trusted and a Paid Hotspot API page
  * needs scripts). It is isolated instead: on the router it runs on the
  * portal's own origin under a strict CSP, and on the controller it is never
  * served as a document (previews are JSON for a sandboxed iframe).

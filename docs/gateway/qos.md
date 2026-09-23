@@ -133,7 +133,7 @@ exists; `allocateClassMinor()`), a bucket's rest leaf `0x100|b`, device leaves `
 ### 3.2 Policies and precedence
 
 A policy has `shared` (a bucket everything assigned to it shares) and/or `each` (a cap per member).
-Both = caps inside a ceiling (Piso Wi-Fi: guest 50 Mbit/s in total, 5 Mbit/s per voucher). Rates are
+Both = caps inside a ceiling (the paid-hotspot case: guest 50 Mbit/s in total, 5 Mbit/s per voucher). Rates are
 kbit/s; in the DB a NULL pair = no such part, 0 = unlimited that way; on the wire `null` = unlimited.
 
 Assignments target a device (MAC), a group, or a network (UCI interface, the default the router
