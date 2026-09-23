@@ -204,7 +204,9 @@ test.group('portal templates | digest and rendering', () => {
       'logout_form',
       'message',
     ])
-    // Builtin pages run without inline script.
-    for (const f of BUILTIN_TEMPLATE_FILES) assert.notInclude(f.data.toString(), '<script')
+    // Builtin pages run without inline script (checkout.js is a file).
+    for (const f of BUILTIN_TEMPLATE_FILES) {
+      assert.notMatch(f.data.toString(), /<script(?![^>]*\ssrc=)/)
+    }
   })
 })

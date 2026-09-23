@@ -2,6 +2,7 @@
 
 Status: WP1 (controller domain) built on branch `gw/portal`, WP2 (REST API,
 §11–12) on `gw/portal-rest`, WP3 (collector socket, §13) on `gw/portal-sock`,
+the Paid Hotspot follow-up and click-through (§14) on `gw/hotspot`,
 September 2026.
 This file is the contract for the REST layer (WP2), the collector socket
 (WP3) and the router side in perch-collector (WP4). It promotes sections 3–5
@@ -340,6 +341,10 @@ JSON is stored as text and parsed by the models (`schema_rules.ts`).
 | `portal_authorizations` | (076) authorize API ledger: idempotency per principal + `external_ref`, audit (§11.6)                                                                                                                                                                                                                                                                    |
 | `portal_outbox`         | (076) pushes waiting for the router, one per (gateway, `dedupe_key`) (§11.2)                                                                                                                                                                                                                                                                             |
 | `portal_events`         | audit: `gateway_id` CASCADE, `portal_id` CASCADE null, `grant_id` SET NULL, `mac`, `type`, `detail` JSON                                                                                                                                                                                                                                                 |
+| `hotspot_price_tables`, `hotspot_price_revisions` | (100) rates, `entries` JSON, `revision`; every revision kept (§14.2)                                                                                                                                                                                                                                                            |
+| `hotspot_terminals`     | (100) `portal_id` → portals CASCADE; `token_hash` unique, `token_encrypted` (APP_KEY), `token_prefix`, `mac` pin, `enabled`, `price_table_id` SET NULL, `last_seen_at`, `status` JSON (§14.3)                                                                                                                                             |
+| `hotspot_checkouts`     | (100) the payment ledger: `gateway_id` CASCADE, `portal_id`/`terminal_id`/`voucher_id` SET NULL, `kind` payment\|unclaimed, `state`, `event_key` unique per gateway, amounts, locked price snapshot, coins JSON, `router_sig`, void/credit fields (§14.5)                                                                                    |
+| `portals.payment`, `portals.click_through`, `voucher_batches.kind` | (101) method settings JSON; `batch` or `payment` (§14)                                                                                                                                                                                                                                                            |
 
 - **Merge.** Nothing here references `collectors`: the portal follows its
   gateway through `collectors:merge`, and no registry entry is needed.
@@ -1109,8 +1114,10 @@ gif webp ico woff2` must start with their magic bytes.
 variables}`. Known: `portal_name gateway_name client_mac client_ip
 origin_url message message_code assets remaining_time remaining_data
 expires_at privacy_notice methods status_json voucher_form login_form
-logout_form`. All are HTML-escaped except `status_json` (JSON with `< > &`
-  as `< > &`) and the three snippets (raw; a method the portal
+logout_form checkout_form clickthrough_form receipt reference_code` (the last
+four: §14.8). All are HTML-escaped except `status_json` (JSON with `< > &`
+  as `< > &`) and the snippets (`voucher_form login_form logout_form
+  checkout_form clickthrough_form receipt`: raw; a method the portal
   does not offer renders empty). `origin_url` is http(s) only.
 - **Set digest** (what `portal.configure`/`portal.template` compare):
   `sha256( for each file sorted by name: name "\n" sha256hex(content) "\n" )`;
@@ -1134,9 +1141,10 @@ CSS `url()` references inside a stylesheet are not rewritten in previews
 ### 12.4 The builtin template (for WP4)
 
 `app/services/portal/builtin_template.ts` holds the builtin pages
-(`login.html`, `status.html`, `style.css`, no inline script), the three
-snippets (`portalSnippets(methods)`: forms posting to `/portal/voucher`,
-`/portal/login`, `/portal/logout`) and the guest message texts
+(`login.html`, `status.html`, `style.css`, `checkout.js` since §14; no
+inline script), the snippets (`portalSnippets(methods, hotspot)`: forms
+posting to `/portal/voucher`, `/portal/login`, `/portal/logout`, and the
+§14.8 checkout, receipt and click-through snippets) and the guest message texts
 (`PORTAL_MESSAGES`, keyed by `message_code`). The collector must embed the
 same files, snippets and texts; the seeded row keeps the empty-set digest.
 
@@ -1400,3 +1408,368 @@ true`) add to it. `append` is signed: the envelope's `reason` is `'append'`
   `FirstUsedAt *int64` to `WireOfflineVoucher` and its canonical form; in
   `Vouchers`, build the envelope with `Reason: "append"` when `p.Append`, and
   merge instead of replacing when `p.Append`.
+
+## 14. Paid Hotspot and click-through (decisions 28 and 32)
+
+Status: built on branches `gw/hotspot` (controller) and `gw/hotspot-agent`
+(perch-collector), September 2026. Code: `app/services/portal/hotspot.ts`
+(pure: pricing, records, texts, settings), `portal_hotspot.ts` (admin,
+configure payload, terminal reports), `portal_hotspot_ingest.ts` (the
+journal), `app/transformers/hotspot.ts`, `app/controllers/portal_hotspot_controller.ts`,
+migrations `1779000000100`–`101`; on the router `internal/portal/hotspot*.go`
+(go-collector `CONFIG.md`, "Paid Hotspot checkouts and click-through").
+
+The per-MAC authorize API of §11.6 is the **Paid Hotspot API**. This section
+adds what decision 28 lists for it and decision 32's click-through method:
+
+| Piece                         | What                                                                                                                                     |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Coin terminals                | Resources with their own token, bound to one portal, several per portal                                                                  |
+| Checkout sessions             | A guest opens a checkout on terminal X; X is locked for it; 60 s idle timeout reset by each coin; live running total on the portal page |
+| Price tables                  | Operator rates: amount → minutes, data, speed tier; the price is locked when the checkout starts                                        |
+| Reference codes               | Shown after payment ("screenshot or save this code"); a voucher minted from the payment, so reusing it moves the rest (decision 23)     |
+| Router-local checkouts        | The router runs every checkout, so paid access works through a controller outage; the controller reconciles the journal                |
+| Click-through                 | Accept the terms → a free grant with a time and/or speed cap and a repeat limit per MAC (e.g. 30 min per 24 h)                          |
+| No reference coin client      | The terminal protocol is documented with a shell reference (§14.10); no firmware ships                                                  |
+
+### 14.1 Model
+
+```
+ coin box ──signed HTTP──▶ router :2080 ◀──── guest page (polls /portal/checkout)
+                            │ checkout state machine, price lock, idle timer
+                            │ finalise: grant (group c:<ref>) + local voucher + journal
+                            ▼
+                 checkout_finalized (signed) ──portal.event/portal.sync──▶ controller
+                            │                  verify sig, derive the code, mint a
+                            │                  `payment` voucher, ledger row, then an
+                            │                  ordinary offline_redeemed of that voucher
+                            ◀── portal.authorize {full}: grant id, group v:<voucherId>
+```
+
+- **The router is the checkout authority**, online or not. Terminal and guest
+  both talk only to the router (the guest network never reaches the
+  controller, §1), and the live total needs sub-second answers. There is one
+  code path: an outage only delays the reconciliation.
+- **Finalising is an offline redemption.** The router authorises the paying
+  MAC under a fresh `localRef` in a local group `c:<checkoutRef>` (placement as
+  §4.6: a time grant over a running data bucket swaps, anything else over a
+  live entitlement queues). The controller turns the event into an
+  `offline_redeemed` of the payment voucher it minted, so binding, clock,
+  placement and totals follow §4.7 unchanged, and the next full set renames
+  the router's group to `v:<voucherId>`.
+- **HMAC-signed results.** The record (§14.4) is signed with the gateway's
+  `signKey`; the controller refuses records that do not verify at the
+  event's `keyEpoch` (`checkout_rejected`), and the router then loses the
+  grant with the next full set.
+
+### 14.2 Price tables
+
+`{name, currency (ISO 4217, display), decimals (0–3, display), durationMode,
+entries: [{amount, minutes, quotaBytes?, downKbps?, upKbps?}]}`, ≤ 32 rates,
+distinct amounts, either every rate has a quota or none (`mixed_quota`).
+Amounts are integers in the table's minor units (`5` with `decimals: 0` is
+PHP 5).
+
+**Pricing** (`priceEntitlement`, both sides, pinned by vectors): greedy, the
+coin-box convention. Take the largest rate as often as it fits, then the next
+smaller, and so on. Minutes and data add up; the **speed tier** is the most
+expensive rate taken; what is left below the smallest rate is `unusedAmount`.
+Time is capped at one year, data at 10 TB. With rates {1: 10 min},
+{5: 1 h, 5/2 Mbit/s}, {20: 5 h, 10/5 Mbit/s}: PHP 7 → 1 h 20 min at 5 Mbit/s;
+PHP 47 → 11 h 20 min at 10 Mbit/s.
+
+**Revisions.** Every change bumps `revision` and keeps the revision in
+`hotspot_price_revisions`. The router snapshots the table when a checkout
+opens (price locked at checkout start); the record names
+`priceTableId`/`priceRevision` and the ledger row copies that revision's
+snapshot. A table change reaches the routers at once (`configure`).
+
+Each portal with the payment method has a default table
+(`portals.payment.priceTableId`); a terminal may override it.
+
+### 14.3 Terminals
+
+- **Token** `perch_pt_` + 32 base64url characters (192 bits), shown once
+  (create, rotate). Stored as SHA-256 (lookup, `prefix` for display) and
+  APP_KEY-encrypted: the router needs the token itself, since it is the HMAC
+  key the terminal signs with (§14.10). After an APP_KEY change a terminal
+  reads `tokenRecoverable: false` and is left out of the configure: rotate it.
+- **Binding**: one portal; optional **MAC pin** (requests from another MAC are
+  403 `mac_mismatch`); `enabled`; optional `priceTableId`.
+- **Delivery**: `portal.configure` carries, per portal with the payment
+  method, `payment: {idleTimeoutSeconds, priceTableId, terminals: [{terminalId,
+  name, token, mac, enabled, priceTableId}], priceTables: [PriceTable]}`
+  (every table its terminals use). Every terminal or table change pushes
+  `configure` to the gateways it touches.
+- **Status**: the router's `portal.terminals` notification (every 30 s, and on
+  changes) sets `last_seen_at` and `status {online, acceptor, firmware, error,
+  checkout, at}`; the view reads online only while the report is ≤ 90 s old.
+
+### 14.4 The checkout record, its signature and the reference code
+
+Canonical lines (§6.3 encoding): tag `perch-portal-checkout-v1`, gatewayId,
+epoch, then checkoutRef, portalId, terminalId, mac, amount, currency,
+priceTableId, priceRevision, durationMode, durationSeconds, quotaBytes,
+downKbps, upKbps, openedAt, finalizedAt, reason (`done` guest, `terminal` the
+box's button, `timeout` idle with credit), localRef, unusedAmount, coinCount.
+
+```
+checkoutKey   = HMAC-SHA256(gatewayKey, "perch-portal-checkout-v1")
+sig           = base64url_nopad(HMAC-SHA256(signKey, canonical))
+referenceCode = 10 Crockford symbols: symbol i = alphabet[HMAC-SHA256(checkoutKey, canonical)[i] & 31]
+```
+
+The code is a 50-bit MAC of the record, so **it never crosses the network**:
+the router shows it, the controller recomputes it from the verified record.
+Vectors (`tests/unit/services/portal/hotspot.spec.ts`, gateway 7, epoch 1,
+the §6.3 APP_KEY): record `{ck-0123456789abcdef, portal 3, terminal 4,
+02:00:00:aa:bb:cc, 7, PHP, table 2 rev 3, wall_clock, 4800, null, 5000, 2000,
+1790000000000, 1790000042000, done, k5-a1b2c3d4, 0, 3}` → sig
+`addRWmtev4ux-XcOWgh524P90PI5NMkRip7TT-If_Ow`, code `GE6RH9AQ1S`
+(`GE6RH-9AQ1S`).
+
+### 14.5 Ledger and reconciliation
+
+`materializeHotspotEvents` runs on every `portal.sync` report before
+`loadServerPortalState`/`reconcile` (§7), inside the gateway's queue:
+
+| Router event                                      | Controller                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `checkout_finalized`                              | Checks the record, the portal (the gateway's), `keyEpoch ≤ key_epoch`, the signature; derives the code; in one transaction mints a `payment` batch of one voucher (bound to the portal, one device, first-use clock, the bought limits) and the ledger row (`kind` payment, `state` paid, coins, locked price snapshot). Continues as `offline_redeemed {voucherId, localRef, placement, startsAt, expiresAt}` |
+| `offline_redeemed` with `voucherId: 0`, `checkoutRef` | The router redeemed a reference code it minted before the controller knew it: the voucher id comes from the ledger (`unknown_checkout` otherwise)                                                                                                                                                                  |
+| `checkout_unclaimed`                              | Ledger row `kind` unclaimed (`late` coin after the checkout closed, `full`, `below_minimum` at timeout)                                                                                                                                                                                                                |
+| `clickthrough_granted`                            | A `g:` grant (`source` clickthrough) with the router's localRef, deadline and limits                                                                                                                                                                                                                                  |
+
+- **Idempotent.** `hotspot_checkouts.event_key` is unique per gateway
+  (`checkout:<ref>`, `coin:<terminal>:<eventId>`, `below:<ref>`), click-through
+  grants are keyed by `(portal_id, local_ref)`; a replayed report (a lost ack,
+  a journal reset) transforms the same way and writes nothing twice.
+- **Payment batches** (`voucher_batches.kind = 'payment'`) are not listed in
+  `/portal/voucher-batches`; the payment voucher is an ordinary voucher
+  everywhere else (grants, lookup by code, offline list).
+- **Void** (refund, mistake): the payment's voucher is revoked, its devices go
+  offline (`revoked`), the code stops working; `refundAmount` and `note`
+  record what the operator did with the money.
+- **Unclaimed** coins: an admin **credits** them (a voucher for what they buy
+  under the terminal's current table, or `minutes` given; the code is in
+  that answer only) or **dismisses** them.
+- **Retention**: after `sessionRetentionDays` a ledger row loses its guest MAC,
+  address and host name (RA 10173); amounts stay.
+
+### 14.6 Reference codes and MAC rotation
+
+- The payment voucher allows **one device**. Entering the code on another
+  device (a randomised MAC, a new phone) moves the rest of the entitlement
+  there and ends the old device's grant `moved` (decision 23).
+- Voucher entry is on while the portal offers `voucher` **or** `payment`.
+- **Before the controller knows the payment** (just paid, or controller down)
+  the router redeems the code from its **local voucher** (same verifier,
+  §6.2) even with the controller online, and journals `offline_redeemed`
+  with `voucherId: 0` + `checkoutRef`. A local voucher is dropped when a full
+  set acknowledges the checkout's journal position (from then on the
+  controller's offline list carries it, and a voided one must not stay
+  redeemable) or when the offline list holds its verifier.
+- The receipt shows on the paying device's portal and status pages for 24 h;
+  a terminal may print it (`referenceCode` for 120 s after finalising).
+
+### 14.7 Click-through (decision 32)
+
+`portals.click_through`: `{minutes 1–1440 (30), quotaBytes?, downKbps?,
+upKbps?, windowHours 1–720 (24), perWindow 1–24 (1), terms ≤ 4000}`. The
+router grants `minutes` of free access (a local group `t:<localRef>`,
+wall clock from the grant) to a MAC with no live grant on the portal that
+accepted the terms, at most `perWindow` times in any `windowHours`
+(`clickthrough_used` + Retry-After otherwise). It works offline; the router
+keeps the uses (30 days). The controller records the grant as a `g:` grant
+(`source: 'clickthrough'`), and the full set renames the group.
+
+### 14.8 Guest pages
+
+Router routes (the portal's own origin, same-origin POSTs, forms answer 303
+`/?m=<code>`): `GET /portal/checkout` (the guest's hotspot state, JSON),
+`POST /portal/checkout` `terminalId`, `/portal/checkout/done`,
+`/portal/checkout/cancel` (only while nothing is paid), `/portal/clickthrough`
+`accept=1`. Shapes: go-collector `CONFIG.md`.
+
+- **Busy terminals**: a terminal holds one open checkout; a second guest gets
+  `terminal_busy` (the picker marks it busy/offline) and picks another. A
+  guest has one open checkout; an empty one moves when they pick another
+  terminal, a paid one refuses (`checkout_open`).
+- **Walk-away**: 60 s (setting `idleTimeoutSeconds`, 15–600) without a coin
+  closes the checkout; with credit it is finalised (`timeout`), the device is
+  online when the guest comes back and the receipt waits on the page.
+- **Template variables** (both sides, §12.2): `checkout_form` (the terminal
+  picker with the rates, or the open checkout's live panel), `receipt`,
+  `clickthrough_form` (snippets) and `reference_code` (plain). The builtin
+  pages (byte-identical on both sides, `builtin_template.ts`) now also ship
+  `checkout.js`, which polls `/portal/checkout` every second for the live
+  total; without script the panel has a Refresh link. New message codes:
+  `checkout_started checkout_closed checkout_cancelled paid terminal_busy
+  terminal_offline terminal_unknown checkout_open checkout_paid below_minimum
+  no_checkout clickthrough_used terms_required not_ready`.
+
+### 14.9 REST API (for the dashboard)
+
+Auth as §11.1 (R any signed-in user, A admin). `Cache-Control: no-store` on
+answers with a token or a code.
+
+| Method, path                                    | Auth | Request                                                                                                                                  | Response                                                                                  | Errors                                                                                                                                      |
+| ----------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET `/portal/price-tables`                      | R    | –                                                                                                                                        | `PriceTable[]` by name                                                                    | –                                                                                                                                           |
+| GET `/portal/price-tables/:id`                  | R    | –                                                                                                                                        | `{priceTable, revisions: PriceRevision[]}` (newest first, ≤ 100)                          | 404 `price_table_not_found`                                                                                                                 |
+| POST `/portal/price-tables/:id/quote`           | R    | `{amount 0–1e7}`                                                                                                                         | `{amount, amountText, durationMode, durationSeconds, quotaBytes, downKbps, upKbps, unusedAmount, previewText, text, priceTableId, revision}` | 404                                                                                                                                         |
+| POST `/portal/price-tables`                     | A    | `{name 1–80, currency /^[A-Z]{3}$/ (upper-cased), decimals? 0–3 =0, durationMode? =wall_clock, entries 1–32: [{amount 1–1e6, minutes 1–525600, quotaBytes? 1e6–1e13, downKbps?/upKbps? 64–1e7}]}` | 201 `PriceTable`                                                                          | 422 `no_entries`, `too_many_entries`, `duplicate_amount`, `mixed_quota`, `invalid_entry`, `invalid_currency`                                |
+| PATCH `/portal/price-tables/:id`                | A    | same fields, optional                                                                                                                    | `{priceTable, delivery}` (a change bumps `revision`, pushes configure)                    | 404; 422 as above                                                                                                                           |
+| DELETE `/portal/price-tables/:id`               | A    | –                                                                                                                                        | 204                                                                                       | 404; 409 `price_table_in_use` `{portalIds, terminalIds}`                                                                                    |
+| GET `/portal/terminals`                         | R    | `?portalId`                                                                                                                              | `Terminal[]`                                                                              | –                                                                                                                                           |
+| GET `/portal/terminals/:id`                     | R    | –                                                                                                                                        | `Terminal`                                                                                | 404 `terminal_not_found`                                                                                                                    |
+| POST `/portal/terminals`                        | A    | `{portalId, name 1–80, mac?, enabled? =true, priceTableId?}`                                                                             | 201 `{terminal, token, delivery}`                                                         | 404 `portal_not_found`, `price_table_not_found`; 422 `invalid_mac`                                                                          |
+| PATCH `/portal/terminals/:id`                   | A    | same fields, optional (`portalId` moves it)                                                                                              | `{terminal, delivery}`                                                                    | 404; 422                                                                                                                                    |
+| POST `/portal/terminals/:id/rotate`             | A    | –                                                                                                                                        | `{terminal, token, delivery}` (the old token dies with the router's next configure)       | 404                                                                                                                                         |
+| DELETE `/portal/terminals/:id`                  | A    | –                                                                                                                                        | 204 (ledger rows keep its name)                                                           | 404                                                                                                                                         |
+| GET `/portal/checkouts`                         | R    | `?portalId&gatewayId&terminalId&kind=payment\|unclaimed&state=paid\|voided\|unclaimed\|credited\|dismissed&mac&from&to&limit&offset`       | `{items: Checkout[], total, totals: [{currency, amount, count}]}` (paid rows) newest first | 422 `invalid_mac`, `invalid_date`, `invalid_range`                                                                                          |
+| GET `/portal/checkouts/:id`                     | R    | –                                                                                                                                        | `Checkout`                                                                                | 404 `checkout_not_found`                                                                                                                    |
+| POST `/portal/checkouts/:id/void`               | A    | `{note? ≤200, refundAmount? 0–1e7}`                                                                                                      | `{checkout, delivery}`                                                                    | 404; 409 `not_a_payment`, `checkout_voided`; 422 `refund_exceeds_amount`                                                                    |
+| POST `/portal/checkouts/:id/credit`             | A    | `{minutes? 1–525600, note?}`                                                                                                             | `{checkout, code, delivery}` (`XXXXX-XXXXX`, once)                                        | 404; 409 `not_unclaimed`, `already_resolved`; 422 `below_minimum`                                                                           |
+| POST `/portal/checkouts/:id/dismiss`            | A    | `{note?}`                                                                                                                                | `Checkout`                                                                                | 404; 409 `not_unclaimed`, `already_resolved`                                                                                                |
+
+Portals (§11.4) take and show `methods: {voucher, password, payment,
+clickThrough}`, `payment: {priceTableId, idleTimeoutSeconds 15–600 (60)}` and
+`clickThrough` (§14.7); turning `payment` on without a table is 422
+`price_table_required`. `PortalGrant.source` gains `clickthrough`;
+`VoucherBatch` gains `kind`.
+
+```ts
+type PriceTable = { id; name; currency; decimals; durationMode: 'wall_clock' | 'active_time'
+  entries: { amount; minutes; quotaBytes: number | null; downKbps: number | null
+             upKbps: number | null; amountText }[]
+  revision; usedBy: { portalIds: number[]; terminalIds: number[] }; createdAt; updatedAt }
+type PriceRevision = { revision; name; currency; decimals; durationMode; entries; createdAt }
+type Terminal = { id; portalId; name; prefix /* perch_pt_ + 4 */; mac: string | null; enabled
+  priceTableId: number | null; effectivePriceTableId: number | null; online: boolean
+  lastSeenAt: string | null
+  status: { acceptor; firmware; error
+            checkout: { checkoutRef; state; amount; openedAt: string | null } | null
+            reportedAt: string | null } | null
+  tokenRecoverable: boolean; createdAt; updatedAt }
+type Checkout = { id; kind: 'payment' | 'unclaimed'
+  state: 'paid' | 'voided' | 'unclaimed' | 'credited' | 'dismissed'
+  gatewayId; portalId: number | null; terminal: { id: number | null; name: string | null }
+  checkoutRef: string | null; mac: string | null; ip: string | null; hostname: string | null
+  amount; amountText: string | null; unusedAmount; refundAmount: number | null
+  currency: string | null; decimals: number | null
+  price: { priceTableId; revision; snapshot: PriceTableWire | null } | null   // payments
+  entitlement: { durationMode; durationSeconds; quotaBytes; downKbps; upKbps } | null
+  coinCount; coins: { eventId; amount; at }[]
+  reason: 'done' | 'timeout' | 'terminal' | 'late' | 'full' | 'below_minimum' | null
+  openedAt; finalizedAt
+  voucher: { id; batchId; hint; status: 'unused' | 'active' | 'exhausted' | 'expired' | 'revoked' } | null
+  keyEpoch: number | null; note; resolvedAt; resolvedBy: { id; email } | null; createdAt }
+```
+
+### 14.10 Terminal protocol (reference, no firmware ships)
+
+A terminal (coin acceptor + microcontroller) sits on the portal's network and
+talks to the router's guest-page port. Every request is signed with its
+token; the token itself never crosses the (usually open) guest Wi-Fi:
+
+```
+X-Perch-Terminal:  <terminalId>
+X-Perch-Session:   <session>   (absent/empty for /session)
+X-Perch-Seq:       <n>         (0 for /session, then strictly increasing per session)
+X-Perch-Signature: base64url_nopad(HMAC-SHA256(key = token,
+    "perch-terminal-v1\n" METHOD "\n" PATH "\n" terminalId "\n" session "\n" seq "\n" hex(sha256(body))))
+```
+
+| Route (`/portal/v1/terminal/…`) | Body → answer                                                                                                                                    |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `POST session`                  | `{nonce}` (16–64 `[A-Za-z0-9_-]`, never reused) → `{session, heartbeatSeconds: 5, terminal: {terminalId, name, portalId}, currency, decimals, now}` |
+| `POST heartbeat`                | `{status?: {acceptor: "on"\|"off", firmware?, error?}}` → `{checkout, heartbeatSeconds, now}`                                                    |
+| `GET checkout`                  | → `{checkout}`                                                                                                                                   |
+| `POST coins`                    | `{checkoutRef, eventId, amount}` → `{accepted, checkout}` (`accepted: false` = that eventId was already counted)                                 |
+| `POST done`                     | `{checkoutRef}` → `{checkout}` (finalised, reason `terminal`)                                                                                    |
+
+`checkout` is the terminal's open checkout (enable the acceptor), else its
+last one for 120 s (`referenceCode` while finalised, for a receipt
+printer), else null (disable the acceptor). Replays: a request's session must
+be the current one (401 `session_unknown` → open a new session and retry) and
+its seq above the last (409 `stale_seq`); a coin's `eventId` counts once, so
+a retry after a lost answer is safe even in a new session (keep the eventId).
+A coin for a closed checkout is 409 `checkout_closed {recorded: true}`: the
+money lands in the ledger as unclaimed.
+
+Shell reference (curl, openssl, jq; the lab's fake terminal is this script):
+
+```sh
+ROUTER=http://192.168.20.1:2080 TERMINAL=4 TOKEN=perch_pt_...   # from POST /portal/terminals
+b64url() { base64 | tr '+/' '-_' | tr -d '=\n'; }
+sign() {   # METHOD PATH SESSION SEQ BODY
+  body_sha=$(printf %s "$5" | openssl dgst -sha256 -hex | sed 's/^.*= //')
+  printf 'perch-terminal-v1\n%s\n%s\n%s\n%s\n%s\n%s' "$1" "$2" "$TERMINAL" "$3" "$4" "$body_sha" |
+    openssl dgst -sha256 -hmac "$TOKEN" -binary | b64url
+}
+call() {   # METHOD PATH [BODY]
+  SEQ=$((SEQ + 1))
+  curl -sS -X "$1" "$ROUTER$2" -H 'Content-Type: application/json' \
+    -H "X-Perch-Terminal: $TERMINAL" -H "X-Perch-Session: $SESSION" -H "X-Perch-Seq: $SEQ" \
+    -H "X-Perch-Signature: $(sign "$1" "$2" "$SESSION" "$SEQ" "${3:-}")" ${3:+--data-binary "$3"}
+}
+# 1. open a session (at boot, and after 401 session_unknown)
+body="{\"nonce\":\"$(openssl rand -hex 16)\"}"
+SESSION=$(curl -sS -X POST "$ROUTER/portal/v1/terminal/session" -H 'Content-Type: application/json' \
+  -H "X-Perch-Terminal: $TERMINAL" -H 'X-Perch-Seq: 0' \
+  -H "X-Perch-Signature: $(sign POST /portal/v1/terminal/session '' 0 "$body")" \
+  --data-binary "$body" | jq -r .session); SEQ=0
+# 2. heartbeat every heartbeatSeconds; a checkout appears when a guest picks this terminal
+REF=$(call POST /portal/v1/terminal/heartbeat '{"status":{"acceptor":"off"}}' | jq -r '.checkout.checkoutRef // empty')
+# 3. report each coin as it drops (eventId: unique per coin, kept across retries)
+call POST /portal/v1/terminal/coins "{\"checkoutRef\":\"$REF\",\"eventId\":\"boot7-1\",\"amount\":5}"
+# 4. the box's "done" button (the guest can also press Done on the page)
+call POST /portal/v1/terminal/done "{\"checkoutRef\":\"$REF\"}"
+```
+
+### 14.11 Wire additions (router ↔ controller)
+
+- `portal.configure` portals: `methods.payment`, `methods.clickThrough`,
+  `payment` (§14.3), `clickThrough` (§14.7). Hello `portal.hotspot: 1`.
+- Journal events: `checkout_finalized` (record fields + `coins`, `keyEpoch`,
+  `sig`, `placement`, `demotedGrantId?`, `demotedLocalRef?`, `startsAt?`,
+  `expiresAt?`, `ip?`, `hostname?`), `checkout_unclaimed` `{terminalId,
+  eventId ("" for below_minimum), amount, currency, checkoutRef?, reason}`,
+  `clickthrough_granted` `{localRef, startsAt, expiresAt, durationSeconds,
+  quotaBytes, downKbps, upKbps, ip?, hostname?}`, `offline_redeemed` with
+  `voucherId: 0` + `checkoutRef`.
+- Notification `portal.terminals` `{collectedAt, terminals: [{terminalId,
+  portalId, online, lastSeenAt, status, checkout}]}`.
+- Local group keys `c:<checkoutRef>` and `t:<localRef>` exist only on the
+  router; the controller never sends them and renames them through the full
+  set (grant `groupKey`).
+
+### 14.12 Threat model
+
+| Threat                                                          | Mitigation                                                                                                                                                                                                                                                   | Residual                                                                                                                                                  |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Terminal token stolen (box opened, firmware dumped)             | Scoped to one terminal on one portal; checkouts only open from a guest's page; MAC pin; per-address rate limits; every payment in the ledger with its coins (compare with the cash box); rotate or disable at once (next configure); hash + APP_KEY encryption at rest | Until rotated, the thief can report coins into checkouts on that terminal: free access for themselves, visible as ledger payments without cash |
+| Token sniffed on the open guest Wi-Fi                           | Never sent: requests are HMAC-signed with it                                                                                                                                                                                                                 | –                                                                                                                                                         |
+| Replayed coin events or requests                                | Router-issued session per terminal (a replayed `/session` nonce is refused), strictly increasing seq, body inside the signature; `eventId` counts once per checkout; late or duplicate coins never credit twice                                             | A captured request is useless after its seq; a lost answer is retried with the same eventId                                                               |
+| Two guests racing one terminal                                  | One open checkout per terminal, taken under the engine lock; the second guest gets `terminal_busy` and the picker shows busy/offline                                                                                                                         | –                                                                                                                                                         |
+| Guest claims a terminal and walks away                          | Idle timeout (60 s default, reset by each coin); an empty checkout expires, a paid one is finalised to the claimer                                                                                                                                          | The terminal is blocked for up to one idle period                                                                                                         |
+| Terminal offline mid-checkout                                   | The page shows "not responding"; the guest can press Done for what was counted; idle timeout finalises; coins reported after the close are `checkout_unclaimed` (ledger) for an admin to credit                                                          | A coin the box never reported is invisible to Perch (cash-box reconciliation)                                                                             |
+| Controller down mid-checkout                                    | Nothing changes for the guest: the router finalises, shows the code, the grant works; reconciliation on reconnect (idempotent)                                                                                                                              | Voids and credits wait for the controller                                                                                                                 |
+| Price table changed mid-checkout                                | The router snapshots the table at open: the guest pays the price they saw; the ledger keeps that revision's snapshot                                                                                                                                         | –                                                                                                                                                         |
+| Forged or altered checkout record (router journal on USB, MITM on plain HTTP) | Signed with the gateway's `signKey`; unverifiable records are refused and the grant removed; the code is derived from the verified record                                                                                                      | The key crosses a plain-HTTP link once in configure (§6.1): use TLS                                                                                       |
+| Reference code shared or leaked                                 | One device: the newest takes it, the first is kicked (decision 23); 50-bit codes; guest brute-force limits (§13.5)                                                                                                                                           | Whoever holds the code holds the rest of the time (it is a bearer receipt)                                                                                |
+| Refund or mistaken payment                                      | Admin void: voucher revoked, devices offline, refund amount and note recorded                                                                                                                                                                                | Money handling is outside Perch                                                                                                                           |
+| Click-through abuse by rotating MACs                            | Per-MAC window limit, speed cap, short grant                                                                                                                                                                                                                 | A device that randomises its MAC per join gets a new window; the limit is per MAC by design                                                              |
+| Router reset loses local state                                  | Checkouts, coins and grants are written through at once (grant class); click-through uses too                                                                                                                                                               | A reset router forgets click-through uses (one extra free grant per MAC) and open checkouts                                                              |
+
+### 14.13 Deviations and notes
+
+- **One checkout authority.** Checkouts always run on the router (not
+  "controller when online, router as a fallback"): the terminal and the guest
+  page both live on the guest network, and one code path cannot disagree with
+  itself. "HMAC-signed checkout results" are the router's signed records.
+- **No controller-side terminal API.** Terminals talk only to the router.
+- **`below_minimum`**: Done refuses a total that buys nothing; at the idle
+  timeout such money is recorded as unclaimed.
+- **Receipts**: the paying device's pages show the code for 24 h.

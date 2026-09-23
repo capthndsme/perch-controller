@@ -20,6 +20,11 @@ export type PortalPruneResult = {
   events: number
   /** Authorize API ledger rows (they name guest MACs); a ref older than this may be reused. */
   authorizations: number
+  /**
+   * Payment ledger rows whose guest MAC, address and host name were cleared
+   * (section 14.5): the amounts stay for the operator's books.
+   */
+  checkoutsAnonymized: number
 }
 
 async function deleteInBatches(sql: string, bindings: unknown[]): Promise<number> {
@@ -54,5 +59,16 @@ export async function prunePortalHistory(
     'DELETE FROM portal_authorizations WHERE created_at < ?',
     [cutoff]
   )
-  return { cutoff, sessions, grants, events, authorizations }
+  let checkoutsAnonymized = 0
+  for (;;) {
+    const [result] = (await db.rawQuery(
+      `UPDATE hotspot_checkouts SET mac = NULL, ip = NULL, hostname = NULL
+        WHERE created_at < ? AND (mac IS NOT NULL OR ip IS NOT NULL OR hostname IS NOT NULL)
+        LIMIT ${BATCH}`,
+      [cutoff]
+    )) as unknown as [{ affectedRows: number }]
+    checkoutsAnonymized += result.affectedRows
+    if (result.affectedRows < BATCH) break
+  }
+  return { cutoff, sessions, grants, events, authorizations, checkoutsAnonymized }
 }

@@ -1037,6 +1037,33 @@ test.group('reconcile: offline redemption (decision 20)', () => {
     assert.isUndefined(voucherSet(dbChanges, 12)?.expiresAt)
   })
 
+  test('a move offline also ends a queued holder the router dropped silently', ({ assert }) => {
+    // MAC_A holds the voucher only in the queue (behind other time); the
+    // router moved it to MAC_B and dropped the queued copy without an event.
+    const s = state({
+      grants: [
+        grant(
+          1,
+          { groupKey: 'v:12', voucherId: 12 },
+          { state: 'queued', startedAt: null, delivery: 'applied' }
+        ),
+      ],
+      vouchers: [voucher(12)],
+    })
+    const { dbChanges } = reconcile(
+      s,
+      report({
+        lastEventSeq: 1,
+        events: [redeemed({ startsAt: null, expiresAt: null })],
+        grants: [usage(null, { localRef: 'o7-1', mac: MAC_B })],
+      }),
+      false
+    )
+    assert.equal(update(dbChanges, 1)?.state, 'ended')
+    assert.equal(update(dbChanges, 1)?.endReason, 'moved')
+    assert.lengthOf(dbChanges.grantInserts, 1)
+  })
+
   test('a swap offline queues the data bucket', ({ assert }) => {
     const s = state({
       grants: [grant(1, { mac: MAC_B, groupKey: 'v:11', voucherId: 11 })],

@@ -23,6 +23,7 @@ export const controllers = {
   PortalApiClients: () => import('#controllers/portal_api_clients_controller'),
   PortalAuthorizations: () => import('#controllers/portal_authorizations_controller'),
   PortalGrants: () => import('#controllers/portal_grants_controller'),
+  PortalHotspot: () => import('#controllers/portal_hotspot_controller'),
   PortalPortals: () => import('#controllers/portal_portals_controller'),
   PortalTemplates: () => import('#controllers/portal_templates_controller'),
   PortalUsers: () => import('#controllers/portal_users_controller'),

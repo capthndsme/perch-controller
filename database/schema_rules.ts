@@ -87,7 +87,28 @@ export default {
     // parsed by their models, the APP_KEY-encrypted voucher code, the
     // template file bytes (Buffer) and the generated uniqueness column.
     portals: {
-      skipColumns: ['methods', 'csp_connect_src', 'status', 'active_network'],
+      skipColumns: [
+        'methods',
+        'csp_connect_src',
+        'status',
+        'active_network',
+        'payment',
+        'click_through',
+      ],
+    },
+    // Paid Hotspot (migrations 100–101): JSON text columns and the
+    // APP_KEY-encrypted terminal token.
+    hotspot_price_tables: {
+      skipColumns: ['entries'],
+    },
+    hotspot_price_revisions: {
+      skipColumns: ['entries'],
+    },
+    hotspot_terminals: {
+      skipColumns: ['token_hash', 'token_encrypted', 'status'],
+    },
+    hotspot_checkouts: {
+      skipColumns: ['price_snapshot', 'coins'],
     },
     portal_template_files: {
       skipColumns: ['content'],

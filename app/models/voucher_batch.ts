@@ -8,4 +8,6 @@ import type { DurationMode, StartMode } from '#services/portal/types'
 export default class VoucherBatch extends VoucherBatchSchema {
   declare durationMode: DurationMode
   declare startMode: StartMode
+  /** `batch` = printed vouchers; `payment` = minted from a paid checkout (section 14). */
+  declare kind: 'batch' | 'payment'
 }

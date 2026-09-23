@@ -16,11 +16,12 @@ export const START_MODES = ['first_use', 'creation'] as const
 export type StartMode = (typeof START_MODES)[number]
 
 /**
- * Who created a grant. There is no `external` source: an authorization made
+ * Who created a grant (`clickthrough`: the router granted free access after
+ * the guest accepted the terms, decision 32). There is no `external` source: an authorization made
  * outside Perch (`ndsctl auth` by hand) is never adopted as a grant, it is
  * undone and logged (owner decision 25).
  */
-export const GRANT_SOURCES = ['voucher', 'user', 'api', 'admin'] as const
+export const GRANT_SOURCES = ['voucher', 'user', 'api', 'admin', 'clickthrough'] as const
 export type GrantSource = (typeof GRANT_SOURCES)[number]
 
 /**

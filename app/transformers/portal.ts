@@ -1,4 +1,11 @@
 import type Portal from '#models/portal'
+import { portalMethods } from '#models/portal'
+import {
+  type ClickThroughSettings,
+  type PaymentSettings,
+  normalizeClickThroughSettings,
+  normalizePaymentSettings,
+} from '#services/portal/hotspot'
 import type PortalApiClient from '#models/portal_api_client'
 import type PortalGrant from '#models/portal_grant'
 import type PortalUser from '#models/portal_user'
@@ -49,7 +56,11 @@ export type PortalView = {
   name: string
   gateway: PortalGatewayRef | null
   network: PortalNetworkRef
-  methods: { voucher: boolean; password: boolean }
+  methods: { voucher: boolean; password: boolean; payment: boolean; clickThrough: boolean }
+  /** Coin-terminal checkout settings (section 14.3), shown even while the method is off. */
+  payment: PaymentSettings
+  /** Click-through limits (section 14.7), shown even while the method is off. */
+  clickThrough: ClickThroughSettings
   templateId: number | null
   cspConnectSrc: string[]
   privacyNotice: string | null
@@ -87,10 +98,9 @@ export function portalView(
     name: p.name,
     gateway: refs.gateway,
     network: refs.network,
-    methods: {
-      voucher: Boolean(p.methods?.voucher),
-      password: Boolean(p.methods?.password),
-    },
+    methods: portalMethods(p.methods),
+    payment: normalizePaymentSettings(p.payment),
+    clickThrough: normalizeClickThroughSettings(p.clickThrough),
     templateId: p.templateId,
     cspConnectSrc: p.cspConnectSrc ?? [],
     privacyNotice: p.privacyNotice,
@@ -232,6 +242,8 @@ export type BatchView = {
   id: number
   portalId: number | null
   name: string
+  /** `batch` (printed) or `payment` (minted from a paid checkout, section 14.5). */
+  kind: string
   note: string | null
   count: number
   codeLength: number
@@ -258,6 +270,7 @@ export function batchView(
     id: b.id,
     portalId: b.portalId,
     name: b.name,
+    kind: b.kind ?? 'batch',
     note: b.note,
     count: b.count,
     codeLength: b.codeLength,

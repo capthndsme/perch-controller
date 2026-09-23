@@ -6,7 +6,14 @@ import {
   signGrant,
   signGroup,
 } from '#services/portal/crypto'
-import { normalizeVoucherCode } from '#services/portal/codes'
+import { formatVoucherCode, normalizeVoucherCode } from '#services/portal/codes'
+import {
+  type CheckoutRecord,
+  type PriceTable,
+  checkoutReferenceCode,
+  priceEntitlement,
+  signCheckout,
+} from '#services/portal/hotspot'
 import { FakeCollector, TEST_API_KEY, TEST_INSTANCE_ID } from '#tests/helpers/collector_agent'
 
 /**
@@ -165,6 +172,178 @@ export class FakePortalRouter {
     return true
   }
 
+  /** The price table the configure message gave a portal's terminal (or the portal). */
+  priceTable(portalId: number, terminalId: number): PriceTable {
+    const portal = (this.config?.portals as any[] | undefined)?.find((x) => x.portalId === portalId)
+    if (!portal?.payment) throw new Error(`portal ${portalId} has no payment config`)
+    const terminal = portal.payment.terminals.find((t: any) => t.terminalId === terminalId)
+    if (!terminal) throw new Error(`terminal ${terminalId} is not configured`)
+    const id = terminal.priceTableId ?? portal.payment.priceTableId
+    const table = portal.payment.priceTables.find((t: any) => t.priceTableId === id)
+    if (!table) throw new Error(`price table ${id} missing from configure`)
+    return table
+  }
+
+  /**
+   * A paid checkout the router finalized by itself (section 14): the signed
+   * record journaled as `checkout_finalized`, a local grant in group
+   * `c:<ref>` for the paying device. Returns the record and the reference
+   * code (display form) the guest was shown.
+   */
+  finalizeCheckout(input: {
+    portalId: number
+    terminalId: number
+    mac: string
+    amount: number
+    checkoutRef: string
+    localRef: string
+    reason?: CheckoutRecord['reason']
+    coins?: Array<{ eventId: string; amount: number; at: number }>
+    tamper?: boolean
+  }): { record: CheckoutRecord; code: string; seq: number } {
+    if (!this.keys) throw new Error('no key')
+    const table = this.priceTable(input.portalId, input.terminalId)
+    const price = priceEntitlement(table, input.amount)
+    const now = Date.now()
+    const record: CheckoutRecord = {
+      checkoutRef: input.checkoutRef,
+      portalId: input.portalId,
+      terminalId: input.terminalId,
+      mac: input.mac,
+      amount: input.amount,
+      currency: table.currency,
+      priceTableId: table.priceTableId,
+      priceRevision: table.revision,
+      durationMode: price.durationMode,
+      durationSeconds: price.durationSeconds,
+      quotaBytes: price.quotaBytes,
+      downKbps: price.downKbps,
+      upKbps: price.upKbps,
+      openedAt: now - 30_000,
+      finalizedAt: now,
+      reason: input.reason ?? 'done',
+      localRef: input.localRef,
+      unusedAmount: price.unusedAmount,
+      coinCount: input.coins?.length ?? 1,
+    }
+    const sig = signCheckout(this.keys, record)
+    const code = checkoutReferenceCode(this.keys, record)
+    const expiresAt =
+      record.durationMode === 'wall_clock' ? now + record.durationSeconds * 1000 : null
+    const seq = this.journal({
+      type: 'checkout_finalized',
+      ...record,
+      ...(input.tamper ? { amount: record.amount + 100 } : {}),
+      coins: input.coins ?? [{ eventId: 'e1', amount: input.amount, at: now }],
+      keyEpoch: this.keys.epoch,
+      sig,
+      placement: 'current',
+      startsAt: expiresAt === null ? null : now,
+      expiresAt,
+      ip: '192.168.30.20',
+    })
+    this.grants.push({
+      grantId: null,
+      localRef: input.localRef,
+      portalId: input.portalId,
+      groupKey: `c:${input.checkoutRef}`,
+      mac: input.mac,
+      expiresAt: null,
+      revision: 0,
+      state: 'active',
+      bytesUp: 0,
+      bytesDown: 0,
+      activeSeconds: 0,
+      createdSeq: seq,
+    })
+    return { record, code: formatVoucherCode(code), seq }
+  }
+
+  /**
+   * The router redeemed a reference code it minted itself on another device
+   * before the controller knew it: the old device's grant ends `moved`, the
+   * new one runs (event `offline_redeemed` with `voucherId: 0`).
+   */
+  redeemReferenceLocally(input: {
+    portalId: number
+    checkoutRef: string
+    oldLocalRef: string
+    mac: string
+    localRef: string
+  }) {
+    const old = this.grants.find((g) => g.localRef === input.oldLocalRef)
+    if (old) {
+      this.grants = this.grants.filter((g) => g !== old)
+      this.journal({
+        type: 'grant_ended',
+        portalId: input.portalId,
+        mac: old.mac,
+        grantId: old.grantId,
+        localRef: old.localRef,
+        reason: 'moved',
+        bytesUp: old.bytesUp,
+        bytesDown: old.bytesDown,
+        activeSeconds: old.activeSeconds,
+      })
+    }
+    const seq = this.journal({
+      type: 'offline_redeemed',
+      portalId: input.portalId,
+      mac: input.mac,
+      voucherId: 0,
+      checkoutRef: input.checkoutRef,
+      localRef: input.localRef,
+      placement: 'current',
+    })
+    this.grants.push({
+      grantId: null,
+      localRef: input.localRef,
+      portalId: input.portalId,
+      groupKey: `c:${input.checkoutRef}`,
+      mac: input.mac,
+      expiresAt: null,
+      revision: 0,
+      state: 'active',
+      bytesUp: 0,
+      bytesDown: 0,
+      activeSeconds: 0,
+      createdSeq: seq,
+    })
+  }
+
+  /** Free access after the terms (decision 32): a local grant in `t:<localRef>`. */
+  clickThrough(input: { portalId: number; mac: string; localRef: string; minutes: number }) {
+    const now = Date.now()
+    const seq = this.journal({
+      type: 'clickthrough_granted',
+      portalId: input.portalId,
+      mac: input.mac,
+      localRef: input.localRef,
+      ip: '192.168.30.21',
+      startsAt: now,
+      expiresAt: now + input.minutes * 60_000,
+      durationSeconds: input.minutes * 60,
+      quotaBytes: null,
+      downKbps: 1000,
+      upKbps: null,
+    })
+    this.grants.push({
+      grantId: null,
+      localRef: input.localRef,
+      portalId: input.portalId,
+      groupKey: `t:${input.localRef}`,
+      mac: input.mac,
+      expiresAt: null,
+      revision: 0,
+      state: 'active',
+      bytesUp: 0,
+      bytesDown: 0,
+      activeSeconds: 0,
+      createdSeq: seq,
+    })
+    return seq
+  }
+
   #check(kind: 'authorize' | 'deauthorize' | 'vouchers', p: any, items: string[], extra = {}) {
     if (!this.keys) throw rpcError('no_keys')
     if (p.keyEpoch !== this.keys.epoch) throw rpcError('key_epoch_mismatch')
@@ -266,6 +445,9 @@ export class FakePortalRouter {
             g.grantId = w.grantId
             g.revision = w.revision
             g.expiresAt = w.expiresAt
+            // A local checkout (`c:`) or click-through (`t:`) group becomes the
+            // controller's (`v:` / `g:`), as perch-collector renames it.
+            g.groupKey = w.groupKey
           }
           listed.add(g)
           results.push({
