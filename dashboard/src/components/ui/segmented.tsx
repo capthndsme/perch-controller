@@ -38,7 +38,13 @@ export function Segmented<T extends string>({
           role="radio"
           aria-checked={value === option.id}
           variant={value === option.id ? 'secondary' : 'ghost'}
-          className={size === 'xs' ? 'h-6 px-2 text-xs' : undefined}
+          className={cn(
+            size === 'xs' && 'h-6 px-2 text-xs',
+            // Light mode's --secondary is within a hair of --background and
+            // --card: give the chosen option its own tint and edge there.
+            value === option.id &&
+              'bg-foreground/[0.07] shadow-xs ring-1 ring-foreground/15 hover:bg-foreground/10 dark:bg-secondary dark:ring-0 dark:hover:bg-secondary/80',
+          )}
           title={option.title}
           onClick={() => onChange(option.id)}
         >
