@@ -8,6 +8,7 @@ import { ScopeToggle } from '@/components/dashboard/scope-toggle'
 import { TimePicker } from '@/components/dashboard/time-picker'
 import { DeviceDestinationsTable } from '@/components/destinations/device-destinations-table'
 import { DeviceLabelCard } from '@/components/devices/device-label-editor'
+import { DeviceReservationCard } from '@/components/gateway-config/device-reservation-card'
 import { PeersPanel } from '@/components/devices/peers-panel'
 import { ProtocolsSection } from '@/components/devices/protocols-section'
 import { PageHeader } from '@/components/layout/page-header'
@@ -401,6 +402,8 @@ export function DevicePage() {
               </div>
             ) : null}
           </Panel>
+
+          <DeviceReservationCard mac={mac ?? ''} />
         </div>
       </div>
 

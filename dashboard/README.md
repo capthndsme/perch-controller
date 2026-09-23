@@ -29,6 +29,7 @@ different origin than the API; `.env.example` explains both.
 | `/devices`, `/devices/:mac` | Device list with filters (search, connection, device type, tag) and sorting, top talkers over time; per-device card with traffic, protocols, peers, sites served and destinations, Wi-Fi context, and the name / type / tags / notes editor. |
 | `/servers` | Bytes served per TLS/HTTP name by your own hosts, with a rate overlay. |
 | `/wifi`, `/wifi/ssids/:ssid`, `/wifi/aps/:id`, `/wifi/clients/:mac` | Client distribution by band or AP, throughput per AP, SSIDs, active clients, APs; SSID throughput and clients; AP health; client signal history and roaming. |
+| `/gateway/config`, `/gateway/config/:id` | Managed gateway's config plane: gateways with mode and sync state; per gateway (tab in `?tab=`) mode (managed needs the password), Authoritative Mode with the "Get in sync" check, pairing for plain HTTP, packages, pending changes and apply, conflicts, drift, sections (base / router / Perch), history with restore, activity, local DNS. An app-wide banner (`components/gateway-config/apply-banner.tsx`, in the shell) follows every open apply with its confirm countdown, "Keep changes" and "Revert now", and reports rollbacks. The device page carries the DHCP reservation card. Settings under `/settings/gateway-config`. |
 | `/settings`, `/settings/users`, `/settings/wifi-sources`, `/settings/hostname-enrichment` | Profile and password; users and roles; access points (probe, two-way commands); hostname sources. |
 
 ## Conventions

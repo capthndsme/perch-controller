@@ -35,6 +35,13 @@ export const pages = {
   settingsWifiSources: lazyPage(() =>
     import('@/pages/wifi-sources-settings-page').then((m) => m.WifiSourcesSettingsPage),
   ),
+  gatewayConfig: lazyPage(() => import('@/pages/gateway-config-page').then((m) => m.GatewayConfigPage)),
+  gatewayConfigDetail: lazyPage(() =>
+    import('@/pages/gateway-config-detail-page').then((m) => m.GatewayConfigDetailPage),
+  ),
+  settingsGatewayConfig: lazyPage(() =>
+    import('@/pages/gateway-config-settings-page').then((m) => m.GatewayConfigSettingsPage),
+  ),
   notFound: lazyPage(() => import('@/pages/not-found-page').then((m) => m.NotFoundPage)),
 }
 
