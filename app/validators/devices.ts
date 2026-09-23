@@ -220,6 +220,13 @@ export const destinationsQueryValidator = vine.compile(
   })
 )
 
+/**
+ * Optional `?mac=` on the usage endpoints: one device's usage. Colon or
+ * dash separated, any case; the controller normalises it to the stored
+ * lower-case colon form (`normalizeMac`).
+ */
+const USAGE_MAC_REGEX = /^([0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}$/
+
 /** `GET /api/v1/usage` — vnstat-style buckets per local day / week / month. */
 export const USAGE_PERIOD_VALUES = ['day', 'week', 'month'] as const
 export const USAGE_SCOPE_VALUES = ['all', 'wan', 'lan'] as const
@@ -230,6 +237,7 @@ export const usageQueryValidator = vine.compile(
     scope: vine.enum(USAGE_SCOPE_VALUES).optional(),
     collectorId: vine.number().positive().optional(),
     protocols: vine.number().min(1).max(20).optional(),
+    mac: vine.string().trim().regex(USAGE_MAC_REGEX).optional(),
   })
 )
 
@@ -241,6 +249,7 @@ export const usageIntervalsQueryValidator = vine.compile(
     interval: vine.enum(USAGE_INTERVAL_VALUES).optional(),
     scope: vine.enum(USAGE_SCOPE_VALUES).optional(),
     collectorId: vine.number().positive().optional(),
+    mac: vine.string().trim().regex(USAGE_MAC_REGEX).optional(),
   })
 )
 

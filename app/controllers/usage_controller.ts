@@ -1,3 +1,4 @@
+import { normalizeMac } from '#services/device_labels'
 import { resolveTimeWindow } from '#services/time_window'
 import {
   pickUsageInterval,
@@ -19,11 +20,16 @@ const DEFAULT_RANGE: Record<UsagePeriod, string> = {
  * vnstat-style usage overview: bytes per local day / week / month with the
  * active-device count, Wi-Fi client avg/peak and the top protocols of each
  * bucket. See `usage_history.ts` for the alignment rules.
+ *
+ * `?mac=` narrows either endpoint to one device (the device page's Usage
+ * card): same buckets from that MAC's rows, `activeDevices` / `wifiClients`
+ * `null`, and the normalised `mac` echoed. An unknown MAC is a 200 with
+ * every bucket at zero, like any quiet window.
  */
 export default class UsageController {
   /**
    * GET /api/v1/usage?period=day|week|month&range=…|from&to&scope=all|wan|lan
-   *                  &collectorId?=&protocols?=6
+   *                  &collectorId?=&protocols?=6&mac?=
    */
   async index({ request, response, serialize }: HttpContext) {
     const qs = await usageQueryValidator.validate(request.qs())
@@ -37,6 +43,7 @@ export default class UsageController {
       until: window.until,
       scope: qs.scope ?? 'all',
       collectorId: qs.collectorId,
+      mac: normalizeMac(qs.mac) ?? undefined,
       protocolsLimit: qs.protocols ?? 6,
     })
 
@@ -45,7 +52,7 @@ export default class UsageController {
 
   /**
    * GET /api/v1/usage/intervals?range=7d|from&to&interval=auto|1h|4h|8h|12h
-   *                            &scope=all|wan|lan&collectorId?=
+   *                            &scope=all|wan|lan&collectorId?=&mac?=
    *
    * The hourly breakdown under the daily view: sub-day slots aligned to
    * local midnight, coarser as the window grows (auto: 1 h ≤ 7 d, 4 h ≤ 14 d,
@@ -62,6 +69,7 @@ export default class UsageController {
       until: window.until,
       scope: qs.scope ?? 'all',
       collectorId: qs.collectorId,
+      mac: normalizeMac(qs.mac) ?? undefined,
       intervalSeconds,
     })
 
