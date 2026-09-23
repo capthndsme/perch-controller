@@ -27,6 +27,21 @@ import type { Issue, UciOptions, UciValue } from '#services/gateway_config/types
 
 export const DHCP_HOST_OWNED_OPTIONS = ['mac', 'ip', 'name', 'dns', 'leasetime'] as const
 
+/**
+ * Options Perch owns but carries in `extra` (edited by the DHCP page, not
+ * modeled as fields): the host's dnsmasq tags (plan 2 section 4.1, "static
+ * lease extras"). Rows claimed before `tag` was owned get it when an admin
+ * first edits their tags (`widenOwnership`).
+ */
+export const DHCP_HOST_EXTRA_OWNED = ['tag'] as const
+
+/** The tags of a host: `list tag` items or a space-separated `option tag`. */
+export function hostTags(options: UciOptions): string[] {
+  return itemsOf(options.tag)
+    .flatMap((t) => t.split(/\s+/))
+    .filter((t) => t.length > 0)
+}
+
 export interface DhcpReservation {
   perchId: string | null
   /** UCI section name. */
@@ -131,12 +146,14 @@ export const dhcpHostsDomain: ConfigDomain<DhcpReservation> = {
   },
 
   ownership() {
-    return { kind: 'options', options: [...DHCP_HOST_OWNED_OPTIONS] }
+    return { kind: 'options', options: [...DHCP_HOST_OWNED_OPTIONS, ...DHCP_HOST_EXTRA_OWNED] }
   },
 
   normalize(type, option, value) {
     if (type !== 'host') return value
     switch (option) {
+      case 'tag':
+        return [...new Set(hostTags({ tag: value }))].sort()
       case 'mac':
         return [...new Set(macsOf(value))].sort()
       case 'leasetime':
@@ -311,6 +328,12 @@ function validateReservations(desired: SyncedSection[], ctx: ValidationCtx): Iss
           issue(s, 'warning', 'duplicate_name', `${name} is also used by ${owner.name}`, 'name')
         }
         nameOwner.set(key, s)
+      }
+    }
+
+    for (const tag of hostTags(s.options)) {
+      if (!/^[A-Za-z0-9_]{1,32}$/.test(tag)) {
+        issue(s, 'error', 'dhcp_tag_invalid', `"${tag}" is not a tag name`, 'tag')
       }
     }
 

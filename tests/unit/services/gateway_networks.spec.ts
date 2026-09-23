@@ -153,9 +153,20 @@ test.group('networks domain | claims and round trip (plan 1 section 8.1)', () =>
   test('the default registry holds networks and dhcp_pools first (apply order)', ({ assert }) => {
     assert.deepEqual(
       DOMAINS.map((d) => d.key),
-      ['networks', 'dhcp_pools', 'dhcp_hosts', 'dns_records', 'firewall', 'sqm']
+      [
+        'system',
+        'networks',
+        'routes',
+        'dhcp_pools',
+        'dhcp_hosts',
+        'dns_records',
+        'dns_settings',
+        'dhcp_tags',
+        'firewall',
+        'sqm',
+      ]
     )
-    assert.deepEqual(domainRegistry().configs(), ['network', 'dhcp', 'firewall', 'sqm'])
+    assert.deepEqual(domainRegistry().configs(), ['system', 'network', 'dhcp', 'firewall', 'sqm'])
   })
 
   test('round-trips the whole DSA config, VLANs via bridge-vlan included, exactly', ({

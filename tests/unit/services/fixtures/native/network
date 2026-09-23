@@ -1,0 +1,55 @@
+# Routes and rules of a network config (placeholders only).
+config interface 'loopback'
+	option device 'lo'
+	option proto 'static'
+	option ipaddr '127.0.0.1'
+	option netmask '255.0.0.0'
+
+config interface 'lan'
+	option device 'br-lan'
+	option proto 'static'
+	option ipaddr '192.168.1.1'
+	option netmask '255.255.255.0'
+
+config interface 'guest'
+	option device 'br-guest'
+	option proto 'static'
+	option ipaddr '192.168.30.1'
+	option netmask '255.255.255.0'
+
+config interface 'wan'
+	option device 'eth1'
+	option proto 'dhcp'
+
+config route
+	option interface 'lan'
+	option target '192.168.50.0'
+	option netmask '255.255.255.0'
+	option gateway '192.168.1.254'
+
+config route 'lab'
+	option interface 'wan'
+	option target '198.51.100.0/24'
+	option gateway '203.0.113.1'
+	option metric '10'
+	option mtu '1400'
+
+config route6
+	option interface 'lan'
+	option target 'fd00:50::/64'
+	option gateway 'fd00::254'
+
+config route
+	option interface 'wan'
+	option target '198.18.0.0/15'
+	option type 'blackhole'
+	option disabled '1'
+
+config rule
+	option src '192.168.30.0/24'
+	option lookup '100'
+	option priority '1000'
+
+config rule6
+	option in 'lan'
+	option lookup 'main'
