@@ -55,6 +55,13 @@ export const pages = {
   settingsPortal: lazyPage(() => import('@/pages/portal-settings-page').then((m) => m.PortalSettingsPage)),
   shaping: lazyPage(() => import('@/pages/shaping-page').then((m) => m.ShapingPage)),
   settingsTrafficShaping: lazyPage(() => import('@/pages/qos-settings-page').then((m) => m.QosSettingsPage)),
+  gatewayConfig: lazyPage(() => import('@/pages/gateway-config-page').then((m) => m.GatewayConfigPage)),
+  gatewayConfigDetail: lazyPage(() =>
+    import('@/pages/gateway-config-detail-page').then((m) => m.GatewayConfigDetailPage),
+  ),
+  settingsGatewayConfig: lazyPage(() =>
+    import('@/pages/gateway-config-settings-page').then((m) => m.GatewayConfigSettingsPage),
+  ),
   notFound: lazyPage(() => import('@/pages/not-found-page').then((m) => m.NotFoundPage)),
 }
 
