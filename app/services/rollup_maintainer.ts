@@ -1,3 +1,4 @@
+import { noteRollupPass } from '#services/series_buckets'
 import db from '@adonisjs/lucid/services/db'
 import type { QueryClientContract } from '@adonisjs/lucid/types/database'
 import { DateTime } from 'luxon'
@@ -310,6 +311,9 @@ export async function runAllRollups(
     const since = now.minus({ seconds: spec.grainSeconds * lookbackGrains })
     results.push(await runRollupSpec(spec, since, now))
   }
+  // The live pass (no injected clock or specs): charts read the rollup tiers'
+  // newest slot only up to here (`series_buckets.ts` freshness).
+  if (options.now === undefined && options.specs === undefined) noteRollupPass(now.toSeconds())
   return results
 }
 

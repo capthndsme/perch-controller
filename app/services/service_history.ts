@@ -13,9 +13,9 @@ import {
   denseBuckets,
   estimateBucketSeconds,
   mbps,
-  planSeries,
+  planWindowSeries,
+  pollIntervalSeconds,
   querySeriesSums,
-  tierCoverage,
   type SeriesSource,
   type SeriesTier,
 } from '#services/series_buckets'
@@ -98,18 +98,22 @@ const SERVICE_TIERS: readonly SeriesTier[] = [
     table: 'device_service_buckets',
     timeColumn: 'bucket_start',
     maxBucketSeconds: FIVE_MIN_ROLLUP_SECONDS - 1,
+    freshness: 'poll',
   },
+  // The bucket writer adds to these on every poll too (not the rollup pass).
   {
     source: '5m',
     grainSeconds: FIVE_MIN_ROLLUP_SECONDS,
     table: 'device_service_buckets_5m',
     timeColumn: 'slot_start',
+    freshness: 'poll',
   },
   {
     source: '1h',
     grainSeconds: HOURLY_ROLLUP_SECONDS,
     table: 'device_service_buckets_hourly',
     timeColumn: 'hour_start',
+    freshness: 'poll',
   },
 ]
 
@@ -378,19 +382,19 @@ export async function queryServiceTraffic(opts: {
     ]),
     ttlMs,
     async () => {
-      const sinceSec = Math.floor(opts.since.toSeconds())
-      const nativeGrain = await nativeGrainSeconds(opts.collectorId)
+      const nativeGrain = await pollIntervalSeconds(opts.collectorId)
       const tiers = SERVICE_TIERS.map((t) =>
         t.source === 'native' ? { ...t, grainSeconds: nativeGrain } : t
       )
-      const plan = planSeries({
-        sinceSec,
+      const plan = await planWindowSeries({
+        sinceSec: Math.floor(opts.since.toSeconds()),
         untilSec: Math.floor(opts.until.toSeconds()),
         nowSec: Math.floor(Date.now() / 1000),
+        tiers,
+        pollSeconds: nativeGrain,
         floorSeconds,
         maxPoints,
         requestedSeconds: opts.requestedSeconds,
-        tiers: await tierCoverage(tiers, sinceSec),
       })
       const where = ['t.server_name = ?']
       const bindings: Array<string | number> = [opts.serverName]
@@ -427,19 +431,6 @@ export async function queryServiceTraffic(opts: {
       mbpsReceived: mbps(b.b, b.seconds),
     })),
   }
-}
-
-/**
- * Grain of the per-poll service rows: the poll interval of the collector
- * asked about, or the longest of all of them (a bucket must hold whole polls
- * of every collector it sums).
- */
-async function nativeGrainSeconds(collectorId?: number): Promise<number> {
-  const query = db.from('collectors').max('poll_interval_seconds as grain')
-  if (collectorId) query.where('id', collectorId)
-  const rows = (await query) as Array<{ grain: number | string | null }>
-  const grain = Number(rows[0]?.grain ?? 0)
-  return Number.isFinite(grain) && grain >= 1 ? Math.floor(grain) : 5
 }
 
 type ServerIdentity = {

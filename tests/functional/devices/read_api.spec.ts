@@ -4,6 +4,7 @@ import User from '#models/user'
 import { writeBuckets } from '#services/bucket_writer'
 import { backfillRollups } from '#services/rollup_maintainer'
 import { _resetQueryCache } from '#services/query_cache'
+import { _resetRollupPass } from '#services/series_buckets'
 import { rebuildWifiLatestTables } from '#services/wifi_bucket_writer'
 import db from '@adonisjs/lucid/services/db'
 import testUtils from '@adonisjs/core/services/test_utils'
@@ -15,6 +16,7 @@ async function resetDb() {
   // Reset it alongside the DB truncate so a cached result from one test (same
   // endpoint + window cache-key) can't leak into the next.
   _resetQueryCache()
+  _resetRollupPass()
   const teardown = await testUtils.db().truncate()
   await teardown()
   return teardown
@@ -58,6 +60,45 @@ async function bootstrap() {
  */
 function recentBase(): DateTime {
   return DateTime.utc().minus({ seconds: 2 })
+}
+
+/**
+ * "Now" for seeding the dense series endpoints: a minute back, on the 15 s
+ * poll grid of the test collector. A series reads the newest rows only up to
+ * the last complete poll (`series_buckets.ts` freshness), so a row stamped
+ * two seconds ago would not be in it yet.
+ */
+function settledBase(): DateTime {
+  const sec = Math.floor(DateTime.utc().minus({ seconds: 60 }).toSeconds() / 15) * 15
+  return DateTime.fromSeconds(sec, { zone: 'utc' })
+}
+
+/** Protocol rows are per minute: the same, on the minute. */
+function settledMinute(): DateTime {
+  return DateTime.utc().minus({ seconds: 60 }).startOf('minute')
+}
+
+type DenseBucket = {
+  bucketStart: string
+  seconds: number
+  bytesIn: number
+  bytesOut: number
+  mbpsIn: number
+}
+
+/** Consecutive buckets, `width` apart, none missing. */
+function assertContiguous(
+  assert: { equal: (a: unknown, b: unknown, m?: string) => void },
+  buckets: Array<{ bucketStart: string }>,
+  width: number
+) {
+  for (let i = 1; i < buckets.length; i += 1) {
+    assert.equal(
+      Date.parse(buckets[i].bucketStart) - Date.parse(buckets[i - 1].bucketStart),
+      width * 1000,
+      `bucket ${i} follows bucket ${i - 1}`
+    )
+  }
 }
 
 /**
@@ -368,14 +409,25 @@ test.group('read API | GET /api/v1/traffic', (group) => {
 
   test('returns aggregate Mbps buckets and summary stats', async ({ client, assert }) => {
     const { token, collector } = await bootstrap()
-    await seedBuckets(collector.id, recentBase())
+    await seedBuckets(collector.id, settledBase())
 
     const r = await client.get('/api/v1/traffic?range=2m&resolution=15s').bearerToken(token)
 
     r.assertStatus(200)
     const body = r.body().data
     assert.equal(body.resolutionSeconds, 15)
-    assert.isAbove(body.buckets.length, 0)
+    assert.equal(body.bucketSeconds, 15)
+    assert.equal(body.source, 'native')
+    // Dense: every 15 s of the window, the quiet ones as zero.
+    const buckets = body.buckets as DenseBucket[]
+    assert.isAtLeast(buckets.length, 5)
+    assertContiguous(assert, buckets, 15)
+    assert.equal(
+      buckets.reduce((sum, b) => sum + b.bytesIn, 0),
+      // aa:aa's three buckets plus bb:bb's one.
+      body.summary.bytesIn
+    )
+    assert.isAbove(buckets.filter((b) => b.bytesIn === 0).length, 0, 'quiet buckets are zero')
     assert.isNumber(body.summary.bytesIn)
     assert.isNumber(body.summary.bytesOut)
     assert.isNumber(body.summary.latestMbpsIn)
@@ -612,39 +664,55 @@ test.group('read API | GET /api/v1/devices/:mac/traffic', (group) => {
 
   test('returns buckets in chronological order, filtered by range', async ({ client, assert }) => {
     const { token, collector } = await bootstrap()
-    await seedBuckets(collector.id, recentBase())
+    const base = settledBase()
+    await seedBuckets(collector.id, base)
 
+    // One quiet bucket before the seeded ones and one after.
+    const from = base.minus({ seconds: 45 }).toISO()
+    const to = base.plus({ seconds: 30 }).toISO()
     const r = await client
-      .get('/api/v1/devices/aa:aa:aa:aa:aa:aa/traffic?range=2m&resolution=15s')
+      .get(`/api/v1/devices/aa:aa:aa:aa:aa:aa/traffic?from=${from}&to=${to}&resolution=15s`)
       .bearerToken(token)
     r.assertStatus(200)
     const body = r.body().data
     assert.equal(body.mac, 'aa:aa:aa:aa:aa:aa')
     assert.equal(body.resolution, '15s')
     assert.equal(body.resolutionSeconds, 15)
-    assert.equal(body.buckets.length, 3, 'all three seeded buckets fall in 2m')
-    assert.equal(body.buckets[0].mbpsIn, (100 * 8) / 15 / 1_000_000)
+    const buckets = body.buckets as DenseBucket[]
+    assert.equal(buckets.length, 5, 'every bucket of the window, quiet ones too')
+    assert.equal(buckets[1].mbpsIn, (100 * 8) / 15 / 1_000_000)
+    assert.deepEqual(
+      buckets.map((b) => b.seconds),
+      [15, 15, 15, 15, 15]
+    )
 
-    // Chronological ASC: bytes go 100 → 500 → 1_000_000.
-    const series = body.buckets.map((b: { bytesIn: number }) => b.bytesIn)
-    assert.deepEqual(series, [100, 500, 1_000_000])
+    // Chronological ASC, zero-filled: 0 → 100 → 500 → 1_000_000 → 0.
+    const series = buckets.map((b) => b.bytesIn)
+    assert.deepEqual(series, [0, 100, 500, 1_000_000, 0])
   })
 
   test('rolls up buckets at requested resolution', async ({ client, assert }) => {
     const { token, collector } = await bootstrap()
-    const base = DateTime.utc().startOf('minute').minus({ minutes: 1 }).plus({ seconds: 45 })
-    await seedBuckets(collector.id, base)
+    const minute = DateTime.utc().startOf('minute').minus({ minutes: 2 })
+    await seedBuckets(collector.id, minute.plus({ seconds: 45 }))
 
+    // 90 s from the middle of the minute before: a partial first bucket,
+    // the seeded minute, nothing after.
+    const from = minute.minus({ seconds: 30 }).toISO()
+    const to = minute.plus({ seconds: 60 }).toISO()
     const r = await client
-      .get('/api/v1/devices/aa:aa:aa:aa:aa:aa/traffic?range=2m&resolution=1m')
+      .get(`/api/v1/devices/aa:aa:aa:aa:aa:aa/traffic?from=${from}&to=${to}&resolution=1m`)
       .bearerToken(token)
 
     r.assertStatus(200)
     const body = r.body().data
     assert.equal(body.resolutionSeconds, 60)
-    assert.equal(body.buckets.length, 1)
-    assert.equal(body.buckets[0].bytesIn, 1_000_600)
-    assert.equal(body.buckets[0].mbpsIn, (1_000_600 * 8) / 60 / 1_000_000)
+    const buckets = body.buckets as DenseBucket[]
+    assert.equal(buckets.length, 2)
+    assert.equal(buckets[0].seconds, 30, 'the first bucket is half inside the window')
+    assert.equal(buckets[0].bytesIn, 0)
+    assert.equal(buckets[1].bytesIn, 1_000_600)
+    assert.equal(buckets[1].mbpsIn, (1_000_600 * 8) / 60 / 1_000_000)
   })
 
   test('returns 404 for a MAC that has never been seen', async ({ client }) => {
@@ -681,8 +749,8 @@ test.group('read API | GET /api/v1/devices/:mac/overview', (group) => {
     assert,
   }) => {
     const { token, collector } = await bootstrap()
-    await seedBuckets(collector.id, recentBase())
-    await seedProtocolBuckets(collector.id, recentBase())
+    await seedBuckets(collector.id, settledBase())
+    await seedProtocolBuckets(collector.id, settledMinute())
     await seedIdentity(collector.id)
     await seedPeers(collector.id)
     await seedAsnCache()
@@ -736,23 +804,32 @@ test.group('read API | GET /api/v1/devices/:mac/protocols', (group) => {
 
   test('returns protocol summary and time series for a MAC', async ({ client, assert }) => {
     const { token, collector } = await bootstrap()
-    await seedProtocolBuckets(collector.id, recentBase())
+    await seedProtocolBuckets(collector.id, settledMinute())
     await seedIdentity(collector.id)
 
     const r = await client
-      .get('/api/v1/devices/aa:aa:aa:aa:aa:aa/protocols?range=2m&resolution=1m')
+      .get('/api/v1/devices/aa:aa:aa:aa:aa:aa/protocols?range=5m&resolution=1m')
       .bearerToken(token)
 
     r.assertStatus(200)
     const body = r.body().data
     assert.equal(body.mac, 'aa:aa:aa:aa:aa:aa')
     assert.equal(body.resolutionSeconds, 60)
+    assert.equal(body.bucketSeconds, 60)
     assert.equal(body.protocols.length, 2)
     assert.equal(body.protocols[0].protocol, 'https')
+    assert.equal(body.protocols[0].bytesIn, 6000, 'the breakdown sums the chart buckets')
     assert.isAbove(body.protocols[0].percentage, 0)
-    assert.isAbove(body.timeSeries.length, 0)
-    assert.isObject(body.timeSeries[0].protocols)
-    assert.isNumber(body.timeSeries[0].protocols.https.bytesIn)
+    const series = body.timeSeries as Array<{
+      bucketStart: string
+      seconds: number
+      protocols: Record<string, { bytesIn: number; bytesOut: number }>
+    }>
+    assert.isAtLeast(series.length, 2)
+    assertContiguous(assert, series, 60)
+    const https = series.reduce((sum, b) => sum + (b.protocols.https?.bytesIn ?? 0), 0)
+    assert.equal(https, 6000)
+    for (const bucket of series) assert.isNumber(bucket.seconds)
   })
 
   test('returns 404 for an unknown MAC', async ({ client }) => {
@@ -769,15 +846,104 @@ test.group('read API | GET /api/v1/protocols', (group) => {
 
   test('returns network-wide protocol breakdown', async ({ client, assert }) => {
     const { token, collector } = await bootstrap()
-    await seedProtocolBuckets(collector.id, recentBase())
+    await seedProtocolBuckets(collector.id, settledMinute())
 
-    const r = await client.get('/api/v1/protocols?range=2m&resolution=1m').bearerToken(token)
+    const r = await client.get('/api/v1/protocols?range=5m&resolution=1m').bearerToken(token)
     r.assertStatus(200)
     const body = r.body().data
     assert.isUndefined(body.mac)
     assert.equal(body.protocols.length, 3)
     const names = body.protocols.map((p: { protocol: string }) => p.protocol)
     assert.includeMembers(names, ['https', 'dns', 'smb'])
+  })
+})
+
+test.group('read API | protocol series are dense', (group) => {
+  group.each.setup(resetDb)
+
+  async function protocolRow(
+    collectorId: number,
+    protocol: string,
+    at: DateTime,
+    bytesIn: number,
+    table = 'device_protocol_buckets',
+    timeColumn = 'bucket_start'
+  ) {
+    const fmt = (t: DateTime) => t.toUTC().toFormat('yyyy-MM-dd HH:mm:ss')
+    const row: Record<string, unknown> = {
+      collector_id: collectorId,
+      mac: 'aa:aa:aa:aa:aa:aa',
+      protocol,
+      [timeColumn]: fmt(at),
+      bytes_in: bytesIn,
+      bytes_out: 0,
+      packets_in: 1,
+      packets_out: 0,
+      updated_at: fmt(DateTime.utc()),
+    }
+    if (table === 'device_protocol_buckets') row.created_at = fmt(DateTime.utc())
+    await db.insertQuery().table(table).insert(row)
+  }
+
+  test('every minute of the window, a quiet protocol simply absent from its buckets', async ({
+    client,
+    assert,
+  }) => {
+    const { token, collector } = await bootstrap()
+    const m0 = DateTime.utc().startOf('minute').minus({ minutes: 10 })
+    // https busy every minute of 0..3, a speed test in minute 1 only.
+    for (let i = 0; i < 4; i += 1)
+      await protocolRow(collector.id, 'https', m0.plus({ minutes: i }), 6000)
+    await protocolRow(collector.id, 'speedtest', m0.plus({ minutes: 1 }), 60_000_000)
+
+    const from = m0.minus({ minutes: 2 }).toISO()
+    const to = m0.plus({ minutes: 6 }).toISO()
+    const r = await client
+      .get(`/api/v1/protocols?from=${from}&to=${to}&resolution=1m`)
+      .bearerToken(token)
+    r.assertStatus(200)
+    const body = r.body().data
+    const series = body.timeSeries as Array<{
+      bucketStart: string
+      seconds: number
+      protocols: Record<string, { bytesIn: number }>
+    }>
+    assert.equal(series.length, 8, 'all eight minutes, the quiet ones too')
+    assert.deepEqual(
+      series.map((b) => b.seconds),
+      [60, 60, 60, 60, 60, 60, 60, 60]
+    )
+    assert.deepEqual(series[0].protocols, {})
+    assert.equal(series[3].protocols.speedtest.bytesIn, 60_000_000)
+    assert.isUndefined(series[4].protocols.speedtest)
+    // The breakdown is the sum of the same buckets.
+    const https = body.protocols.find((p: { protocol: string }) => p.protocol === 'https')
+    assert.equal(https.bytesIn, 24_000)
+    assert.equal(body.protocols[0].protocol, 'speedtest')
+  })
+
+  test('a window over two days reads the hourly protocol tier', async ({ client, assert }) => {
+    const { token, collector } = await bootstrap()
+    const hour = DateTime.utc().startOf('hour').minus({ days: 2 })
+    await protocolRow(
+      collector.id,
+      'https',
+      hour,
+      7777,
+      'device_protocol_buckets_hourly',
+      'hour_start'
+    )
+    const r = await client.get('/api/v1/protocols?range=3d').bearerToken(token)
+    r.assertStatus(200)
+    const body = r.body().data
+    assert.equal(body.source, '1h')
+    assert.equal(body.bucketSeconds, 3600)
+    assert.isAtLeast(body.timeSeries.length, 71)
+    const busy = body.timeSeries.filter(
+      (b: { protocols: Record<string, unknown> }) => Object.keys(b.protocols).length > 0
+    )
+    assert.lengthOf(busy, 1)
+    assert.equal(busy[0].bucketStart, hour.toISO())
   })
 })
 
@@ -877,7 +1043,7 @@ test.group('read API | scope filter on traffic endpoints', (group) => {
 
   test('aggregate traffic ?scope=wan returns the WAN-only sums', async ({ client, assert }) => {
     const { token, collector } = await bootstrap()
-    await seedBuckets(collector.id, recentBase())
+    await seedBuckets(collector.id, settledBase())
 
     const all = await client
       .get('/api/v1/traffic?range=2m&resolution=15s&scope=all')
@@ -909,7 +1075,7 @@ test.group('read API | scope filter on traffic endpoints', (group) => {
 
   test('per-device traffic ?scope=lan rolls up only LAN bytes', async ({ client, assert }) => {
     const { token, collector } = await bootstrap()
-    await seedBuckets(collector.id, recentBase())
+    await seedBuckets(collector.id, settledBase())
 
     const r = await client
       .get('/api/v1/devices/aa:aa:aa:aa:aa:aa/traffic?range=2m&resolution=15s&scope=lan')
@@ -977,9 +1143,12 @@ test.group('read API | hourly rollup routing + guardrails', (group) => {
     r.assertStatus(200)
     const body = r.body().data
     assert.equal(body.resolutionSeconds, 3600)
-    assert.equal(body.buckets.length, 1, 'served the single rollup hour')
-    assert.equal(body.buckets[0].bytesIn, 4242)
-    assert.equal(body.buckets[0].bytesOut, 99)
+    assert.equal(body.source, '1h')
+    const busy = (body.buckets as DenseBucket[]).filter((b) => b.bytesIn > 0)
+    assert.equal(busy.length, 1, 'served the single rollup hour')
+    assert.equal(busy[0].bytesIn, 4242)
+    assert.equal(busy[0].bytesOut, 99)
+    assert.isAtLeast(body.buckets.length, 7 * 24 - 1, 'and every other hour of the week as zero')
   })
 
   test('wide-window sums from the rollup match the per-hour writes', async ({ client, assert }) => {
@@ -1007,7 +1176,7 @@ test.group('read API | hourly rollup routing + guardrails', (group) => {
       .bearerToken(token)
 
     r.assertStatus(200)
-    const buckets = r.body().data.buckets as Array<{ bytesIn: number }>
+    const buckets = (r.body().data.buckets as DenseBucket[]).filter((b) => b.bytesIn > 0)
     assert.equal(buckets.length, 2, 'two distinct hour buckets')
     assert.equal(buckets[0].bytesIn, 150, 'hour 1 = 100 + 50')
     assert.equal(buckets[1].bytesIn, 200, 'hour 2')
@@ -1025,8 +1194,12 @@ test.group('read API | hourly rollup routing + guardrails', (group) => {
     // 28d window asked at 15s would be ~160k points; the server coarsens it.
     const r = await client.get('/api/v1/traffic?range=28d&resolution=15s').bearerToken(token)
     r.assertStatus(200)
-    assert.equal(r.body().data.resolution, '1h', 'coarsened 15s -> 1h')
-    assert.equal(r.body().data.resolutionSeconds, 3600)
+    const body = r.body().data
+    // 28 d under the 1500-point cap: 30-minute buckets at least.
+    assert.isAtLeast(body.bucketSeconds, 1800, 'coarsened 15s to fit the point cap')
+    assert.equal(body.resolutionSeconds, body.bucketSeconds)
+    assert.isAtMost(body.buckets.length, 1500)
+    assert.notEqual(body.resolution, '15s')
   })
 
   test('rejects an absurdly large window with 400 window_too_large', async ({ client }) => {
@@ -1074,8 +1247,10 @@ test.group('read API | hourly rollup routing + guardrails', (group) => {
     r.assertStatus(200)
     const body = r.body().data
     assert.equal(body.resolutionSeconds, 900)
-    assert.equal(body.buckets.length, 1, 'one 15-minute bucket from the single 5-minute slot')
-    assert.equal(body.buckets[0].bytesIn, 1234)
-    assert.equal(body.buckets[0].bytesOut, 56)
+    assert.equal(body.source, '5m')
+    const busy = (body.buckets as DenseBucket[]).filter((b) => b.bytesIn > 0)
+    assert.equal(busy.length, 1, 'one 15-minute bucket from the single 5-minute slot')
+    assert.equal(busy[0].bytesIn, 1234)
+    assert.equal(busy[0].bytesOut, 56)
   })
 })

@@ -2,6 +2,7 @@ import Collector from '#models/collector'
 import SystemSetting from '#models/system_setting'
 import User from '#models/user'
 import { _resetQueryCache } from '#services/query_cache'
+import { _resetRollupPass } from '#services/series_buckets'
 import db from '@adonisjs/lucid/services/db'
 import testUtils from '@adonisjs/core/services/test_utils'
 import { test } from '@japa/runner'
@@ -11,6 +12,7 @@ async function resetDb() {
   const teardown = await testUtils.db().truncate()
   await teardown()
   _resetQueryCache()
+  _resetRollupPass()
   return teardown
 }
 
@@ -96,7 +98,7 @@ async function bootstrap() {
       updated_at: now,
     })
 
-  return { token: token.value!.release(), t1, t2 }
+  return { token: token.value!.release(), t1, t2, collectorId: collector.id }
 }
 
 test.group('devices | traffic/top', (group) => {
@@ -128,9 +130,20 @@ test.group('devices | traffic/top', (group) => {
     assert.isNull(body.devices[1].primaryIp)
     assert.deepEqual(body.rest, { deviceCount: 1, bytesIn: 50, bytesOut: 10 })
 
-    assert.lengthOf(body.buckets, 2)
-    const first = body.buckets[0]
-    assert.equal(first.bucketStart, ctx.t1.toISO())
+    // Dense: every minute of the hour (plus the partial one at the start),
+    // each carrying both top devices.
+    assert.equal(body.bucketSeconds, 60)
+    assert.equal(body.source, 'native')
+    assert.isAtLeast(body.buckets.length, 59)
+    assert.isAtMost(body.buckets.length, 61)
+    for (const bucket of body.buckets) {
+      assert.includeMembers(Object.keys(bucket.devices), [A, B])
+      assert.isNumber(bucket.seconds)
+    }
+    const at = (t: DateTime) =>
+      body.buckets.find((b: { bucketStart: string }) => b.bucketStart === t.toISO())
+    const first = at(ctx.t1)
+    assert.equal(first.seconds, 60)
     assert.equal(first.devices[A].bytesIn, 1000)
     assert.closeTo(first.devices[A].mbpsIn, (1000 * 8) / 60 / 1e6, 1e-12)
     assert.equal(first.devices[B].bytesOut, 900)
@@ -142,11 +155,22 @@ test.group('devices | traffic/top', (group) => {
     })
     assert.isUndefined(first.devices[C], 'C is folded into rest')
 
-    const second = body.buckets[1]
-    assert.equal(second.bucketStart, ctx.t2.toISO())
+    const second = at(ctx.t2)
     assert.equal(second.devices[A].bytesIn, 1000)
-    assert.isUndefined(second.devices[B])
+    assert.deepEqual(second.devices[B], { bytesIn: 0, bytesOut: 0, mbpsIn: 0, mbpsOut: 0 })
     assert.deepEqual(second.rest, { bytesIn: 0, bytesOut: 0, mbpsIn: 0, mbpsOut: 0 })
+
+    // The quiet minute after t2 is there too, all zero.
+    const quiet = at(ctx.t2.plus({ minutes: 1 }))
+    assert.equal(quiet.devices[A].bytesIn, 0)
+
+    // Legend totals are the chart's area.
+    const chartA = body.buckets.reduce(
+      (sum: number, b: { devices: Record<string, { bytesIn: number }> }) =>
+        sum + b.devices[A].bytesIn,
+      0
+    )
+    assert.equal(chartA, body.devices[0].bytesIn)
   })
 
   test('by=upload changes the ranking and limit=1 grows the rest', async ({ client, assert }) => {
@@ -161,7 +185,10 @@ test.group('devices | traffic/top', (group) => {
       [B]
     )
     assert.deepEqual(body.rest, { deviceCount: 2, bytesIn: 2050, bytesOut: 210 })
-    assert.equal(body.buckets[0].rest.bytesIn, 1050)
+    const first = body.buckets.find(
+      (b: { bucketStart: string }) => b.bucketStart === ctx.t1.toISO()
+    )
+    assert.equal(first.rest.bytesIn, 1050)
   })
 
   test('scope=wan reads the WAN split columns', async ({ client, assert }) => {
@@ -179,10 +206,16 @@ test.group('devices | traffic/top', (group) => {
     assert.equal(body.devices[0].bytesIn, 1400)
     assert.equal(body.devices[1].bytesOut, 900)
     assert.deepEqual(body.rest, { deviceCount: 0, bytesIn: 0, bytesOut: 0 })
-    assert.equal(body.buckets[0].devices[A].bytesIn, 700)
+    const first = body.buckets.find(
+      (b: { bucketStart: string }) => b.bucketStart === ctx.t1.toISO()
+    )
+    assert.equal(first.devices[A].bytesIn, 700)
   })
 
-  test('an empty window returns no devices and no buckets', async ({ client, assert }) => {
+  test('an empty window returns no devices and every bucket as zero', async ({
+    client,
+    assert,
+  }) => {
     const ctx = await bootstrap()
     const from = DateTime.utc().minus({ days: 3 }).toISO()
     const to = DateTime.utc().minus({ days: 2 }).toISO()
@@ -190,9 +223,102 @@ test.group('devices | traffic/top', (group) => {
       .get(`/api/v1/traffic/top?from=${from}&to=${to}&resolution=5m`)
       .bearerToken(ctx.token)
     r.assertStatus(200)
-    assert.deepEqual(r.body().data.devices, [])
-    assert.deepEqual(r.body().data.buckets, [])
-    assert.equal(r.body().data.rest.deviceCount, 0)
+    const body = r.body().data
+    assert.deepEqual(body.devices, [])
+    assert.equal(body.rest.deviceCount, 0)
+    // The chart keeps its axis over a quiet window.
+    assert.isAbove(body.buckets.length, 0)
+    for (const bucket of body.buckets) {
+      assert.deepEqual(bucket.devices, {})
+      assert.equal(bucket.rest.bytesIn + bucket.rest.bytesOut, 0)
+    }
+  })
+
+  test('equal totals rank by MAC, so the set never flips between refreshes', async ({
+    client,
+    assert,
+  }) => {
+    const ctx = await bootstrap()
+    const collectorId = ctx.collectorId
+    const D = 'dd:dd:dd:dd:dd:dd'
+    // D ties with B (1200 bytes each) but sorts after it.
+    await insertBucket(collectorId, D, ctx.t1, { in: 1000, out: 200 })
+    const r = await client
+      .get('/api/v1/traffic/top?range=1h&resolution=1m&limit=2')
+      .bearerToken(ctx.token)
+    r.assertStatus(200)
+    assert.deepEqual(
+      r.body().data.devices.map((d: { mac: string }) => d.mac),
+      [A, B]
+    )
+  })
+
+  test('partial first and live last buckets rate over their own seconds', async ({
+    client,
+    assert,
+  }) => {
+    const ctx = await bootstrap()
+    // Window 16:20:30 … 16:23:30 (relative to t1): the first minute bucket
+    // is half inside, the last half inside.
+    const from = ctx.t1.minus({ seconds: 30 })
+    const to = ctx.t2.plus({ seconds: 90 })
+    const r = await client
+      .get(`/api/v1/traffic/top?from=${from.toISO()}&to=${to.toISO()}&resolution=1m&limit=2`)
+      .bearerToken(ctx.token)
+    r.assertStatus(200)
+    const body = r.body().data
+    assert.deepEqual(
+      body.buckets.map((b: { seconds: number }) => b.seconds),
+      [30, 60, 60, 30]
+    )
+    // A's t1 bucket: 1000 bytes over a full minute.
+    assert.closeTo(body.buckets[1].devices[A].mbpsIn, (1000 * 8) / 60 / 1e6, 1e-12)
+  })
+
+  test('without resolution the Settings → Charts floor sets the width', async ({
+    client,
+    assert,
+  }) => {
+    const ctx = await bootstrap()
+    await SystemSetting.set('charts', { minBucketSeconds: 30, maxPoints: 1500 })
+    const r = await client.get('/api/v1/traffic/top?range=1h&limit=2').bearerToken(ctx.token)
+    r.assertStatus(200)
+    const body = r.body().data
+    assert.equal(body.bucketSeconds, 30)
+    assert.equal(body.resolution, '30s')
+    assert.equal(body.floorSeconds, 30)
+    // An explicit resolution still wins over the floor.
+    const fine = await client
+      .get('/api/v1/traffic/top?range=10m&resolution=15s&limit=2')
+      .bearerToken(ctx.token)
+    assert.equal(fine.body().data.bucketSeconds, 15)
+  })
+
+  test('the newest rows wait for their poll to complete', async ({ client, assert }) => {
+    const ctx = await bootstrap()
+    const collectorId = ctx.collectorId
+    // A row stamped this very poll interval is not in the series yet: the
+    // live bucket's seconds stop at the last complete poll, and its bytes
+    // with them (no dip, no overshoot).
+    const poll = Math.floor(DateTime.utc().toSeconds() / 5) * 5
+    await insertBucket(collectorId, A, DateTime.fromSeconds(poll, { zone: 'utc' }), {
+      in: 999_999,
+      out: 0,
+    })
+    const r = await client
+      .get('/api/v1/traffic/top?range=10m&resolution=15s&limit=2')
+      .bearerToken(ctx.token)
+    r.assertStatus(200)
+    const body = r.body().data
+    const last = body.buckets.at(-1)
+    const lastEnd = Date.parse(last.bucketStart) / 1000 + last.seconds
+    assert.isAtMost(lastEnd, poll, 'the data ends before the newest poll')
+    const total = body.buckets.reduce(
+      (sum: number, b: { devices: Record<string, { bytesIn: number }> }) =>
+        sum + (b.devices[A]?.bytesIn ?? 0),
+      0
+    )
+    assert.equal(total, 0, 'the unfinished poll is left out')
   })
 
   test('rejects limit above 10', async ({ client }) => {
