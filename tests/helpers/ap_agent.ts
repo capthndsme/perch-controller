@@ -63,7 +63,8 @@ export const DEFAULT_SYSTEM_INFO = {
 export class RpcFailure extends Error {
   constructor(
     readonly code: number,
-    message: string
+    message: string,
+    readonly data?: unknown
   ) {
     super(message)
   }
@@ -213,7 +214,10 @@ export class FakeAgent {
       this.#reply({ id: call.id, result })
     } catch (error) {
       if (error instanceof RpcFailure) {
-        this.#reply({ id: call.id, error: { code: error.code, message: error.message } })
+        this.#reply({
+          id: call.id,
+          error: { code: error.code, message: error.message, data: error.data },
+        })
       } else {
         this.#reply({ id: call.id, error: { code: -32603, message: String(error) } })
       }

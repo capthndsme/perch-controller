@@ -5,7 +5,12 @@ import Gateway from '#models/gateway'
 import QosAssignment from '#models/qos_assignment'
 import QosPolicy from '#models/qos_policy'
 import SystemSetting from '#models/system_setting'
-import { _resetApGroupsState, _setApGroupsTimings, requestApGroupsSync } from '#services/ap_groups'
+import {
+  _resetApGroupsState,
+  _setApGroupsTimings,
+  requestApGroupsSync,
+  syncAllApGroups,
+} from '#services/ap_groups'
 import { _resetDeviceGroupsState } from '#services/device_groups'
 import { resetDeviceLabelCacheForTesting } from '#services/device_labels'
 import { _resetCollectorAgentState } from '#services/collector_agent'
@@ -23,6 +28,7 @@ import {
   DEFAULT_SYSTEM_INFO,
   eventually,
   FakeAgent,
+  RpcFailure,
   seedAgentAp,
   seedSetupComplete,
 } from '#tests/helpers/ap_agent'
@@ -581,5 +587,81 @@ test.group('device groups: REST', (group) => {
     const second = await agent.waitForCount('groups.apply', 2, 5000)
     assert.equal(second[1].params.trunk, 'lan4')
     assert.equal(second[1].params.revision, 2)
+  })
+  test('an AP that refuses a binding is not sent it again; a new daemon version is', async ({
+    client,
+    assert,
+  }) => {
+    const env = await setup(client)
+    await client
+      .patch('/api/v1/settings/device-groups')
+      .bearerToken(env.adminToken)
+      .json({ ssids: ['Apartment'], confirmSeconds: 60 })
+    const unitRes = await client
+      .post('/api/v1/device-groups')
+      .bearerToken(env.adminToken)
+      .json({ gatewayId: env.gatewayId, name: 'Unit 101', networkPerchId: env.unitPerchId })
+    const unit = unitRes.body().data
+    const bound = await client
+      .post(`/api/v1/device-groups/${unit.id}/members`)
+      .bearerToken(env.adminToken)
+      .json({ mac: KID })
+    bound.assertStatus(201)
+
+    const { ap, agentId, agentSecret } = await seedAgentAp({ name: 'ap-hall' })
+    let version = '1.1.0-pre.1'
+    const handlers = {
+      'system.info': () => ({
+        ...DEFAULT_SYSTEM_INFO,
+        agentVersion: version,
+        capabilities: [...DEFAULT_SYSTEM_INFO.capabilities, 'wifi_groups'],
+      }),
+      'groups.state': () => ({ appliedRevision: 0, pending: null, trunkPort: 'wan', stations: [] }),
+      'groups.apply': (p: Record<string, unknown>) => ({
+        revision: p.revision,
+        state: 'pending_confirm',
+        trunkPort: 'wan',
+        converted: false,
+      }),
+      'groups.confirm': () => {
+        throw new RpcFailure(
+          -32002,
+          'rolled back: hostapd-phy0-ap0.psk gives the passphrase to every client',
+          {
+            error: 'unsafe_binding',
+          }
+        )
+      },
+    }
+    const first = await FakeAgent.connect({ agentId, agentSecret, handlers })
+    agents.push(first)
+    await first.waitFor('groups.confirm', 5000)
+    const failed = await eventually(
+      async () => {
+        const res = await client.get('/api/v1/device-groups/aps').bearerToken(env.adminToken)
+        return res.body().data
+      },
+      (list: any[]) => list[0]?.state === 'failed',
+      5000
+    )
+    assert.match(failed[0].error, /^unsafe_binding/)
+
+    // The two-minute sweep: the same state and daemon, nothing is sent.
+    await syncAllApGroups()
+    assert.lengthOf(
+      first.calls.filter((c) => c.method === 'groups.apply'),
+      1
+    )
+
+    // The daemon is upgraded: the same groups are sent again.
+    await first.close()
+    version = '1.1.0-pre.2'
+    const second = await FakeAgent.connect({ agentId, agentSecret, handlers })
+    agents.push(second)
+    const again = await second.waitFor('groups.apply', 5000)
+    assert.equal(again.params.revision, 2)
+    assert.deepEqual(again.params.stations, [{ vid: 101, macs: [KID] }])
+    await ap.refresh()
+    assert.equal(ap.agentVersion, '1.1.0-pre.2')
   })
 })

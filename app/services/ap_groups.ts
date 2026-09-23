@@ -138,6 +138,11 @@ type ApApplyResult = {
   issues?: string[]
 }
 
+/** perch-apd refused a confirm because hostapd lost a binding's MAC. */
+function isUnsafeBinding(error: string | null): boolean {
+  return error?.startsWith('unsafe_binding') ?? false
+}
+
 function errorText(error: unknown): string {
   if (error instanceof AgentRpcError) {
     const data = error.data as { error?: string } | undefined
@@ -201,7 +206,9 @@ async function syncAp(apId: number): Promise<void> {
   }
   const base = await desiredApGroups()
   const desired: ApGroupsDesired = { ...base, trunk: st.trunkOverride ?? 'auto' }
-  const fingerprint = sha256(desired)
+  // The daemon's version is part of it: an upgraded AP renders the same
+  // state again (a noop when nothing differs).
+  const fingerprint = sha256({ desired, agent: ap.agentVersion ?? null })
 
   let report: ApStateReport
   try {
@@ -238,6 +245,15 @@ async function syncAp(apId: number): Promise<void> {
     st.fingerprint === fingerprint &&
     report.appliedRevision === st.revision &&
     (st.state === 'applied' || st.state === 'pending_confirm')
+  // The AP refused to keep this state (a binding hostapd would give every
+  // client): sending it again only rolls the Wi-Fi back again. A change of
+  // the groups or of the daemon's version tries again.
+  const refused =
+    st.fingerprint === fingerprint && st.state === 'failed' && isUnsafeBinding(st.error)
+  if (refused) {
+    await st.save()
+    return
+  }
   if (!inLine) {
     const revision = Math.max(st.revision, report.appliedRevision ?? 0) + 1
     st.revision = revision
@@ -388,6 +404,6 @@ export async function setApTrunk(apId: number, trunk: string | null): Promise<Ap
   st.trunkOverride = trunk
   await st.save()
   onApAgentReady(apId)
-  const view = (await listApGroupStates()).find((v) => v.apId === apId)!
-  return view
+  const views = await listApGroupStates()
+  return views.find((v) => v.apId === apId)!
 }

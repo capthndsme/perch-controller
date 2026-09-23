@@ -163,7 +163,11 @@ On the AP (`internal/groups` of perch-apd):
   untagged bridge is converted first, its interfaces moving to `<bridge>.1`, like the
   gateway's networks), an interface `perch_v<vid>` on `<bridge>.<vid>`, and a `wifi-vlan`
   `perch_wv<vid>` (`name 'g<vid>'`, the managed ifaces);
-- per station a `wifi-station` `perch_ws<n>`;
+- per key a `wifi-station` `perch_ws<n>`, per bound MAC one with a single `option mac` (24.10
+  drops a `list mac`, and a station without its MAC matches every client);
+- `groups.confirm` reads hostapd's PSK files back first: a binding's passphrase held for any
+  MAC rolls the AP back (`unsafe_binding`), and the controller does not send that state again
+  until the groups or the daemon's version change;
 - `trunk: "auto"` = the bridge port behind which the default gateway's MAC is learned.
 - Only a change of stations reloads with `RELOAD_WPA_PSK` (no client drops); VLAN changes
   restart the managed BSSes.
@@ -177,7 +181,8 @@ On the AP (`internal/groups` of perch-apd):
 
 Every agent that offers `wifi_groups` gets the same desired state (the settings' SSIDs, the
 VLAN of every group with a network, a station per key, one binding station per group with
-bound members), fingerprinted; a new fingerprint is the AP's next revision. On every agent
+bound members), fingerprinted together with the daemon's version (an upgraded AP renders the state again); a
+new fingerprint is the AP's next revision. On every agent
 connect (after `system.info`), on changes (debounced 300 ms) and every two minutes: `groups.state`
 first (a pending revision this side sent is confirmed at once: the agent answered), then
 `groups.apply` when out of line, and 15 s after a `pending_confirm` a `ping` and `groups.confirm`
