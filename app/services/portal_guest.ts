@@ -58,6 +58,7 @@ export const GUEST_ERRORS = [
   'wrong_portal',
   'rate_limited',
   'bad_request',
+  'controller_unreachable',
 ] as const
 export type GuestError = (typeof GUEST_ERRORS)[number]
 
@@ -73,6 +74,7 @@ const MESSAGES: Record<GuestError, string> = {
   wrong_portal: 'That code is not valid on this network.',
   rate_limited: 'Too many attempts. Try again later.',
   bad_request: 'The request was malformed.',
+  controller_unreachable: 'The controller is busy. Try again in a moment.',
 }
 
 export function guestRefusal(code: GuestError, extra: Record<string, unknown> = {}): AgentRpcError {

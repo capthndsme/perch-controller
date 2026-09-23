@@ -104,6 +104,8 @@ const DEFAULT_TIMINGS = {
   retryBaseMs: 2_000,
   retryMaxMs: 5 * 60_000,
   eventSyncDelayMs: 1_000,
+  /** A sign-in must start within this (the router gives up after 8 s). */
+  signInStartMs: 5_000,
 }
 let timings = { ...DEFAULT_TIMINGS }
 
@@ -1145,10 +1147,33 @@ async function guestSignIn(
 ): Promise<SignedReply> {
   const gatewayId = await gatewayOf(collectorId)
   if (gatewayId === null) throw guestRefusal('wrong_portal')
-  const { reply, pushes } = await runInPortalQueue(gatewayId, async () => {
+  // The router waits 8 s for the answer, then redeems offline from its own
+  // list. A sign-in stuck behind a long sync must not run after that (the
+  // same code would be spent twice): it is given up, unstarted, and the
+  // router told the controller cannot answer (no offline fallback then).
+  let started = false
+  let abandoned = false
+  const work = runInPortalQueue(gatewayId, async () => {
+    if (abandoned) return null
+    started = true
     const out = await run(gatewayId)
     return { reply: await grantReply(gatewayId, out.grantId, out.queued), pushes: out.pushes }
   })
+  let timer: NodeJS.Timeout | undefined
+  const deadline = new Promise<'late'>((resolve) => {
+    timer = setTimeout(() => resolve('late'), timings.signInStartMs)
+  })
+  const first = await Promise.race([work.then(() => 'done' as const), deadline])
+  if (first === 'late' && !started) {
+    abandoned = true
+    clearTimeout(timer)
+    void work.catch(() => {})
+    throw guestRefusal('controller_unreachable')
+  }
+  clearTimeout(timer)
+  const done = await work
+  if (!done) throw guestRefusal('controller_unreachable')
+  const { reply, pushes } = done
   const list = grantPushList(pushes)
   if (list.length) {
     // After the answer: the router applies the new grant first.

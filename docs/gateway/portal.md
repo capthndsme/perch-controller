@@ -1287,6 +1287,11 @@ offer the method (else `wrong_portal` / `disabled`).
   router applies it at once; its delivery is acknowledged by the next sync.
   Pushes for everything else the sign-in changed (the evicted device, a
   swapped bucket, the offline list) go out right after the answer.
+- **Deadline**: the router waits 8 s, then redeems offline from its own
+  list. A sign-in that has not started within 5 s (queued behind a long
+  sync) is dropped unstarted and answered `controller_unreachable`, which the
+  router shows without falling back to offline redemption, so the same code
+  is never spent twice.
 - **Brute force**: failures only, 15-minute windows, bounded map (4096):
   `controllerFailuresPerDevicePer15Minutes` per (portal, MAC) for both;
   `controllerFailuresPerUsernamePer15Minutes` per (portal, username) for

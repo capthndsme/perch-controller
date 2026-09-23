@@ -364,6 +364,40 @@ test.group('portal | collector socket', (group) => {
     assert.equal(rpcErrorOf(limited), 'rate_limited')
   })
 
+  test('portal.redeem: a sign-in stuck behind a sync is given up, never run late', async ({
+    assert,
+  }) => {
+    _setPortalAgentTimings({
+      callTimeoutMs: 400,
+      syncTimeoutMs: 1500,
+      retryBaseMs: 5000,
+      retryMaxMs: 5000,
+      eventSyncDelayMs: 0,
+      signInStartMs: 200,
+    })
+    const portal = await seedPortal(world.gatewayId)
+    const { voucher } = await seedVoucher(portal.id, CODE)
+    const router = await connected()
+    router.failNext.set('portal.sync', 'hang')
+    router.collector.notifyServer('portal.event', {
+      seq: 1,
+      at: Date.now(),
+      type: 'noop',
+      mac: MAC_A,
+    })
+    await router.collector.waitForCount('portal.sync', 2)
+    const reply = await router.collector.request('portal.redeem', {
+      portalId: portal.id,
+      mac: MAC_A,
+      ip: '192.168.30.20',
+      code: CODE,
+    })
+    assert.equal(rpcErrorOf(reply), 'controller_unreachable')
+    // The queue moves on after the sync times out; the redemption never ran.
+    await new Promise((resolve) => setTimeout(resolve, 1800))
+    assert.lengthOf(await PortalGrant.query().where('voucher_id', voucher.id), 0)
+  })
+
   test('portal.redeem: a used-up voucher moves to the newest device (decision 23)', async ({
     assert,
   }) => {
