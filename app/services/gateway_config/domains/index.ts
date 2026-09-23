@@ -1,6 +1,7 @@
 import { DomainRegistry, type ConfigDomain } from '#services/gateway_config/domain'
 import { dhcpHostsDomain } from '#services/gateway_config/domains/dhcp_hosts'
 import { dnsRecordsDomain } from '#services/gateway_config/domains/dns_records'
+import { firewallDomain } from '#services/gateway_config/domains/firewall'
 
 /**
  * The domains this controller models, in claim order (the first domain
@@ -10,6 +11,8 @@ import { dnsRecordsDomain } from '#services/gateway_config/domains/dns_records'
 export const DOMAINS: readonly ConfigDomain[] = Object.freeze([
   dhcpHostsDomain as ConfigDomain,
   dnsRecordsDomain as ConfigDomain,
+  // After networks (and pools) when they merge: apply order system → network → dhcp → firewall.
+  firewallDomain as ConfigDomain,
 ])
 
 let registry: DomainRegistry | null = null
