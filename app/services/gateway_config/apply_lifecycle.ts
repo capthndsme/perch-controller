@@ -9,6 +9,7 @@ import { planeError } from '#services/gateway_config/errors'
 import { recordGatewayEvent } from '#services/gateway_config/events'
 import {
   agentErrorCode,
+  fetchCapabilities,
   gatewayRequest,
   readAndReconcile,
 } from '#services/gateway_config/gateway_agent'
@@ -20,6 +21,7 @@ import {
 import {
   gatewaySession,
   normalizeMode,
+  parseApplyResult,
   writeAccess,
   type AgentApplyResult,
   type WriteAccess,
@@ -397,11 +399,16 @@ async function applyParams(
   dryRun: boolean,
   access: WriteAccess
 ): Promise<Record<string, unknown>> {
+  // The agent needs the hash of every config an op touches ("" = no file).
+  const base: Record<string, string> = { ...job.base }
+  for (const op of job.ops) {
+    if (base[op.config] === undefined) base[op.config] = gateway.observedHashes?.[op.config] ?? ''
+  }
   const params: Record<string, unknown> = {
     applyId: applyKey,
     kind: job.kind,
     dryRun,
-    base: job.base,
+    base,
     ops: job.ops,
     ledger: job.ledger,
   }
@@ -426,7 +433,14 @@ function agentFailure(error: unknown) {
     return planeError(504, 'agent_timeout', 'The gateway agent did not answer in time.')
   }
   const code = agentErrorCode(error)
-  return planeError(409, code ?? 'agent_error', (error as Error).message ?? 'agent error')
+  const data = (error as { data?: Record<string, unknown> }).data ?? {}
+  const extra = Object.fromEntries(Object.entries(data).filter(([key]) => key !== 'error'))
+  return planeError(
+    code === 'bad_params' ? 422 : 409,
+    code ?? 'agent_error',
+    (error as Error).message ?? 'agent error',
+    extra
+  )
 }
 
 // ── sending ──────────────────────────────────────────────────────────────
@@ -444,6 +458,7 @@ function transition(apply: GatewayApply, event: ApplyEvent): ApplyState {
  * cancelled, one whose sections are in conflict now fails.
  */
 export async function sendApply(gateway: Gateway, apply: GatewayApply): Promise<void> {
+  if (apply.kind === 'package') return sendPackageJob(gateway, apply)
   const settings = await getGatewayConfigSettings()
   const access = writeAccess(gateway, settings)
   if (!access.writable) return
@@ -477,6 +492,11 @@ export async function sendApply(gateway: Gateway, apply: GatewayApply): Promise<
     await failApply(gateway, apply, 'insecure_transport', 'Secrets need verified TLS.')
     return
   }
+  // The agent records each adopted section's domain in its ledger.
+  const domains = new Map(states.map((s) => [s.perchId, s.domain]))
+  job.ops = job.ops.map((op) =>
+    op.op === 'adopt' && domains.get(op.perchId) ? { ...op, domain: domains.get(op.perchId)! } : op
+  )
   applyJob(apply, job)
   transition(apply, 'send')
   apply.sentAt = DateTime.utc()
@@ -513,6 +533,15 @@ async function onSendError(gateway: Gateway, apply: GatewayApply, error: unknown
     return
   }
   const code = agentErrorCode(error) ?? 'apply_failed'
+  const data = (error as { data?: Record<string, unknown> }).data
+  if (data?.rolledBack === true && data.result && typeof data.result === 'object') {
+    // Failed after the first commit: the agent rolled back already.
+    const parsed = parseApplyResult(data.result)
+    if (parsed) {
+      await applyResult(gateway, parsed)
+      return
+    }
+  }
   if (code === 'stale_base' && !apply.retried) {
     // Section 5.5: read, merge, retry once when the merge opened no conflict.
     apply.retried = true
@@ -717,7 +746,6 @@ async function tryConfirm(gateway: Gateway, apply: GatewayApply): Promise<void> 
     const code = agentErrorCode(error)
     const data = (error as { data?: Record<string, unknown> }).data
     if (code === 'deadline_passed' && data && typeof data.result === 'object') {
-      const { parseApplyResult } = await import('#services/gateway_config/gateway_registry')
       const parsed = parseApplyResult(data.result)
       if (parsed) await applyResult(gateway, parsed)
       return
@@ -820,6 +848,11 @@ async function finishConfirmed(
     detail: { applyId: apply.applyKey, kind: apply.kind, via },
   })
   await refreshSyncState(gateway)
+  if (apply.kind === 'package') {
+    // The router's package list changed: capabilities say what is there now.
+    await fetchCapabilities(gateway).catch(() => undefined)
+    return
+  }
   await chainNext(gateway, apply)
 }
 
@@ -1130,6 +1163,9 @@ async function tickGateway(gateway: Gateway, now: DateTime) {
     if (apply.state === 'pending_confirm' && apply.deadlineAt) {
       if (apply.deadlineAt.plus({ seconds: DEADLINE_GRACE_SECONDS }) < now) {
         await assumeRolledBack(gateway, apply, now)
+      } else if (apply.deadlineAt > now) {
+        // A confirm that failed on the wire (timeout) is sent again.
+        await tryConfirm(gateway, apply)
       }
       continue
     }
@@ -1229,4 +1265,141 @@ export async function startRevert(
   await sendApply(gateway, apply)
   await apply.refresh()
   return apply
+}
+
+// ── package installs (README 7.7) ─────────────────────────────────────────
+
+/** `gateway.package.install` runs the package manager: a minute or more with `update`. */
+export const PACKAGE_RPC_TIMEOUT_MS = 6 * 60_000
+
+const PACKAGE_NAME = /^[a-z0-9][a-z0-9+._-]{0,63}$/
+
+/**
+ * `POST /gateways/:id/packages` (README 7.7, "Install on gateway"): one
+ * `package` job for the named packages, confirmed like an apply (fresh
+ * session, and the admin in `admin_and_agent` mode); a rollback removes what
+ * it installed. The agent checks its install allowlist and free flash. A
+ * dry run returns the agent's plan (`install`, `needBytes`, `freeBytes`).
+ */
+export async function requestPackageInstall(
+  gatewayId: number,
+  request: { userId: number | null; packages: string[]; dryRun?: boolean; note?: string | null }
+): Promise<GatewayApply | Record<string, unknown>> {
+  return gatewayQueue.run(gatewayId, async () => {
+    const gateway = await Gateway.findOrFail(gatewayId)
+    const settings = await getGatewayConfigSettings()
+    if (normalizeMode(gateway.mode) !== 'managed') {
+      throw planeError(409, 'not_managed', 'The gateway is not in managed mode.')
+    }
+    const packages = [...new Set(request.packages)]
+    if (
+      packages.length === 0 ||
+      packages.length > 16 ||
+      !packages.every((p) => PACKAGE_NAME.test(p))
+    ) {
+      throw planeError(422, 'invalid_packages', 'Name 1 to 16 packages.')
+    }
+    const allow = (gateway.capabilities as Record<string, unknown> | null)?.installAllowlist
+    if (Array.isArray(allow)) {
+      const refused = packages.filter((p) => !allow.includes(p))
+      if (refused.length > 0) {
+        throw planeError(409, 'package_not_allowed', 'Not on the router’s install allowlist.', {
+          packages: refused,
+        })
+      }
+    }
+    if (!request.dryRun && (await hasOpenApply(gateway.id))) {
+      throw planeError(409, 'apply_in_flight', 'Another job is not finished yet.')
+    }
+    const access = writeAccess(gateway, settings)
+    if (!access.writable) {
+      throw planeError(
+        409,
+        access.reason === 'offline' ? 'agent_offline' : blockCode(access.reason),
+        writeBlockMessage(access.reason)
+      )
+    }
+    if (request.dryRun) {
+      return gatewayRequest<Record<string, unknown>>(
+        gateway,
+        'gateway.package.install',
+        { applyId: newApplyKey(gateway.id), packages, dryRun: true },
+        { timeoutMs: PACKAGE_RPC_TIMEOUT_MS, access }
+      ).catch((error) => {
+        throw agentFailure(error)
+      })
+    }
+    const now = DateTime.utc()
+    const apply = new GatewayApply()
+    apply.gatewayId = gateway.id
+    apply.applyKey = newApplyKey(gateway.id)
+    apply.kind = 'package'
+    apply.state = 'queued'
+    apply.ops = []
+    apply.baseHashes = {}
+    apply.perchIds = []
+    apply.packages = packages
+    apply.protected = false
+    apply.confirmMode = settings.confirmMode
+    apply.confirmTimeoutSeconds = confirmTimeoutFor(settings, {
+      protected: false,
+      routerMaxSeconds: routerConfirmMax(gateway),
+    })
+    apply.requestedByUserId = request.userId
+    apply.note = request.note ? request.note.slice(0, 500) : null
+    apply.requestedAt = now
+    apply.queueExpiresAt = now.plus({ hours: settings.queueExpiryHours })
+    apply.chainStep = 0
+    apply.retried = false
+    apply.signed = false
+    apply.configs = []
+    apply.changes = []
+    await apply.save()
+    await recordGatewayEvent(gateway.id, 'apply_requested', {
+      userId: request.userId,
+      applyId: Number(apply.id),
+      detail: { applyId: apply.applyKey, kind: 'package', packages },
+    })
+    await sendPackageJob(gateway, apply)
+    await apply.refresh()
+    return apply
+  })
+}
+
+async function sendPackageJob(gateway: Gateway, apply: GatewayApply): Promise<void> {
+  const settings = await getGatewayConfigSettings()
+  const access = writeAccess(gateway, settings)
+  if (!access.writable) return
+  transition(apply, 'send')
+  apply.sentAt = DateTime.utc()
+  apply.signed = access.signed
+  await apply.save()
+  await refreshSyncState(gateway)
+  let result: Record<string, unknown> | null
+  try {
+    result = await gatewayRequest<Record<string, unknown>>(
+      gateway,
+      'gateway.package.install',
+      {
+        applyId: apply.applyKey,
+        packages: apply.packages ?? [],
+        confirmTimeoutSeconds: apply.confirmTimeoutSeconds,
+      },
+      { timeoutMs: PACKAGE_RPC_TIMEOUT_MS, access }
+    )
+  } catch (error) {
+    await onSendError(gateway, apply, error)
+    return
+  }
+  if (result && typeof result === 'object') {
+    apply.outcome = {
+      ...(apply.outcome ?? {}),
+      ...(Array.isArray(result.install) ? { install: result.install } : {}),
+      ...(Array.isArray(result.alreadyInstalled)
+        ? { alreadyInstalled: result.alreadyInstalled }
+        : {}),
+      ...(typeof result.manager === 'string' ? { manager: result.manager } : {}),
+    }
+  }
+  await onApplyReply(gateway, apply, result ?? {})
 }

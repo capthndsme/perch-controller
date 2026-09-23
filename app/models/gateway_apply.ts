@@ -59,6 +59,10 @@ export default class GatewayApply extends GatewayApplySchema {
   @jsonColumn('changes')
   declare changes: ConfigDiffEntry[] | null
 
+  /** A `package` job's packages (README 7.7). */
+  @jsonColumn('packages')
+  declare packages: string[] | null
+
   /** The request's section filter for the next job of the chain (null = all). */
   @jsonColumn('chain_perch_ids')
   declare chainPerchIds: string[] | null

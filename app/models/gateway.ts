@@ -1,5 +1,7 @@
 import { GatewaySchema } from '#database/schema'
 import { jsonColumn } from '#models/json_column'
+import encryption from '@adonisjs/core/services/encryption'
+import { column } from '@adonisjs/lucid/orm'
 import type {
   GatewayCapabilities,
   LedgerEntry,
@@ -40,6 +42,25 @@ export default class Gateway extends GatewaySchema {
   /** The last read's context besides configs and ledger. */
   @jsonColumn('observed_state')
   declare observedState: GatewayObservedState | null
+
+  /**
+   * The router's `config_sign_key` (signed RPCs over plain HTTP when the
+   * router does not use the api_key): APP_KEY-encrypted, never serialised.
+   */
+  @column({
+    columnName: 'config_sign_key',
+    serializeAs: null,
+    prepare: (value: string | null) => (value ? encryption.encrypt(value) : null),
+    consume: (value: string | null) => {
+      if (!value) return null
+      try {
+        return encryption.decrypt<string>(value) ?? null
+      } catch {
+        return null
+      }
+    },
+  })
+  declare configSignKey: string | null
 
   /** README 3.7: a reset or re-bound gateway is offered its last confirmed revision. */
   @jsonColumn('rejoin_offer')

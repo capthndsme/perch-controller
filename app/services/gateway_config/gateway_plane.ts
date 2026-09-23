@@ -74,6 +74,7 @@ function emptyHello(): HelloGatewayConfig {
     apply: { state: 'idle' },
     results: [],
     signing: null,
+    management: null,
   }
 }
 

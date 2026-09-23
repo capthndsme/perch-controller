@@ -5,7 +5,25 @@ import {
   updateGatewayConfigSettings,
 } from '#services/gateway_config/gateway_config_settings'
 import { updateGatewayConfigSettingsValidator } from '#validators/gateway_config_settings'
+import Collector from '#models/collector'
+import Gateway from '#models/gateway'
+import { sendCollectorConfigure } from '#services/collector_agent'
+import collectorHub from '#services/collector_agent_hub'
+import type { GatewayConfigSettings } from '#services/gateway_config/gateway_config_settings'
+import { setConfigureBlock } from '#services/gateway_config/gateway_registry'
 import type { HttpContext } from '@adonisjs/core/http'
+
+/** Online gateways learn new watch/debounce seconds right away (`agent.configure`). */
+async function pushGatewayConfigure(settings: GatewayConfigSettings) {
+  const online = collectorHub.onlineIds()
+  if (online.length === 0) return
+  const gateways = await Gateway.query().whereIn('collector_id', online)
+  for (const gateway of gateways) {
+    setConfigureBlock(gateway, settings)
+    const collector = await Collector.find(gateway.collectorId!)
+    if (collector) sendCollectorConfigure(collector)
+  }
+}
 
 /**
  * Settings → Gateway (docs/gateway/config-plane.md section 11): the managed
@@ -39,6 +57,8 @@ export default class GatewaySettingsController {
         ],
       })
     }
-    return serialize(gatewayConfigSettingsView(await updateGatewayConfigSettings(payload)))
+    const settings = await updateGatewayConfigSettings(payload)
+    await pushGatewayConfigure(settings)
+    return serialize(gatewayConfigSettingsView(settings))
   }
 }

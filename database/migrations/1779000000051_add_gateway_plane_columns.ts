@@ -14,6 +14,9 @@ import { BaseSchema } from '@adonisjs/lucid/schema'
  *   restore that (last confirmed) revision.
  * - `dns_label_names`: device label → DNS name policy (plan 2 section 4.2,
  *   README 7.10): `off` | `review` (default).
+ * - `config_sign_key`: the router's own `config_sign_key` for signed RPCs
+ *   over plain HTTP, when it uses one instead of the api_key; APP_KEY-
+ *   encrypted like `collectors.api_key`, write-only in the API.
  *
  * `gateway_applies`:
  * - `agent_confirmed_at`: the agent half of a confirm (a fresh session and
@@ -25,6 +28,7 @@ import { BaseSchema } from '@adonisjs/lucid/schema'
  *   the same request (jobs go out one at a time).
  * - `retried`: a `stale_base` answer was retried once already.
  * - `signed`: sent HMAC-signed (plain-HTTP opt-in, README 7.1).
+ * - `packages` (JSON): a `package` job's package names (README 7.7).
  */
 export default class extends BaseSchema {
   async up() {
@@ -33,6 +37,7 @@ export default class extends BaseSchema {
       table.text('observed_state').nullable()
       table.text('rejoin_offer').nullable()
       table.string('dns_label_names', 8).notNullable().defaultTo('review')
+      table.text('config_sign_key').nullable()
     })
 
     this.schema.alterTable('gateway_applies', (table) => {
@@ -46,6 +51,7 @@ export default class extends BaseSchema {
       table.smallint('chain_step').unsigned().notNullable().defaultTo(0)
       table.boolean('retried').notNullable().defaultTo(false)
       table.boolean('signed').notNullable().defaultTo(false)
+      table.text('packages').nullable()
     })
   }
 
@@ -61,12 +67,14 @@ export default class extends BaseSchema {
       table.dropColumn('chain_step')
       table.dropColumn('retried')
       table.dropColumn('signed')
+      table.dropColumn('packages')
     })
     this.schema.alterTable('gateways', (table) => {
       table.dropColumn('observed_ledger')
       table.dropColumn('observed_state')
       table.dropColumn('rejoin_offer')
       table.dropColumn('dns_label_names')
+      table.dropColumn('config_sign_key')
     })
   }
 }

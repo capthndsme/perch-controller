@@ -755,6 +755,32 @@ export async function restoreRevision(
   })
 }
 
+/**
+ * `PUT /gateways/:id/sign-key` (README 7.1): the router's own
+ * `config_sign_key`, for a router that signs with it instead of the api_key.
+ * Stored APP_KEY-encrypted, never returned; `null` clears it.
+ */
+export async function setSignKey(
+  gatewayId: number,
+  user: User,
+  key: string | null,
+  password: string | undefined
+): Promise<Gateway> {
+  return gatewayQueue.run(gatewayId, async () => {
+    const gateway = await findGateway(gatewayId)
+    if (key !== null && !(await verifyPassword(user, password))) {
+      throw planeError(403, 'invalid_password', 'Confirm with your current password.')
+    }
+    gateway.configSignKey = key
+    await gateway.save()
+    await recordGatewayEvent(gateway.id, 'sign_key_changed', {
+      userId: user.id,
+      detail: { set: key !== null },
+    })
+    return gateway
+  })
+}
+
 /** `POST /gateways/:id/rejoin/dismiss`. */
 export async function dismissRejoin(gatewayId: number, userId: number): Promise<Gateway> {
   return gatewayQueue.run(gatewayId, async () => {

@@ -94,10 +94,18 @@ export class FakeGateway {
   failNextApply: { error: string; message?: string; data?: Record<string, unknown> } | null = null
   /** Next apply answers `stale_base` (once). */
   staleNextApply = false
+  /** Next apply fails after its first commit and rolls back (`apply_failed`, `rolledBack`). */
+  failNextApplyAfterCommit = false
   /** Changes a router admin makes while an apply waits for its confirm. */
   duringWindow: (() => void) | null = null
   /** Set by `close()`: no timer of this fake dials or pushes any more. */
   closed = false
+  /** Installed packages (name → version). */
+  packages: Record<string, string> = { dnsmasq: '2.90-r1' }
+  /** Packages `gateway.package.install` may install. */
+  installAllowlist = ['sqm-scripts', 'kmod-sched-cake', 'opennds']
+  /** The router's own `config_sign_key` (signing.key says so when set). */
+  signKey: string | null = null
 
   constructor(readonly options: FakeGatewayOptions = {}) {
     this.configs = clone(options.configs ?? { dhcp: [] })
@@ -157,8 +165,14 @@ export class FakeGateway {
         signing: {
           required: !this.transportOk,
           challenge: this.challenge,
-          key: 'api_key',
+          key: this.signKey ? 'config_sign_key' : 'api_key',
           windowSeconds: 300,
+        },
+        management: {
+          network: 'lan',
+          device: 'br-lan',
+          controllerAddress: '192.168.1.5',
+          reportedAt: new Date().toISOString(),
         },
       },
     })
@@ -243,7 +257,15 @@ export class FakeGateway {
         const { params, signed } = this.#unwrap('gateway.config.apply', raw)
         this.calls.push({ method: 'gateway.config.apply', params, signed })
         this.#writeGate(signed)
+        this.#requireManaged()
         return this.#apply(params, gen)
+      },
+      'gateway.package.install': (raw: Record<string, unknown>) => {
+        const { params, signed } = this.#unwrap('gateway.package.install', raw)
+        this.calls.push({ method: 'gateway.package.install', params, signed })
+        this.#writeGate(signed)
+        this.#requireManaged()
+        return this.#install(params, gen)
       },
       'gateway.config.confirm': (raw: Record<string, unknown>) => {
         const { params, signed } = this.#unwrap('gateway.config.confirm', raw)
@@ -282,7 +304,7 @@ export class FakeGateway {
     if (Math.abs(Date.now() / 1000 - ts) > 300) {
       fail('stale_signature', 'clock skew', { agentTime: Math.floor(Date.now() / 1000) })
     }
-    const mac = createHmac('sha256', TEST_API_KEY)
+    const mac = createHmac('sha256', this.signKey ?? TEST_API_KEY)
       .update(signatureMessage(method, String(sig.challenge), ts, String(sig.nonce), payload))
       .digest('hex')
     if (mac !== sig.mac) fail('bad_signature', 'the signature does not verify')
@@ -298,6 +320,63 @@ export class FakeGateway {
     if (!signed) fail('signature_required', 'sign it')
   }
 
+  /** Apply and install need `agent.configure` mode `managed` on the session. */
+  #requireManaged() {
+    const block = this.collector?.lastConfigure()?.gatewayConfig as { mode?: string } | undefined
+    if (block?.mode !== 'managed') fail('not_managed', 'the controller has not set mode managed')
+  }
+
+  #install(params: Record<string, unknown>, gen: number) {
+    const applyId = String(params.applyId)
+    const wanted = (params.packages as string[]) ?? []
+    const refused = wanted.filter((p) => !this.installAllowlist.includes(p))
+    if (refused.length > 0) fail('package_not_allowed', 'not allowed', { packages: refused })
+    if (this.pending) fail('busy', 'apply pending', { reason: 'apply_pending' })
+    const install = wanted.filter((p) => !this.packages[p])
+    if (params.dryRun) {
+      return {
+        state: 'dry_run',
+        applyId,
+        manager: 'opkg',
+        install,
+        alreadyInstalled: [],
+        needBytes: 1000,
+        freeBytes: 5_000_000,
+      }
+    }
+    if (install.length === 0) return { state: 'noop', applyId, hashes: this.hashes() }
+    const snapshot = { configs: clone(this.configs), ledger: clone(this.ledger) }
+    const before = { ...this.packages }
+    for (const p of install) this.packages[p] = '1.0-r1'
+    const confirmMs = this.options.confirmMs ?? 3000
+    const deadline = new Date(Date.now() + confirmMs)
+    this.pending = {
+      applyId,
+      kind: 'package',
+      gen,
+      deadline,
+      snapshot,
+      committed: clone(this.configs),
+      timer: setTimeout(() => {
+        this.packages = before
+        this.#rollback('confirm_timeout')
+      }, confirmMs),
+    }
+    setTimeout(() => {
+      if (!this.closed) void this.redial()
+    }, 30)
+    return {
+      state: 'pending_confirm',
+      applyId,
+      deadline: deadline.toISOString(),
+      confirmTimeoutSeconds: Math.round(confirmMs / 1000),
+      manager: 'opkg',
+      install,
+      alreadyInstalled: [],
+      hashes: this.hashes(),
+    }
+  }
+
   #capabilities() {
     return {
       protocol: 1,
@@ -310,7 +389,8 @@ export class FakeGateway {
       openwrt: { release: '24.10.2', target: 'x86/64' },
       firewall: 'fw4',
       packageManager: 'opkg',
-      packages: { dnsmasq: '2.90-r1' },
+      packages: this.packages,
+      installAllowlist: this.installAllowlist,
       configs: Object.keys(this.configs),
       hashes: this.hashes(),
       uncommitted: [],
@@ -350,6 +430,19 @@ export class FakeGateway {
       fail(f.error, f.message ?? f.error, f.data ?? {})
     }
     if (this.pending) fail('busy', 'apply pending', { reason: 'apply_pending' })
+    if (this.failNextApplyAfterCommit) {
+      this.failNextApplyAfterCommit = false
+      const result: Result = {
+        applyId,
+        kind: String(params.kind ?? 'apply'),
+        outcome: 'rolled_back',
+        reason: 'reload_failed',
+        at: new Date().toISOString(),
+        hashes: this.hashes(),
+      }
+      this.results.push(result)
+      fail('apply_failed', 'dnsmasq did not reload', { rolledBack: true, result })
+    }
     const base = (params.base ?? {}) as Record<string, string>
     if (this.staleNextApply) {
       this.staleNextApply = false

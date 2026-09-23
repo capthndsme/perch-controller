@@ -975,3 +975,146 @@ test.group('gateway config plane', (group) => {
     included.assertStatus(200)
   })
 })
+
+test.group('gateway config plane: packages, sign key, failures', (group) => {
+  group.each.setup(async () => {
+    await resetAll()
+  })
+  group.each.teardown(async () => {
+    for (const gw of gateways) await gw.destroy()
+    gateways = []
+    await new Promise((r) => setTimeout(r, 100))
+    await gatewayQueue.drainAll()
+    await new Promise((r) => setTimeout(r, 50))
+  })
+
+  test('package install: dry run, refused name, install confirmed like an apply', async ({
+    client,
+    assert,
+  }) => {
+    await settings({ confirmMode: 'agent' })
+    const env = await setup({ secure: true })
+    await toManaged(client, env)
+
+    const refused = await client
+      .post(`/api/v1/gateways/${env.gatewayId}/packages`)
+      .bearerToken(env.adminToken)
+      .json({ packages: ['tcpdump'] })
+    refused.assertStatus(409)
+    refused.assertBodyContains({ error: 'package_not_allowed', packages: ['tcpdump'] })
+
+    const dry = await client
+      .post(`/api/v1/gateways/${env.gatewayId}/packages`)
+      .bearerToken(env.adminToken)
+      .json({ packages: ['sqm-scripts'], dryRun: true })
+    dry.assertStatus(200)
+    assert.deepEqual(dry.body().data.install, ['sqm-scripts'])
+
+    const install = await client
+      .post(`/api/v1/gateways/${env.gatewayId}/packages`)
+      .bearerToken(env.adminToken)
+      .json({ packages: ['sqm-scripts', 'kmod-sched-cake'] })
+    install.assertStatus(202)
+    assert.equal(install.body().data.kind, 'package')
+    await eventually(
+      () => applyState(install.body().data.id),
+      (a) => a.state === 'confirmed',
+      5000
+    )
+    assert.equal(env.gw.packages['sqm-scripts'], '1.0-r1')
+    const gateway = await eventually(
+      () => Gateway.findOrFail(env.gatewayId),
+      (g) => (g.capabilities?.packages as Record<string, string>)?.['sqm-scripts'] !== undefined
+    )
+    assert.equal(gateway.headRevision, 1)
+  })
+
+  test('a router that signs with its own config_sign_key needs the key from the admin', async ({
+    client,
+    assert,
+  }) => {
+    await settings({ allowInsecureTransport: true, confirmMode: 'agent' })
+    const env = await setup({ transportOk: false, allowInsecure: true })
+    await env.gw.destroy()
+    gateways = []
+    const gw = new FakeGateway({
+      configs: routerConfigs(),
+      transportOk: false,
+      allowInsecure: true,
+    })
+    gw.signKey = 'router-only-sign-key-0123456789'
+    gateways.push(gw)
+    await gw.connect()
+    await gatewayQueue.drain(env.gatewayId)
+
+    const blocked = await client
+      .patch(`/api/v1/gateways/${env.gatewayId}`)
+      .bearerToken(env.adminToken)
+      .json({ mode: 'managed', currentPassword: PASSWORD })
+    blocked.assertStatus(409)
+    blocked.assertBodyContains({ error: 'insecure_transport' })
+    const view = await client.get(`/api/v1/gateways/${env.gatewayId}`).bearerToken(env.adminToken)
+    assert.equal(view.body().data.writeBlockedReason, 'sign_key_unknown')
+    assert.equal(view.body().data.signingKey, 'config_sign_key')
+
+    const noPassword = await client
+      .put(`/api/v1/gateways/${env.gatewayId}/sign-key`)
+      .bearerToken(env.adminToken)
+      .json({ key: gw.signKey, currentPassword: 'wrong' })
+    noPassword.assertStatus(403)
+    const set = await client
+      .put(`/api/v1/gateways/${env.gatewayId}/sign-key`)
+      .bearerToken(env.adminToken)
+      .json({ key: gw.signKey, currentPassword: PASSWORD })
+    set.assertStatus(200)
+    assert.isTrue(set.body().data.hasSignKey)
+    assert.notProperty(set.body().data, 'configSignKey')
+
+    const managed = await client
+      .patch(`/api/v1/gateways/${env.gatewayId}`)
+      .bearerToken(env.adminToken)
+      .json({ mode: 'managed', currentPassword: PASSWORD })
+    managed.assertStatus(200)
+    const put = await client
+      .put(`/api/v1/devices/${NEW_MAC}/reservation`)
+      .bearerToken(env.adminToken)
+      .json({ ip: '192.168.1.85' })
+    put.assertStatus(200)
+    await eventually(
+      () => applyState(put.body().data.apply.id),
+      (a) => a.state === 'confirmed',
+      5000
+    )
+    assert.isTrue(
+      gw.calls.filter((c) => c.method === 'gateway.config.apply').every((c) => c.signed)
+    )
+  })
+
+  test('an apply that fails after its first commit settles as rolled back', async ({
+    client,
+    assert,
+  }) => {
+    const env = await setup({ secure: true })
+    await toManaged(client, env)
+    env.gw.failNextApplyAfterCommit = true
+    const put = await client
+      .put(`/api/v1/devices/${NEW_MAC}/reservation`)
+      .bearerToken(env.adminToken)
+      .json({ ip: '192.168.1.86' })
+    put.assertStatus(200)
+    const rolled = await eventually(
+      () => applyState(put.body().data.apply.id),
+      (a) => a.state === 'rolled_back'
+    )
+    assert.equal(rolled.outcome?.reason, 'reload_failed')
+    await eventually(
+      () => env.gw.results.length,
+      (n) => n === 0
+    )
+    const row = await GatewaySection.query()
+      .where('gateway_id', env.gatewayId)
+      .where('status', 'ahead')
+      .firstOrFail()
+    assert.equal(row.desiredContent?.options.ip, '192.168.1.86')
+  })
+})

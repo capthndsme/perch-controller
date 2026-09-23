@@ -83,6 +83,31 @@ export const sectionFilterValidator = vine.compile(
   })
 )
 
+/** `POST /gateways/:id/packages` (README 7.7) */
+export const packageInstallValidator = vine.compile(
+  vine.object({
+    packages: vine
+      .array(
+        vine
+          .string()
+          .trim()
+          .regex(/^[a-z0-9][a-z0-9+._-]{0,63}$/)
+      )
+      .minLength(1)
+      .maxLength(16),
+    dryRun: vine.boolean().optional(),
+    note: vine.string().trim().maxLength(500).optional(),
+  })
+)
+
+/** `PUT /gateways/:id/sign-key`: the router's `config_sign_key`, with the step-up password. */
+export const signKeyValidator = vine.compile(
+  vine.object({
+    key: vine.string().minLength(16).maxLength(512),
+    currentPassword: vine.string().maxLength(512),
+  })
+)
+
 /** `PATCH /gateways/:id/dns` */
 export const dnsPolicyValidator = vine.compile(
   vine.object({ labelNames: vine.enum(['off', 'review'] as const) })

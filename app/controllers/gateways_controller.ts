@@ -7,6 +7,7 @@ import {
   adminConfirm,
   findApply,
   requestApply,
+  requestPackageInstall,
   revertApply,
   validateStates,
 } from '#services/gateway_config/apply_lifecycle'
@@ -27,6 +28,7 @@ import {
   resumeEnforcement,
   revertDriftNow,
   setSectionScope,
+  setSignKey,
   syncStatus,
   type ResolveItem,
 } from '#services/gateway_config/gateway_config_service'
@@ -48,11 +50,13 @@ import {
   applyCreateValidator,
   gatewayBindValidator,
   gatewayPatchValidator,
+  packageInstallValidator,
   pagingValidator,
   perchIdsValidator,
   sectionFilterValidator,
   sectionResolveValidator,
   sectionScopeValidator,
+  signKeyValidator,
 } from '#validators/gateways'
 import type { HttpContext } from '@adonisjs/core/http'
 import Gateway from '#models/gateway'
@@ -389,6 +393,54 @@ export default class GatewaysController {
         return serialize(await applyViewOf(result, { changes: true }))
       }
       return serialize(result)
+    } catch (error) {
+      return planeRefusal(response, error)
+    }
+  }
+
+  /** POST /api/v1/gateways/:id/packages (README 7.7: "Install on gateway") */
+  async installPackages({ params, request, response, auth, serialize }: HttpContext) {
+    const payload = await request.validateUsing(packageInstallValidator)
+    try {
+      const result = await requestPackageInstall(Number(params.id), {
+        userId: auth.getUserOrFail().id,
+        packages: payload.packages,
+        dryRun: payload.dryRun,
+        note: payload.note ?? null,
+      })
+      if (result instanceof GatewayApply) {
+        response.status(202)
+        return serialize(await applyViewOf(result))
+      }
+      return serialize(result)
+    } catch (error) {
+      return planeRefusal(response, error)
+    }
+  }
+
+  /** PUT /api/v1/gateways/:id/sign-key {key, currentPassword} */
+  async setSignKey({ params, request, response, auth, serialize }: HttpContext) {
+    const payload = await request.validateUsing(signKeyValidator)
+    try {
+      const gateway = await setSignKey(
+        Number(params.id),
+        auth.getUserOrFail(),
+        payload.key,
+        payload.currentPassword
+      )
+      const [view] = await gatewayViews([gateway], await getGatewayConfigSettings())
+      return serialize(view)
+    } catch (error) {
+      return planeRefusal(response, error)
+    }
+  }
+
+  /** DELETE /api/v1/gateways/:id/sign-key */
+  async clearSignKey({ params, response, auth, serialize }: HttpContext) {
+    try {
+      const gateway = await setSignKey(Number(params.id), auth.getUserOrFail(), null, undefined)
+      const [view] = await gatewayViews([gateway], await getGatewayConfigSettings())
+      return serialize(view)
     } catch (error) {
       return planeRefusal(response, error)
     }

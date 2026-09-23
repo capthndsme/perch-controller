@@ -278,6 +278,8 @@ export async function gatewayViews(
       allowInsecure: typeof caps?.allowInsecure === 'boolean' ? caps.allowInsecure : null,
       writable: access.writable,
       signedWrites: access.writable ? access.signed : false,
+      signingKey: session?.hello.signing?.key ?? null,
+      hasSignKey: gateway.configSignKey !== null,
       writeBlockedReason: access.writable ? null : access.reason,
       syncState: gateway.syncState,
       counts: counts.get(gateway.id) ?? {

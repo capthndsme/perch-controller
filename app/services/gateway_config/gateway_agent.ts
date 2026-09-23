@@ -14,6 +14,7 @@ import {
 import {
   gatewaySession,
   normalizeMode,
+  parseManagementPath,
   type WriteAccess,
 } from '#services/gateway_config/gateway_registry'
 import { signParams } from '#services/gateway_config/rpc_signing'
@@ -23,7 +24,6 @@ import { reconcileRead, type InFlight } from '#services/gateway_config/sync_engi
 import type {
   GatewayCapabilities,
   LedgerEntry,
-  ManagementPath,
   RouterAuthor,
   UciConfig,
   UciSection,
@@ -80,7 +80,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
  * clock.
  */
 export async function gatewayRequest<T = unknown>(
-  gateway: Pick<Gateway, 'id' | 'collectorId'>,
+  gateway: Pick<Gateway, 'id' | 'collectorId' | 'configSignKey'>,
   method: string,
   params: Record<string, unknown>,
   options: { timeoutMs?: number; access?: WriteAccess; apiKey?: string | null } = {}
@@ -92,9 +92,14 @@ export async function gatewayRequest<T = unknown>(
       timeoutMs: options.timeoutMs,
     })
   }
-  const collector = options.apiKey ? null : await Collector.find(gateway.collectorId)
-  const apiKey = options.apiKey ?? collector?.apiKey ?? null
-  if (!apiKey) throw new AgentRpcError(RPC_ERRORS.COMMAND_FAILED, 'no api key to sign with')
+  let apiKey: string | null
+  if (access.key === 'config_sign_key') {
+    apiKey = gateway.configSignKey
+  } else {
+    const collector = options.apiKey ? null : await Collector.find(gateway.collectorId)
+    apiKey = options.apiKey ?? collector?.apiKey ?? null
+  }
+  if (!apiKey) throw new AgentRpcError(RPC_ERRORS.COMMAND_FAILED, 'no key to sign with')
   const send = (ts?: number) =>
     collectorHub.request<T>(
       gateway.collectorId!,
@@ -147,21 +152,6 @@ export async function fetchCapabilities(gateway: Gateway): Promise<GatewayCapabi
   if (management) gateway.managementPath = management
   await gateway.save()
   return merged
-}
-
-function parseManagementPath(value: unknown): ManagementPath | null {
-  if (!isObject(value) || typeof value.device !== 'string' || value.device.length === 0) {
-    return null
-  }
-  return {
-    network: typeof value.network === 'string' ? value.network : null,
-    device: value.device.slice(0, 32),
-    controllerAddress:
-      typeof value.controllerAddress === 'string'
-        ? value.controllerAddress.slice(0, 64)
-        : undefined,
-    reportedAt: DateTime.utc().toISO()!,
-  }
 }
 
 // ── reads ────────────────────────────────────────────────────────────────

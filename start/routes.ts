@@ -462,6 +462,11 @@ router
             router.delete(':id/draft', [GatewaysController, 'discardDraft']).as('discardDraft')
             router.post(':id/applies', [GatewaysController, 'createApply']).as('createApply')
             router
+              .post(':id/packages', [GatewaysController, 'installPackages'])
+              .as('installPackages')
+            router.put(':id/sign-key', [GatewaysController, 'setSignKey']).as('setSignKey')
+            router.delete(':id/sign-key', [GatewaysController, 'clearSignKey']).as('clearSignKey')
+            router
               .post(':id/applies/:applyId/confirm', [GatewaysController, 'confirmApply'])
               .as('confirmApply')
             router

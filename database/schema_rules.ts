@@ -31,6 +31,7 @@ export default {
         'observed_ledger',
         'observed_state',
         'rejoin_offer',
+        'config_sign_key',
       ],
     },
     gateway_sections: {
@@ -59,6 +60,7 @@ export default {
         'configs',
         'changes',
         'chain_perch_ids',
+        'packages',
       ],
     },
     gateway_revisions: {

@@ -12,6 +12,7 @@ import {
   type AgentAccess,
   type GatewayCapabilities,
   type GatewayMode,
+  type ManagementPath,
 } from '#services/gateway_config/types'
 import { DateTime } from 'luxon'
 
@@ -63,6 +64,8 @@ export type HelloGatewayConfig = {
   apply: HelloApplyState
   results: AgentApplyResult[]
   signing: AgentSigning | null
+  /** README 3.8: how the agent reaches the controller (`ip route get`). */
+  management: ManagementPath | null
 }
 
 export type HelloApplyState = {
@@ -161,6 +164,25 @@ export function parseApplyResult(value: unknown): AgentApplyResult | null {
   }
 }
 
+/** A hello/capabilities `management` block (README 3.8), or null. */
+export function parseManagementPath(value: unknown): ManagementPath | null {
+  if (!isObject(value) || typeof value.device !== 'string' || value.device.length === 0) {
+    return null
+  }
+  return {
+    network: typeof value.network === 'string' ? value.network.slice(0, 32) : null,
+    device: value.device.slice(0, 32),
+    controllerAddress:
+      typeof value.controllerAddress === 'string'
+        ? value.controllerAddress.slice(0, 64)
+        : undefined,
+    reportedAt:
+      typeof value.reportedAt === 'string'
+        ? value.reportedAt.slice(0, 40)
+        : new Date().toISOString(),
+  }
+}
+
 /** Parses the hello's `gatewayConfig` block; tolerant of older and newer agents. */
 export function parseHelloGatewayConfig(value: unknown): HelloGatewayConfig | null {
   if (!isObject(value)) return null
@@ -186,6 +208,7 @@ export function parseHelloGatewayConfig(value: unknown): HelloGatewayConfig | nu
           .filter((r): r is AgentApplyResult => r !== null)
       : [],
     signing: parseSigning(value.signing),
+    management: parseManagementPath(value.management),
   }
 }
 
@@ -322,6 +345,7 @@ export async function ensureGateway(
     else delete caps.accessConfigured
     if (hello.transportOk !== null) caps.transportOk = hello.transportOk
     if (hello.protocol !== null) caps.protocol = hello.protocol
+    if (hello.management) gateway.managementPath = hello.management
   }
   gateway.capabilities = caps
   await gateway.save()
@@ -366,7 +390,14 @@ export type WriteBlockReason =
 
 export type WriteAccess =
   | { writable: true; signed: false; secure: true }
-  | { writable: true; signed: true; secure: false; challenge: string }
+  | {
+      writable: true
+      signed: true
+      secure: false
+      challenge: string
+      /** Which key signs: the collector's api_key, or the router's config_sign_key. */
+      key: 'api_key' | 'config_sign_key'
+    }
   | { writable: false; reason: WriteBlockReason }
 
 /**
@@ -377,7 +408,7 @@ export type WriteAccess =
  * router that signs with its own `config_sign_key` cannot be written.
  */
 export function writeAccess(
-  gateway: Pick<Gateway, 'collectorId' | 'agentAccess' | 'capabilities'>,
+  gateway: Pick<Gateway, 'collectorId' | 'agentAccess' | 'capabilities' | 'configSignKey'>,
   settings: Pick<GatewayConfigSettings, 'allowInsecureTransport'>
 ): WriteAccess {
   const session = gatewaySession(gateway.collectorId)
@@ -396,6 +427,24 @@ export function writeAccess(
     return { writable: false, reason: 'insecure_transport' }
   }
   if (!signing || !signing.challenge) return { writable: false, reason: 'insecure_transport' }
+  if (signing.key === 'config_sign_key') {
+    // The router signs with a key only it and the admin know: the admin
+    // enters it (`PUT /gateways/:id/sign-key`).
+    if (!gateway.configSignKey) return { writable: false, reason: 'sign_key_unknown' }
+    return {
+      writable: true,
+      signed: true,
+      secure: false,
+      challenge: signing.challenge,
+      key: 'config_sign_key',
+    }
+  }
   if (signing.key !== 'api_key') return { writable: false, reason: 'sign_key_unknown' }
-  return { writable: true, signed: true, secure: false, challenge: signing.challenge }
+  return {
+    writable: true,
+    signed: true,
+    secure: false,
+    challenge: signing.challenge,
+    key: 'api_key',
+  }
 }
