@@ -50,6 +50,13 @@ export type PresenceThresholds = {
    * more than this many sample intervals older than the window's end.
    */
   nowRateIntervals: number
+  /**
+   * 1: the gateway's own sightings of a device (a DHCP renewal it can date,
+   * the neighbour table confirming it; docs/gateway/observation.md section 5)
+   * count like traffic. 0: traffic only. A switch kept as an integer like
+   * the other thresholds.
+   */
+  gatewaySightings: number
 }
 
 export const PRESENCE_DEFAULTS: Readonly<PresenceThresholds> = {
@@ -58,6 +65,7 @@ export const PRESENCE_DEFAULTS: Readonly<PresenceThresholds> = {
   apStaleIntervals: 3,
   apStaleMinSeconds: 30,
   nowRateIntervals: 3,
+  gatewaySightings: 1,
 }
 
 /** Seconds without a report after which an AP with this report interval is silent. */
@@ -144,8 +152,10 @@ export type DeviceOnMap = {
  * loses to the map, the link only adds. It never reads as gone from Wi-Fi.
  * Anything else: a device whose traffic ended with its last Wi-Fi sighting
  * (within `wifiTrailingTrafficMinutes`) left over Wi-Fi; otherwise it goes by
- * traffic, connected while it talked in the last `lanQuietMinutes`. Times are
- * epoch milliseconds.
+ * traffic, connected while it talked in the last `lanQuietMinutes`. With
+ * `gatewaySightings` on, the gateway's latest sighting of the device counts
+ * as traffic everywhere (`via` does not change: a sighting says the device
+ * is there, not how). Times are epoch milliseconds.
  */
 export function devicePresence(
   input: {
@@ -153,6 +163,12 @@ export function devicePresence(
     wifi: { connected: boolean; heardAt: number } | null
     /** When the collector last saw its traffic; null when never. */
     trafficAt: number | null
+    /**
+     * The gateway's latest sighting (a dated DHCP renewal or a reachable
+     * neighbour entry); null or absent when none. Used when
+     * `thresholds.gatewaySightings` is 1.
+     */
+    gatewaySeenAt?: number | null
     /** The operator marked it as an Ethernet device (its label's `connection`). */
     ethernet?: boolean
     /** Where the network map puts it; null or absent when no node carries it. */
@@ -161,7 +177,14 @@ export function devicePresence(
   thresholds: PresenceThresholds,
   now: number = Date.now()
 ): DevicePresence {
-  const { wifi, trafficAt } = input
+  const { wifi } = input
+  const sighting = thresholds.gatewaySightings === 1 ? (input.gatewaySeenAt ?? null) : null
+  const trafficAt =
+    sighting === null
+      ? input.trafficAt
+      : input.trafficAt === null
+        ? sighting
+        : Math.max(input.trafficAt, sighting)
   const iso = (at: number | null) => (at === null ? null : new Date(at).toISOString())
 
   if (wifi?.connected) return { status: 'connected', via: 'wifi', lastSeenAt: iso(wifi.heardAt) }

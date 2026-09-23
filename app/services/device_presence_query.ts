@@ -102,10 +102,11 @@ export async function queryDevicePresence(
   thresholds: PresenceThresholds,
   onMap: DeviceOnMap | null
 ): Promise<DevicePresence> {
-  const [wifiByMac, trafficSeenAt, label] = await Promise.all([
+  const [wifiByMac, trafficSeenAt, label, gatewaySeen] = await Promise.all([
     queryLatestWifiContext([mac], thresholds),
     queryTrafficSeenAt([mac]),
     getDeviceLabel(mac),
+    queryGatewaySeenAt([mac], thresholds),
   ])
   const wifi = wifiByMac.get(mac.toLowerCase())
   const seen = [...trafficSeenAt.values()]
@@ -113,6 +114,7 @@ export async function queryDevicePresence(
     {
       wifi: wifi ? { connected: wifi.connected, heardAt: wifi.heardAt } : null,
       trafficAt: seen.length > 0 ? Math.max(...seen) : null,
+      gatewaySeenAt: gatewaySeen.get(mac.toLowerCase()) ?? null,
       ethernet: label?.connection === 'ethernet',
       onMap,
     },
@@ -136,10 +138,11 @@ export async function queryDevicePresences(
   const out = new Map<string, DevicePresence>()
   if (normalized.length === 0) return out
 
-  const [wifiByMac, trafficSeenAt, labels] = await Promise.all([
+  const [wifiByMac, trafficSeenAt, labels, gatewaySeen] = await Promise.all([
     queryLatestWifiContext(normalized, thresholds),
     queryTrafficSeenAt(normalized),
     getDeviceLabels(normalized),
+    queryGatewaySeenAt(normalized, thresholds),
   ])
   // Most recent traffic per MAC, whichever collector saw it.
   const latestTraffic = new Map<string, number>()
@@ -156,6 +159,7 @@ export async function queryDevicePresences(
         {
           wifi: wifi ? { connected: wifi.connected, heardAt: wifi.heardAt } : null,
           trafficAt: latestTraffic.get(mac) ?? null,
+          gatewaySeenAt: gatewaySeen.get(mac) ?? null,
           ethernet: labels.get(mac)?.connection === 'ethernet',
           onMap: onMap.get(mac) ?? null,
         },
@@ -190,6 +194,45 @@ export async function queryTrafficSeenAt(macs: string[]): Promise<Map<string, nu
   for (const row of rows) {
     if (row.agoSeconds === null) continue
     seenAt.set(`${row.collectorId}:${row.mac.toLowerCase()}`, now - Number(row.agoSeconds) * 1000)
+  }
+  return seenAt
+}
+
+/**
+ * The gateway's latest sighting of each device, epoch ms, keyed by lowercase
+ * MAC, whichever gateway saw it: the later of a dated DHCP renewal and a
+ * reachable neighbour entry (`gateway_hosts`, docs/gateway/observation.md
+ * section 5). Empty, without a query, when Settings → Presence has
+ * `gatewaySightings` off. `gateway_hosts.mac` has another collation than
+ * `device_identities.mac`: matched here, in JS.
+ */
+export async function queryGatewaySeenAt(
+  macs: string[],
+  thresholds: PresenceThresholds
+): Promise<Map<string, number>> {
+  const normalized = [...new Set(macs.map((mac) => mac.toLowerCase()))]
+  if (normalized.length === 0 || thresholds.gatewaySightings !== 1) return new Map()
+
+  const placeholders = normalized.map(() => '?').join(', ')
+  const rows = rawRows<{ mac: string; agoSeconds: number | string | null }>(
+    await db.rawQuery(
+      `SELECT mac,
+              MIN(TIMESTAMPDIFF(SECOND,
+                    GREATEST(COALESCE(dhcp_seen_at, neighbor_seen_at),
+                             COALESCE(neighbor_seen_at, dhcp_seen_at)),
+                    UTC_TIMESTAMP())) AS agoSeconds
+         FROM gateway_hosts
+        WHERE mac IN (${placeholders})
+          AND (dhcp_seen_at IS NOT NULL OR neighbor_seen_at IS NOT NULL)
+        GROUP BY mac`,
+      normalized
+    )
+  )
+  const now = Date.now()
+  const seenAt = new Map<string, number>()
+  for (const row of rows) {
+    if (row.agoSeconds === null) continue
+    seenAt.set(row.mac.toLowerCase(), now - Math.max(0, Number(row.agoSeconds)) * 1000)
   }
   return seenAt
 }

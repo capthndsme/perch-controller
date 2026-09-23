@@ -17,7 +17,7 @@ import {
   type ServiceBucketDelta,
 } from '#services/bucket_writer'
 import { upsertDeviceIdentities, type DeviceIdentityInput } from '#services/device_identity_writer'
-import { recordDhcpObservationSerial } from '#services/gateway_dhcp'
+import { recordGatewayObservationSerial } from '#services/gateway_observe'
 import { recordAgentPorts } from '#services/infra_ports'
 import { upsertProtocolCategories, type ProtocolCategoryInput } from '#services/protocol_categories'
 import { recordGatewaySample, type GatewayReport } from '#services/router_metrics'
@@ -107,8 +107,8 @@ type SummaryResponse = {
   meta?: { capture_interface?: string; version?: string }
   /** Gateway stats, when the collector runs on the router (docs/collector-agent.md 4.1). */
   gateway?: GatewayReport | null
-  /** Runtime observations of the router (docs/collector-agent.md 4.3); `dhcp` today. */
-  observe?: { dhcp?: unknown } | null
+  /** Runtime observations of the router (docs/gateway/observation.md): any subset of the parts. */
+  observe?: Record<string, unknown> | null
 }
 
 /**
@@ -124,10 +124,10 @@ export type CollectorSnapshot = {
   gateway?: GatewayReport | null
   /**
    * `observe` of the push or summary. Not ingested by
-   * `ingestCollectorSnapshot`: a push hands it to `gateway_dhcp.ts` beside the
-   * traffic (which may be coalesced away), a poll right after the ingest.
+   * `ingestCollectorSnapshot`: a push hands it to `gateway_observe.ts` beside
+   * the traffic (which may be coalesced away), a poll right after the ingest.
    */
-  observe?: { dhcp?: unknown } | null
+  observe?: Record<string, unknown> | null
 }
 
 /**
@@ -479,10 +479,11 @@ export async function pollOnce(
     await syncProtocolCategories(collector, collector.baseUrl, now, fetcher)
   }
   const outcome = await ingestCollectorSnapshot(collector, snapshot, { now })
-  // A polled collector serves its DHCP observation with every summary; an
-  // unchanged one costs a fingerprint compare. Non-fatal, never the traffic.
-  if (outcome.status !== 'failed' && snapshot.observe?.dhcp !== undefined) {
-    await recordDhcpObservationSerial(collector.id, snapshot.observe.dhcp, now)
+  // A polled collector serves its observation with every summary; an
+  // unchanged part costs a fingerprint compare. Non-fatal, never the traffic.
+  const observe = snapshot.observe
+  if (outcome.status !== 'failed' && observe && typeof observe === 'object') {
+    await recordGatewayObservationSerial(collector.id, observe, now)
   }
   return outcome
 }

@@ -39,6 +39,7 @@ const WifiController = () => import('#controllers/wifi_controller')
 const UsersController = () => import('#controllers/users_controller')
 const ServicesController = () => import('#controllers/services_controller')
 const DestinationsController = () => import('#controllers/destinations_controller')
+const GatewayObservationsController = () => import('#controllers/gateway_observations_controller')
 const UsageController = () => import('#controllers/usage_controller')
 const RouterController = () => import('#controllers/router_controller')
 const ProfileController = () => import('#controllers/profile_controller')
@@ -163,6 +164,12 @@ router
         router.patch('presence', [SettingsController, 'updatePresence']).as('updatePresence')
         router.get('gateway', [GatewaySettingsController, 'show']).as('gateway')
         router.patch('gateway', [GatewaySettingsController, 'update']).as('updateGateway')
+        router
+          .get('gateway-observations', [GatewayObservationsController, 'settings'])
+          .as('gatewayObservations')
+        router
+          .patch('gateway-observations', [GatewayObservationsController, 'updateSettings'])
+          .as('updateGatewayObservations')
         router.get('charts', [SettingsController, 'charts']).as('charts')
         router.patch('charts', [SettingsController, 'updateCharts']).as('updateCharts')
         router.get('wifi-sources', [SettingsController, 'wifiSources'])
@@ -317,6 +324,7 @@ router
         router.get(':mac/overview', [DevicesController, 'overview']).as('overview')
         router.get(':mac/presence', [DevicesController, 'presence']).as('presence')
         router.get(':mac/protocols', [DevicesController, 'protocols']).as('protocols')
+        router.get(':mac/network', [GatewayObservationsController, 'deviceNetwork']).as('network')
       })
       .prefix('devices')
       .as('devices')
@@ -401,6 +409,41 @@ router
       })
       .prefix('infra')
       .as('infra')
+      .use([middleware.auth(), middleware.requirePasswordChange()])
+
+    /**
+     * The gateway's observed runtime state (docs/gateway/observation.md
+     * section 7; plan-2-native-sync.md section 5, read part). `:gatewayId` is
+     * the collector id of the Gateway agent. Leases, neighbours, interfaces,
+     * UPnP and WAN status are for any signed-in user; the rest is admin-only.
+     */
+    router
+      .group(() => {
+        router.get(':gatewayId/observation', [GatewayObservationsController, 'overview'])
+        router.get(':gatewayId/dhcp/leases', [GatewayObservationsController, 'leases'])
+        router.get(':gatewayId/neighbors', [GatewayObservationsController, 'neighbors'])
+        router.get(':gatewayId/interfaces', [GatewayObservationsController, 'interfaces'])
+        router.get(':gatewayId/upnp', [GatewayObservationsController, 'upnp'])
+        router.get(':gatewayId/wan-status', [GatewayObservationsController, 'wanStatus'])
+        router
+          .group(() => {
+            router.get(':gatewayId/system', [GatewayObservationsController, 'system'])
+            router.get(':gatewayId/wireguard', [GatewayObservationsController, 'wireguard'])
+            router.post(':gatewayId/observe', [GatewayObservationsController, 'observe'])
+            router.get(':gatewayId/backups', [GatewayObservationsController, 'backups'])
+            router.post(':gatewayId/backups', [GatewayObservationsController, 'createBackup'])
+            router
+              .get(':gatewayId/backups/:backupId/download', [
+                GatewayObservationsController,
+                'downloadBackup',
+              ])
+              .where('backupId', router.matchers.number())
+          })
+          .use(middleware.requireAdmin())
+      })
+      .prefix('gateways')
+      .as('gatewayObservations')
+      .where('gatewayId', router.matchers.number())
       .use([middleware.auth(), middleware.requirePasswordChange()])
   })
   .prefix('/api/v1')

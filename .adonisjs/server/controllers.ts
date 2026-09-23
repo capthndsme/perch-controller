@@ -13,6 +13,7 @@ export const controllers = {
   DeviceLabels: () => import('#controllers/device_labels_controller'),
   Devices: () => import('#controllers/devices_controller'),
   GatewaySettings: () => import('#controllers/gateway_settings_controller'),
+  GatewayObservations: () => import('#controllers/gateway_observations_controller'),
   Infra: () => import('#controllers/infra_controller'),
   NewAccount: () => import('#controllers/new_account_controller'),
   Profile: () => import('#controllers/profile_controller'),

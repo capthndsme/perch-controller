@@ -125,9 +125,12 @@ const META_COLUMNS = new Set(['id', 'created_at', 'updated_at'])
  * Tables that reference `collectors` but hold no history: the merge moves
  * them with a rule of their own instead of the counter/snapshot machinery.
  * `infra_nodes`: the Gateway agent's node on the infrastructure view
- * (`repointInfraNode`). `gateway_hosts`, `gateway_observations`: the Gateway
- * agent's DHCP mirror, runtime state that follows `into`, the collector that
- * keeps running (`repointGatewayObservations`). `gateways`: the managed
+ * (`repointInfraNode`). `gateway_hosts`, `gateway_observations`,
+ * `gateway_upnp_mappings`: the Gateway agent's runtime mirrors, state that
+ * follows `into`, the collector that keeps running
+ * (`repointGatewayObservations`). `gateway_upnp_events`, `gateway_backups`:
+ * the Gateway agent's logs and archives, keyed by nothing but their id; every
+ * row of both sides is kept and moves to the survivor. `gateways`: the managed
  * gateway (docs/gateway/config-plane.md section 6), whose config history
  * hangs off it rather than off the collector (`repointGateway`).
  */
@@ -136,6 +139,9 @@ export const NON_HISTORY_TABLES = new Set([
   'gateway_hosts',
   'gateway_observations',
   'gateways',
+  'gateway_upnp_mappings',
+  'gateway_upnp_events',
+  'gateway_backups',
 ])
 const IDENTITY_COLUMNS = ['primary_ip', 'ips', 'first_seen_at', 'last_seen_at']
 const SERVICE_SUMS = ['bytes_served', 'bytes_received', 'packets_served', 'packets_received']
@@ -697,11 +703,17 @@ export function describeInfraNodeMove(
 
 // ── gateway observations ─────────────────────────────────────────────────
 
-/** The Gateway agent's runtime mirrors (docs/collector-agent.md section 4.3). */
-const GATEWAY_OBSERVATION_TABLES = ['gateway_hosts', 'gateway_observations'] as const
+/** The Gateway agent's runtime mirrors (docs/gateway/observation.md section 4). */
+const GATEWAY_OBSERVATION_TABLES = [
+  'gateway_hosts',
+  'gateway_observations',
+  'gateway_upnp_mappings',
+] as const
+/** The Gateway agent's logs and archives: both sides' rows are kept. */
+const GATEWAY_KEPT_TABLES = ['gateway_upnp_events', 'gateway_backups'] as const
 
 /**
- * The DHCP mirror is what the running collector (`into`) reports, not
+ * The runtime mirrors are what the running collector (`into`) reports, not
  * history: afterwards the survivor holds `into`'s rows and the other side's
  * are gone. When `into` is the survivor that is only the removed side's rows
  * going (they would CASCADE anyway); otherwise the survivor's own rows are
@@ -724,6 +736,13 @@ export async function repointGatewayObservations(
         sides.removedId,
       ])
     }
+  }
+  // UPnP events and router backups: every row of both sides stays.
+  for (const table of GATEWAY_KEPT_TABLES) {
+    await trx.rawQuery(`UPDATE ${table} SET collector_id = ? WHERE collector_id = ?`, [
+      sides.survivorId,
+      sides.removedId,
+    ])
   }
 }
 

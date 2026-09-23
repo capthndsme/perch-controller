@@ -2,23 +2,46 @@ import db from '@adonisjs/lucid/services/db'
 import type { StrictValues } from '@adonisjs/lucid/types/querybuilder'
 import logger from '@adonisjs/core/services/logger'
 import { DateTime } from 'luxon'
-import { createHash } from 'node:crypto'
-import { isIPv4, isIPv6 } from 'node:net'
+import {
+  fingerprintOf,
+  forgetObservations,
+  ipv4,
+  ipv6,
+  isObject,
+  lastWritten,
+  list,
+  normalizeMac as normalizeMacCommon,
+  parseJsonArray,
+  parseJsonObject,
+  rawRows,
+  refreshObservedAt,
+  remember,
+  sqlTime,
+  text,
+  unixSeconds,
+  writeObservationRow,
+} from '#services/gateway_observation_common'
 
 /**
- * The Gateway agent's DHCP observation (docs/collector-agent.md section 4.3):
- * perch-collector on the router sends `observe.dhcp` — its leases and the
- * static hosts of `/etc/config/dhcp` — inside `collector.push` when they
- * change, at the start of each session and every `dhcp_leases_refresh`
- * (default 10 min, at most 1 h); a polled collector serves it with every
- * summary. The section is a full snapshot and lands here: normalised,
- * folded to one row per MAC and mirrored into `gateway_hosts`, with the
- * report's fingerprint and time in `gateway_observations`.
+ * The `dhcp` part of the Gateway agent's observation (docs/gateway/
+ * observation.md section 3.1; first built as `observe.dhcp`,
+ * docs/collector-agent.md section 4.3): perch-collector on the router reports
+ * its leases and the static hosts of `/etc/config/dhcp` when they change, at
+ * the start of each session and every refresh interval. The part is a full
+ * snapshot of the leases and lands here: normalised, folded to one row per
+ * MAC and mirrored into `gateway_hosts`, with the report's fingerprint and
+ * time in `gateway_observations`.
  *
- * An absent section means "nothing new" and writes nothing. An unchanged
- * report (same fingerprint as the last one written, remembered per collector
- * in a bounded map and in `gateway_observations`) only refreshes
- * `observed_at`, at most once a minute.
+ * An absent part means "nothing new" and writes nothing. An unchanged report
+ * (same fingerprint as the last one written, remembered per collector in a
+ * bounded map and in `gateway_observations`) only refreshes `observed_at`, at
+ * most once a minute. Inside the part, `hosts` absent means the static hosts
+ * were not reported: the previous report's are kept.
+ *
+ * A MAC whose lease went away keeps its row, without the DHCP facts, while
+ * the neighbour table lists it or while it has a sighting (presence reads
+ * `dhcp_seen_at`/`neighbor_seen_at`); a row with neither goes at once, the
+ * rest after `hostRetentionDays` (`gateway_observation_retention.ts`).
  *
  * The hostname lookup (`hostname_enrichment.ts`) reads the mirror of every
  * adopted, enabled collector that reported within `AGENT_FRESH_SECONDS`.
@@ -29,10 +52,13 @@ export const OBSERVATION_KIND_DHCP = 'dhcp'
 /** Most entries one report may carry per list; the rest are ignored. */
 export const MAX_LEASES = 4096
 export const MAX_STATIC_HOSTS = 1024
-/** Entries looked at per list, junk included, so no report can make the server loop. */
-const MAX_SCANNED = 8192
-const MAX_TEXT = 253
 const MAX_V6_PER_MAC = 16
+/**
+ * A renewal dates a sighting from its lease time only when the lease is this
+ * short: longer leases renew too rarely to say anything (the live gateway's
+ * are 1200 days).
+ */
+export const MAX_SIGHTING_LEASE_SECONDS = 86_400
 
 /**
  * A collector whose last DHCP report is older than this no longer counts as
@@ -42,14 +68,9 @@ const MAX_V6_PER_MAC = 16
  */
 export const AGENT_FRESH_SECONDS = 7200
 
-/** Collectors whose last write is remembered; the least recently written is evicted first. */
-export const MAX_REMEMBERED_OBSERVATIONS = 256
-/** An unchanged report refreshes `observed_at` at most this often. */
-const OBSERVED_AT_REFRESH_MS = 60_000
+export { MAX_REMEMBERED_OBSERVATIONS } from '#services/gateway_observation_common'
 
-const MAC_REGEX = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/
-// eslint-disable-next-line no-control-regex
-const CONTROL_CHARS = /[\u0000-\u001f\u007f]/g
+export const normalizeMac = normalizeMacCommon
 
 export type DhcpLease4 = {
   mac: string
@@ -57,11 +78,15 @@ export type DhcpLease4 = {
   hostname: string | null
   /** Unix seconds; 0 = infinite. */
   expires: number
+  /** Seconds, when the agent knows the lease time (sent, or its pool's); else null. */
+  leaseTime: number | null
+  /** The logical network whose subnet holds `ip`, when the agent knows it. */
+  network: string | null
 }
 
 export type DhcpLease6 = {
   duid: string
-  /** From the DUID (types 1 and 3 with Ethernet hardware), else null. */
+  /** Sent by the agent, else from the DUID (types 1 and 3 with Ethernet hardware), else null. */
   mac: string | null
   addresses: string[]
   hostname: string | null
@@ -74,48 +99,42 @@ export type DhcpStaticHost = {
   ip: string | null
 }
 
-export type DhcpObservation = {
-  leases4: DhcpLease4[]
-  leases6: DhcpLease6[]
-  hosts: DhcpStaticHost[]
+/** One UCI `config dhcp` section as the agent reports it. */
+export type DhcpPool = {
+  network: string
+  /** DHCP not served on it (`ignore '1'`). */
+  ignore: boolean
+  /** Seconds; 0 = infinite. */
+  leaseTime: number
+  start: number | null
+  limit: number | null
 }
 
-/** One `gateway_hosts` row as written. */
+export type DhcpObservation = {
+  pools: DhcpPool[]
+  leases4: DhcpLease4[]
+  leases6: DhcpLease6[]
+  /** Null: the report did not carry them (the previous report's apply). */
+  hosts: DhcpStaticHost[] | null
+}
+
+/** One `gateway_hosts` row's DHCP facts as written. */
 export type GatewayHostRow = {
   mac: string
   hostname: string | null
   staticName: string | null
   ipv4: string | null
   ipv6: string[]
+  hasLease: boolean
+  /** The lease's network as the agent reported it. */
+  network: string | null
   leaseExpiresAt: DateTime | null
   leaseInfinite: boolean
+  /** Latest expiry − lease time over the MAC's leases with a short known lease time. */
+  renewedAt: DateTime | null
 }
 
 // ── normalisation ─────────────────────────────────────────────────────────
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function text(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  const cleaned = value.replace(CONTROL_CHARS, '').trim()
-  if (!cleaned || cleaned === '*' || cleaned.length > MAX_TEXT) return null
-  return cleaned
-}
-
-export function normalizeMac(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  let cleaned = value.trim().toLowerCase().replace(/-/g, ':')
-  if (/^[0-9a-f]{12}$/.test(cleaned)) cleaned = cleaned.match(/../g)!.join(':')
-  return MAC_REGEX.test(cleaned) ? cleaned : null
-}
-
-function unixSeconds(value: unknown): number | null {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < 2 ** 40
-    ? value
-    : null
-}
 
 /**
  * The MAC a DHCPv6 DUID carries: DUID-LLT (type 1: hardware type, time,
@@ -134,27 +153,77 @@ export function macFromDuid(duid: string): string | null {
   return normalizeMac(lladdr)
 }
 
-function list(value: unknown): unknown[] {
-  return Array.isArray(value) ? value.slice(0, MAX_SCANNED) : []
+function normalizeStaticHosts(value: unknown): DhcpStaticHost[] {
+  const out: DhcpStaticHost[] = []
+  for (const entry of list(value)) {
+    if (out.length >= MAX_STATIC_HOSTS) break
+    if (!isObject(entry)) continue
+    const name = text(entry.name)
+    if (!name) continue
+    const macs = [
+      ...new Set(
+        list(entry.macs)
+          .map(normalizeMac)
+          .filter((m): m is string => m !== null)
+      ),
+    ].slice(0, 16)
+    const ip = ipv4(entry.ip)
+    if (macs.length === 0 && !ip) continue
+    out.push({ name, macs, ip })
+  }
+  return out
 }
 
 /**
- * The `dhcp` part of an `observe` section as the controller keeps it, or
- * null when it is not one (not an object). Missing lists read as empty: the
- * section is a full snapshot. Bad entries are dropped one by one.
+ * The `dhcp` part as the controller keeps it, or null when it is not one
+ * (not an object). Missing lease lists read as empty (the part is a full
+ * snapshot of the leases); a missing `hosts` reads as "not reported".
+ * Bad entries are dropped one by one.
  */
 export function normalizeDhcpObservation(value: unknown): DhcpObservation | null {
   if (!isObject(value)) return null
-  const out: DhcpObservation = { leases4: [], leases6: [], hosts: [] }
+  const out: DhcpObservation = {
+    pools: [],
+    leases4: [],
+    leases6: [],
+    hosts: value.hosts === undefined || value.hosts === null ? null : [],
+  }
+
+  for (const entry of list(value.pools)) {
+    if (out.pools.length >= 256) break
+    if (!isObject(entry)) continue
+    const network = text(entry.network, 32)
+    const leaseTime = unixSeconds(entry.leaseTime)
+    if (!network || leaseTime === null) continue
+    out.pools.push({
+      network,
+      ignore: entry.ignore === true,
+      leaseTime,
+      start: unixSeconds(entry.start),
+      limit: unixSeconds(entry.limit),
+    })
+  }
+  const poolLeaseTime = new Map(out.pools.map((p) => [p.network, p.leaseTime]))
 
   for (const entry of list(value.leases4)) {
     if (out.leases4.length >= MAX_LEASES) break
     if (!isObject(entry)) continue
     const mac = normalizeMac(entry.mac)
-    const ip = typeof entry.ip === 'string' && isIPv4(entry.ip.trim()) ? entry.ip.trim() : null
+    const ip = ipv4(entry.ip)
     const expires = unixSeconds(entry.expires)
     if (!mac || !ip || expires === null) continue
-    out.leases4.push({ mac, ip, hostname: text(entry.hostname), expires })
+    const network = text(entry.network, 32)
+    // The lease's own lease time, else its pool's (perch-collector sends `pools`).
+    const leaseTime =
+      unixSeconds(entry.leaseTime) ?? (network ? (poolLeaseTime.get(network) ?? null) : null)
+    out.leases4.push({
+      mac,
+      ip,
+      hostname: text(entry.hostname),
+      expires,
+      leaseTime: leaseTime && leaseTime > 0 ? leaseTime : null,
+      network,
+    })
   }
 
   for (const entry of list(value.leases6)) {
@@ -167,35 +236,19 @@ export function normalizeDhcpObservation(value: unknown): DhcpObservation | null
     const validUntil = unixSeconds(entry.validUntil)
     if (!duid || validUntil === null) continue
     const addresses = list(entry.addresses)
-      .filter((a): a is string => typeof a === 'string' && isIPv6(a.trim()))
-      .map((a) => a.trim().toLowerCase())
+      .map(ipv6)
+      .filter((a): a is string => a !== null)
       .slice(0, MAX_V6_PER_MAC)
     out.leases6.push({
       duid,
-      mac: macFromDuid(duid),
+      mac: normalizeMac(entry.mac) ?? macFromDuid(duid),
       addresses,
       hostname: text(entry.hostname),
       validUntil,
     })
   }
 
-  for (const entry of list(value.hosts)) {
-    if (out.hosts.length >= MAX_STATIC_HOSTS) break
-    if (!isObject(entry)) continue
-    const name = text(entry.name)
-    if (!name) continue
-    const macs = [
-      ...new Set(
-        list(entry.macs)
-          .map(normalizeMac)
-          .filter((m): m is string => m !== null)
-      ),
-    ].slice(0, 16)
-    const ip = typeof entry.ip === 'string' && isIPv4(entry.ip.trim()) ? entry.ip.trim() : null
-    if (macs.length === 0 && !ip) continue
-    out.hosts.push({ name, macs, ip })
-  }
-
+  if (out.hosts !== null) out.hosts = normalizeStaticHosts(value.hosts)
   return out
 }
 
@@ -208,11 +261,15 @@ function laterExpiry(a: number, b: number): boolean {
 /**
  * One row per MAC: the IPv4 lease that expires last gives the address and
  * the expiry, the hostname comes from the latest lease that has one (IPv4
- * first, then DHCPv6), DHCPv6 addresses whose DUID carries the MAC are
+ * first, then DHCPv6), DHCPv6 addresses of leases whose MAC is known (sent,
+ * from the DUID, or `v6Macs`: the neighbour table's address → MAC) are
  * collected, and the last static host naming the MAC gives `staticName`
  * (and the address when there is no lease). Sorted by MAC.
  */
-export function foldGatewayHosts(obs: DhcpObservation): GatewayHostRow[] {
+export function foldGatewayHosts(
+  obs: DhcpObservation,
+  v6Macs: ReadonlyMap<string, string> = new Map()
+): GatewayHostRow[] {
   type Acc = {
     lease: DhcpLease4 | null
     named: DhcpLease4 | null
@@ -220,6 +277,7 @@ export function foldGatewayHosts(obs: DhcpObservation): GatewayHostRow[] {
     v6: Set<string>
     staticName: string | null
     staticIp: string | null
+    renewed: number | null
   }
   const byMac = new Map<string, Acc>()
   const acc = (mac: string): Acc => {
@@ -232,6 +290,7 @@ export function foldGatewayHosts(obs: DhcpObservation): GatewayHostRow[] {
         v6: new Set(),
         staticName: null,
         staticIp: null,
+        renewed: null,
       }
       byMac.set(mac, a)
     }
@@ -244,10 +303,18 @@ export function foldGatewayHosts(obs: DhcpObservation): GatewayHostRow[] {
     if (lease.hostname && (!a.named || laterExpiry(lease.expires, a.named.expires))) {
       a.named = lease
     }
+    if (lease.leaseTime && lease.leaseTime <= MAX_SIGHTING_LEASE_SECONDS && lease.expires > 0) {
+      const renewed = lease.expires - lease.leaseTime
+      if (a.renewed === null || renewed > a.renewed) a.renewed = renewed
+    }
   }
   for (const lease of obs.leases6) {
-    if (!lease.mac) continue
-    const a = acc(lease.mac)
+    const mac =
+      lease.mac ??
+      lease.addresses.map((address) => v6Macs.get(address)).find((m) => m !== undefined) ??
+      null
+    if (!mac) continue
+    const a = acc(mac)
     for (const address of lease.addresses) {
       if (a.v6.size < MAX_V6_PER_MAC) a.v6.add(address)
     }
@@ -255,7 +322,7 @@ export function foldGatewayHosts(obs: DhcpObservation): GatewayHostRow[] {
       a.v6Name = { hostname: lease.hostname, validUntil: lease.validUntil }
     }
   }
-  for (const host of obs.hosts) {
+  for (const host of obs.hosts ?? []) {
     for (const mac of host.macs) {
       // The last section naming a MAC wins, as with dnsmasq's own reading.
       const a = acc(mac)
@@ -272,17 +339,20 @@ export function foldGatewayHosts(obs: DhcpObservation): GatewayHostRow[] {
       staticName: a.staticName,
       ipv4: a.lease?.ip ?? a.staticIp,
       ipv6: [...a.v6].sort(),
+      hasLease: a.lease !== null,
+      network: a.lease?.network ?? null,
       leaseExpiresAt:
         a.lease && a.lease.expires > 0
           ? DateTime.fromSeconds(a.lease.expires, { zone: 'utc' })
           : null,
       leaseInfinite: a.lease?.expires === 0,
+      renewedAt: a.renewed === null ? null : DateTime.fromSeconds(a.renewed, { zone: 'utc' }),
     }))
 }
 
 /** Static hosts without a MAC: matched by address only. */
 export function ipOnlyHosts(obs: DhcpObservation): { name: string; ip: string }[] {
-  return obs.hosts
+  return (obs.hosts ?? [])
     .filter((h) => h.macs.length === 0 && h.ip)
     .map((h) => ({ name: h.name, ip: h.ip! }))
 }
@@ -295,6 +365,10 @@ export type ObservationPayload = {
   rows: number
   named: number
   ipOnlyHosts: { name: string; ip: string }[]
+  /** The static hosts in force, carried into a later report that leaves them out. */
+  staticHosts: DhcpStaticHost[]
+  /** The pools the agent reported (lease time per network). */
+  pools: DhcpPool[]
 }
 
 function parsePayload(raw: string | null): ObservationPayload {
@@ -305,42 +379,27 @@ function parsePayload(raw: string | null): ObservationPayload {
     rows: 0,
     named: 0,
     ipOnlyHosts: [],
+    staticHosts: [],
+    pools: [],
   }
-  try {
-    const parsed = raw ? JSON.parse(raw) : null
-    if (!isObject(parsed)) return out
-    for (const key of ['leases4', 'leases6', 'hosts', 'rows', 'named'] as const) {
-      if (typeof parsed[key] === 'number') out[key] = parsed[key] as number
-    }
-    if (Array.isArray(parsed.ipOnlyHosts)) {
-      out.ipOnlyHosts = parsed.ipOnlyHosts.filter(
-        (h): h is { name: string; ip: string } =>
-          isObject(h) && typeof h.name === 'string' && typeof h.ip === 'string'
-      )
-    }
-  } catch {}
+  const parsed = parseJsonObject(raw)
+  if (!parsed) return out
+  for (const key of ['leases4', 'leases6', 'hosts', 'rows', 'named'] as const) {
+    if (typeof parsed[key] === 'number') out[key] = parsed[key] as number
+  }
+  if (Array.isArray(parsed.ipOnlyHosts)) {
+    out.ipOnlyHosts = parsed.ipOnlyHosts.filter(
+      (h): h is { name: string; ip: string } =>
+        isObject(h) && typeof h.name === 'string' && typeof h.ip === 'string'
+    )
+  }
+  out.staticHosts = normalizeStaticHosts(parsed.staticHosts)
+  out.pools = normalizeDhcpObservation({ pools: parsed.pools })?.pools ?? []
   return out
 }
 
 export function observationFingerprint(obs: DhcpObservation): string {
-  return createHash('sha256').update(JSON.stringify(obs)).digest('hex')
-}
-
-// ── the last write per collector ──────────────────────────────────────────
-
-type Remembered = { fingerprint: string; observedWrittenAt: number }
-
-/** Bounded: at most `MAX_REMEMBERED_OBSERVATIONS` collectors, least recently written evicted. */
-const remembered = new Map<number, Remembered>()
-
-function remember(collectorId: number, entry: Remembered) {
-  remembered.delete(collectorId)
-  remembered.set(collectorId, entry)
-  while (remembered.size > MAX_REMEMBERED_OBSERVATIONS) {
-    const oldest = remembered.keys().next().value
-    if (oldest === undefined) break
-    remembered.delete(oldest)
-  }
+  return fingerprintOf(obs)
 }
 
 /**
@@ -354,30 +413,42 @@ export function gatewayDhcpVersion(): number {
   return version
 }
 
-/** Test-only: forget the per-collector cache. */
+/** Called by the other host writers (neighbours) when names may have moved. */
+export function bumpGatewayDhcpVersion(): void {
+  version++
+}
+
+/** Test-only: forget every per-collector memory of the observation channel. */
 export function _resetGatewayDhcpState(): void {
-  remembered.clear()
+  forgetObservations()
   version++
 }
 
 // ── writes ────────────────────────────────────────────────────────────────
 
-const SQL_DATETIME = 'yyyy-MM-dd HH:mm:ss'
-
-function sqlTime(value: DateTime): string {
-  return value.toUTC().toFormat(SQL_DATETIME)
-}
-
-function rawRows<T>(result: unknown): T[] {
-  if (Array.isArray(result) && Array.isArray(result[0])) return result[0] as T[]
-  return []
-}
-
 export type DhcpRecordOutcome = 'written' | 'unchanged' | 'invalid'
 
+/** IPv6 neighbour address → MAC from the host mirror, for DHCPv6 leases without one. */
+async function v6NeighborMacs(collectorId: number): Promise<Map<string, string>> {
+  const rows = rawRows<{ mac: string; neighborIpv6: string | null }>(
+    await db.rawQuery(
+      `SELECT mac, neighbor_ipv6 AS neighborIpv6 FROM gateway_hosts
+        WHERE collector_id = ? AND neighbor_ipv6 IS NOT NULL`,
+      [collectorId]
+    )
+  )
+  const out = new Map<string, string>()
+  for (const row of rows) {
+    for (const address of parseJsonArray(row.neighborIpv6)) out.set(address, row.mac)
+  }
+  return out
+}
+
 /**
- * Mirrors one `observe.dhcp` report of a collector. Absent/invalid input
- * writes nothing. Callers make it non-fatal (a failure costs one report).
+ * Mirrors one `dhcp` report of a collector. Absent/invalid input writes
+ * nothing. Callers make it non-fatal (a failure costs one report); the
+ * observation channel serialises it with the collector's other parts
+ * (`gateway_observe.ts`).
  */
 export async function recordDhcpObservation(
   collectorId: number,
@@ -386,35 +457,60 @@ export async function recordDhcpObservation(
 ): Promise<DhcpRecordOutcome> {
   const obs = normalizeDhcpObservation(raw)
   if (!obs) return 'invalid'
-  const fingerprint = observationFingerprint(obs)
-  const nowMs = now.toMillis()
 
-  let last = remembered.get(collectorId)
-  if (!last) {
-    const rows = rawRows<{ fingerprint: string }>(
+  const last = await lastWritten(collectorId, OBSERVATION_KIND_DHCP)
+  if (obs.hosts === null) {
+    // Not reported this time: the static hosts in force stay.
+    const stored = rawRows<{ payload: string | null }>(
       await db.rawQuery(
-        'SELECT fingerprint FROM gateway_observations WHERE collector_id = ? AND kind = ?',
+        'SELECT payload FROM gateway_observations WHERE collector_id = ? AND kind = ?',
         [collectorId, OBSERVATION_KIND_DHCP]
       )
     )
-    if (rows[0]) last = { fingerprint: rows[0].fingerprint, observedWrittenAt: 0 }
+    obs.hosts = stored[0] ? parsePayload(stored[0].payload).staticHosts : []
   }
+  const fingerprint = observationFingerprint(obs)
 
   if (last && last.fingerprint === fingerprint) {
-    if (nowMs - last.observedWrittenAt >= OBSERVED_AT_REFRESH_MS) {
-      await db.rawQuery(
-        'UPDATE gateway_observations SET observed_at = ? WHERE collector_id = ? AND kind = ?',
-        [sqlTime(now), collectorId, OBSERVATION_KIND_DHCP]
-      )
+    if (await refreshObservedAt(collectorId, OBSERVATION_KIND_DHCP, last, now)) {
       if (last.observedWrittenAt === 0) version++ // first sight since start: freshness may change
-      remember(collectorId, { fingerprint, observedWrittenAt: nowMs })
     }
     return 'unchanged'
   }
 
-  const rows = foldGatewayHosts(obs)
+  const rows = foldGatewayHosts(
+    obs,
+    obs.leases6.length > 0 ? await v6NeighborMacs(collectorId) : new Map()
+  )
   const stamp = sqlTime(now)
-  const payload = JSON.stringify({
+  const nowSeconds = Math.floor(now.toSeconds())
+
+  // A lease whose expiry moved forward was renewed since the last report: a
+  // DHCP exchange, so a sighting now.
+  const previous = new Map(
+    rawRows<{ mac: string; expires: number | string | null }>(
+      await db.rawQuery(
+        `SELECT mac, TIMESTAMPDIFF(SECOND, '1970-01-01 00:00:00', lease_expires_at) AS expires
+           FROM gateway_hosts WHERE collector_id = ? AND lease_expires_at IS NOT NULL`,
+        [collectorId]
+      )
+    ).map((r) => [r.mac, r.expires === null ? null : Number(r.expires)])
+  )
+  const seenAt = (row: GatewayHostRow): string | null => {
+    let seen: number | null = null
+    const before = previous.get(row.mac)
+    const expires = row.leaseExpiresAt ? Math.floor(row.leaseExpiresAt.toSeconds()) : null
+    if (before !== undefined && before !== null && expires !== null && expires > before) {
+      seen = nowSeconds
+    }
+    if (row.renewedAt) {
+      const renewed = Math.min(Math.floor(row.renewedAt.toSeconds()), nowSeconds)
+      if (seen === null || renewed > seen) seen = renewed
+    }
+    return seen === null ? null : sqlTime(DateTime.fromSeconds(seen, { zone: 'utc' }))
+  }
+
+  const payload = {
     leases4: obs.leases4.length,
     leases6: obs.leases6.length,
     hosts: obs.hosts.length,
@@ -423,60 +519,70 @@ export async function recordDhcpObservation(
     // Static hosts with an address but no MAC have no row; the lookup
     // matches them by address, like the command path always did.
     ipOnlyHosts: ipOnlyHosts(obs),
-  } satisfies ObservationPayload)
+    staticHosts: obs.hosts,
+    pools: obs.pools,
+  } satisfies ObservationPayload
 
   await db.transaction(async (trx) => {
-    if (rows.length === 0) {
-      await trx.rawQuery('DELETE FROM gateway_hosts WHERE collector_id = ?', [collectorId])
-    } else {
-      const macs = rows.map((r) => r.mac)
-      await trx.rawQuery(
-        `DELETE FROM gateway_hosts WHERE collector_id = ? AND mac NOT IN (${macs.map(() => '?').join(',')})`,
-        [collectorId, ...macs]
-      )
-      for (let i = 0; i < rows.length; i += 500) {
-        const chunk = rows.slice(i, i + 500)
-        const values: (string | number | boolean | null)[] = []
-        for (const r of chunk) {
-          values.push(
-            collectorId,
-            r.mac,
-            r.hostname,
-            r.staticName,
-            r.ipv4,
-            r.ipv6.length > 0 ? JSON.stringify(r.ipv6) : null,
-            r.leaseExpiresAt ? sqlTime(r.leaseExpiresAt) : null,
-            r.leaseInfinite,
-            stamp,
-            stamp
-          )
-        }
-        await trx.rawQuery(
-          `INSERT INTO gateway_hosts
-             (collector_id, mac, hostname, static_name, ipv4, ipv6, lease_expires_at,
-              lease_infinite, first_seen_at, updated_at)
-           VALUES ${chunk.map(() => '(?,?,?,?,?,?,?,?,?,?)').join(',')}
-           ON DUPLICATE KEY UPDATE
-             hostname = VALUES(hostname), static_name = VALUES(static_name),
-             ipv4 = VALUES(ipv4), ipv6 = VALUES(ipv6),
-             lease_expires_at = VALUES(lease_expires_at),
-             lease_infinite = VALUES(lease_infinite), updated_at = VALUES(updated_at)`,
-          // NULL is a valid binding at runtime; Lucid's type leaves it out.
-          values as StrictValues[]
+    const macs = rows.map((r) => r.mac)
+    // Rows this report no longer lists lose their DHCP facts.
+    await trx.rawQuery(
+      `UPDATE gateway_hosts
+          SET dhcp_present = 0, has_lease = 0, hostname = NULL, static_name = NULL,
+              ipv4 = NULL, ipv6 = NULL, lease_expires_at = NULL, lease_infinite = 0,
+              last_reported_at = ?
+        WHERE collector_id = ? AND dhcp_present = 1
+          ${macs.length > 0 ? `AND mac NOT IN (${macs.map(() => '?').join(',')})` : ''}`,
+      [stamp, collectorId, ...macs]
+    )
+    for (let i = 0; i < rows.length; i += 500) {
+      const chunk = rows.slice(i, i + 500)
+      const values: (string | number | boolean | null)[] = []
+      for (const r of chunk) {
+        values.push(
+          collectorId,
+          r.mac,
+          r.hostname,
+          r.staticName,
+          r.ipv4,
+          r.ipv6.length > 0 ? JSON.stringify(r.ipv6) : null,
+          r.hasLease,
+          r.network,
+          r.leaseExpiresAt ? sqlTime(r.leaseExpiresAt) : null,
+          r.leaseInfinite,
+          true,
+          seenAt(r),
+          stamp,
+          stamp,
+          stamp
         )
       }
+      await trx.rawQuery(
+        `INSERT INTO gateway_hosts
+           (collector_id, mac, hostname, static_name, ipv4, ipv6, has_lease, network, lease_expires_at,
+            lease_infinite, dhcp_present, dhcp_seen_at, last_reported_at, first_seen_at,
+            updated_at)
+         VALUES ${chunk.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',')}
+         ON DUPLICATE KEY UPDATE
+           hostname = VALUES(hostname), static_name = VALUES(static_name),
+           ipv4 = VALUES(ipv4), ipv6 = VALUES(ipv6), has_lease = VALUES(has_lease),
+           network = COALESCE(VALUES(network), network),
+           lease_expires_at = VALUES(lease_expires_at),
+           lease_infinite = VALUES(lease_infinite), dhcp_present = 1,
+           dhcp_seen_at = CASE
+             WHEN VALUES(dhcp_seen_at) IS NULL THEN dhcp_seen_at
+             WHEN dhcp_seen_at IS NULL THEN VALUES(dhcp_seen_at)
+             ELSE GREATEST(dhcp_seen_at, VALUES(dhcp_seen_at)) END,
+           last_reported_at = VALUES(last_reported_at), updated_at = VALUES(updated_at)`,
+        // NULL is a valid binding at runtime; Lucid's type leaves it out.
+        values as StrictValues[]
+      )
     }
-    await trx.rawQuery(
-      `INSERT INTO gateway_observations
-         (collector_id, kind, payload, fingerprint, observed_at, changed_at)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE payload = VALUES(payload), fingerprint = VALUES(fingerprint),
-         observed_at = VALUES(observed_at), changed_at = VALUES(changed_at)`,
-      [collectorId, OBSERVATION_KIND_DHCP, payload, fingerprint, stamp, stamp]
-    )
+    await deleteUnsightedOrphans(trx, collectorId)
+    await writeObservationRow(trx, collectorId, OBSERVATION_KIND_DHCP, payload, fingerprint, now)
   })
 
-  remember(collectorId, { fingerprint, observedWrittenAt: nowMs })
+  remember(collectorId, OBSERVATION_KIND_DHCP, { fingerprint, observedWrittenAt: now.toMillis() })
   version++
   logger.debug(
     { collectorId, leases4: obs.leases4.length, hosts: obs.hosts.length, rows: rows.length },
@@ -486,33 +592,19 @@ export async function recordDhcpObservation(
 }
 
 /**
- * Serialises the reports of one collector (a push's observation is handled
- * beside its traffic ingest, which may drop or coalesce pushes; this one
- * never drops a changed report). One pending promise per collector at most.
+ * Drops rows no report lists and that never had a sighting: nothing about
+ * them is worth keeping. Rows with a sighting stay for the retention task.
  */
-const chains = new Map<number, Promise<unknown>>()
-
-export function recordDhcpObservationSerial(
-  collectorId: number,
-  raw: unknown,
-  now: DateTime = DateTime.utc()
-): Promise<DhcpRecordOutcome | 'failed'> {
-  const previous = chains.get(collectorId) ?? Promise.resolve()
-  const run = previous
-    .catch(() => {})
-    .then(() => recordDhcpObservation(collectorId, raw, now))
-    .catch((error) => {
-      logger.warn(
-        { collectorId, error: String(error) },
-        'gateway_dhcp: observation write failed (non-fatal)'
-      )
-      return 'failed' as const
-    })
-  chains.set(collectorId, run)
-  void run.finally(() => {
-    if (chains.get(collectorId) === run) chains.delete(collectorId)
-  })
-  return run
+export async function deleteUnsightedOrphans(
+  client: { rawQuery: (sql: string, bindings: StrictValues[]) => Promise<unknown> },
+  collectorId: number
+): Promise<void> {
+  await client.rawQuery(
+    `DELETE FROM gateway_hosts
+      WHERE collector_id = ? AND dhcp_present = 0 AND neighbor_present = 0
+        AND dhcp_seen_at IS NULL AND neighbor_seen_at IS NULL`,
+    [collectorId]
+  )
 }
 
 // ── reads ─────────────────────────────────────────────────────────────────
@@ -530,7 +622,7 @@ export type DhcpAgentSource = {
   ipOnlyHosts: { name: string; ip: string }[]
 }
 
-/** Every collector that has ever reported `observe.dhcp`, newest report first. */
+/** Every collector that has ever reported `dhcp`, newest report first. */
 export async function listDhcpAgentSources(): Promise<DhcpAgentSource[]> {
   const rows = rawRows<{
     collectorId: number
@@ -556,7 +648,15 @@ export async function listDhcpAgentSources(): Promise<DhcpAgentSource[]> {
     )
   )
   return rows.map((row) => {
-    const { ipOnlyHosts: ipOnly, ...counts } = parsePayload(row.payload)
+    const payload = parsePayload(row.payload)
+    const counts = {
+      leases4: payload.leases4,
+      leases6: payload.leases6,
+      hosts: payload.hosts,
+      rows: payload.rows,
+      named: payload.named,
+    }
+    const ipOnly = payload.ipOnlyHosts
     const age = Math.max(0, Number(row.age))
     return {
       collectorId: Number(row.collectorId),
@@ -581,7 +681,7 @@ export type GatewayHostRecord = {
   ipv6: string[]
 }
 
-/** The mirror of the given collectors. */
+/** The DHCP mirror of the given collectors (rows the latest DHCP report lists). */
 export async function readGatewayHosts(collectorIds: number[]): Promise<GatewayHostRecord[]> {
   if (collectorIds.length === 0) return []
   const rows = rawRows<{
@@ -595,24 +695,17 @@ export async function readGatewayHosts(collectorIds: number[]): Promise<GatewayH
     await db.rawQuery(
       `SELECT collector_id AS collectorId, mac, hostname, static_name AS staticName, ipv4, ipv6
          FROM gateway_hosts
-        WHERE collector_id IN (${collectorIds.map(() => '?').join(',')})
+        WHERE collector_id IN (${collectorIds.map(() => '?').join(',')}) AND dhcp_present = 1
         ORDER BY collector_id, mac`,
       collectorIds
     )
   )
-  return rows.map((row) => {
-    let ipv6: string[] = []
-    try {
-      const parsed = row.ipv6 ? JSON.parse(row.ipv6) : []
-      if (Array.isArray(parsed)) ipv6 = parsed.filter((a) => typeof a === 'string')
-    } catch {}
-    return {
-      collectorId: Number(row.collectorId),
-      mac: row.mac,
-      hostname: row.hostname,
-      staticName: row.staticName,
-      ipv4: row.ipv4,
-      ipv6,
-    }
-  })
+  return rows.map((row) => ({
+    collectorId: Number(row.collectorId),
+    mac: row.mac,
+    hostname: row.hostname,
+    staticName: row.staticName,
+    ipv4: row.ipv4,
+    ipv6: parseJsonArray(row.ipv6),
+  }))
 }
