@@ -9,7 +9,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { ErrorLine, FactRow, IssueList, ToneBadge } from '@/components/gateway-config/bits'
 import { WriteOutcome } from '@/components/gateway-config/dns-panel'
 import { useProfile } from '@/hooks/use-auth'
-import { useDeleteReservation, useDeviceReservation, usePutReservation } from '@/hooks/use-gateways'
+import { useDeleteReservation, useDeviceReservation, useGateways, usePutReservation } from '@/hooks/use-gateways'
 import { apiErrorCode } from '@/lib/api'
 import { refusalField, refusalMessage, STATUS_META } from '@/lib/gateway-config'
 import type { DhcpReservation, Issue } from '@/types/gateway-config'
@@ -22,6 +22,7 @@ export function DeviceReservationCard({ mac }: { mac: string }) {
   const isAdmin = useProfile().data?.role === 'admin'
   const [gatewayId, setGatewayId] = useState<number | null>(null)
   const query = useDeviceReservation(mac, gatewayId)
+  const gateways = useGateways()
   const code = apiErrorCode(query.error)
 
   if (!mac || query.isPending) return null
@@ -33,7 +34,7 @@ export function DeviceReservationCard({ mac }: { mac: string }) {
           <div className="flex flex-wrap gap-2">
             {ids.map((id) => (
               <Button key={id} size="xs" variant="outline" onClick={() => setGatewayId(id)}>
-                Gateway #{id}
+                {gateways.data?.find((g) => g.id === id)?.name ?? `Gateway #${id}`}
               </Button>
             ))}
           </div>

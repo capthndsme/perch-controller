@@ -1,9 +1,11 @@
 import { useCallback, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { GatewayApplyBanner } from '@/components/gateway-config/apply-banner'
+import { GatewaySectionNav } from '@/components/layout/gateway-section-nav'
 import { Sidebar } from '@/components/layout/sidebar'
 import { DashboardPlainHttpNotice } from '@/components/security/plain-http'
 import { Topbar } from '@/components/layout/topbar'
+import { inGatewaySection } from '@/lib/nav'
 import { cn } from '@/lib/utils'
 
 const COLLAPSED_KEY = 'metricsfe-sidebar-collapsed'
@@ -58,6 +60,7 @@ export function AppLayout() {
         <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col gap-5 px-4 py-5">
           {pathname.startsWith('/settings') ? <DashboardPlainHttpNotice /> : null}
           <GatewayApplyBanner />
+          {inGatewaySection(pathname) ? <GatewaySectionNav /> : null}
           <Outlet />
         </main>
       </div>

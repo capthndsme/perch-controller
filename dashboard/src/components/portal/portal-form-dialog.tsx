@@ -21,6 +21,7 @@ import {
   usePortalTemplates,
   useUpdatePortal,
 } from '@/hooks/use-portal'
+import { useDefaultGatewayId } from '@/hooks/use-gateways'
 import { apiErrorCode } from '@/lib/api'
 import { errorDetail, selectClassName, textareaClassName, vineFieldErrors } from '@/lib/portal'
 import type { Portal, PortalPayload } from '@/types/api'
@@ -49,7 +50,10 @@ export function PortalFormDialog({ portal, onClose }: PortalFormDialogProps) {
   const templates = usePortalTemplates()
 
   const [name, setName] = useState(portal?.name ?? 'Guest Wi-Fi')
-  const [gatewayText, setGatewayText] = useState(portal ? String(portal.gatewayId) : '')
+  // A new portal starts on the default gateway (the same pick as every gateway page).
+  const defaultGateway = useDefaultGatewayId({ enabled: !portal })
+  const [gatewayChoice, setGatewayText] = useState<string | null>(portal ? String(portal.gatewayId) : null)
+  const gatewayText = gatewayChoice ?? (defaultGateway.data != null ? String(defaultGateway.data) : '')
   const [networkText, setNetworkText] = useState(portal?.network.perchId ?? '')
   const [voucher, setVoucher] = useState(portal?.methods.voucher ?? true)
   const [password, setPassword] = useState(portal?.methods.password ?? false)
@@ -229,9 +233,10 @@ export function PortalFormDialog({ portal, onClose }: PortalFormDialogProps) {
                     <option value="">Choose…</option>
                     {networks.data.map((n) => (
                       <option key={n.perchId} value={n.perchId} disabled={taken.has(n.perchId)}>
-                        {n.name}
+                        {n.label || n.name}
                         {n.ipaddr ? ` · ${n.ipaddr}` : ''}
-                        {taken.has(n.perchId) ? ' (has a portal)' : ''}
+                        {n.purpose && n.purpose !== 'custom' ? ` · ${n.purpose}` : ''}
+                        {taken.has(n.perchId) ? ' (has a portal)' : n.management ? ' (manages the gateway)' : ''}
                       </option>
                     ))}
                     {portal && !networks.data.some((n) => n.perchId === portal.network.perchId) ? (

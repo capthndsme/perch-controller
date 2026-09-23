@@ -5,10 +5,11 @@ import {
   useQuery,
   useQueryClient,
   type QueryClient,
+  type UseQueryResult,
 } from '@tanstack/react-query'
+import { useGateways } from '@/hooks/use-gateways'
 import { ApiError, apiFetch } from '@/lib/api'
 import { applyWindowToParams, shouldAutoRefresh, windowKey, type RefreshInterval, type TimeWindow } from '@/lib/time-window'
-import { useAuthStore } from '@/stores/auth-store'
 import type {
   DeviceNetworks,
   GatewayBrief,
@@ -52,19 +53,12 @@ export function invalidateNetworks(queryClient: QueryClient) {
 }
 
 /**
- * Every gateway (`GET /gateways`): same request and cache entry as the config
- * plane's pages and apply banner. A controller without the config plane
- * answers 404; the page then says so instead of retrying.
+ * Every gateway (`GET /gateways`): the shared `['gateways']` query of the
+ * config plane's pages and apply banner (`useGateways`). A controller without
+ * the config plane answers 404; the page then says so instead of retrying.
  */
-export function useNetworkGateways() {
-  const token = useAuthStore((state) => state.token)
-  return useQuery({
-    queryKey: gatewaysKey,
-    queryFn: () => apiFetch<GatewayBrief[]>('/api/v1/gateways'),
-    enabled: Boolean(token),
-    refetchInterval: (query) => ((query.state.data ?? []).some((g) => g.pendingApply) ? 2_000 : 15_000),
-    retry: false,
-  })
+export function useNetworkGateways(): UseQueryResult<GatewayBrief[], Error> {
+  return useGateways()
 }
 
 export function useGatewayNetworks(gatewayId: number | null, options: { enabled?: boolean } = {}) {

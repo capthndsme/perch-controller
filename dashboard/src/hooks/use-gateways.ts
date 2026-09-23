@@ -6,6 +6,7 @@ import {
   useQueryClient,
   type QueryClient,
 } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 import type {
@@ -56,20 +57,75 @@ function json(method: string, body?: unknown): RequestInit {
 // ── Gateways ────────────────────────────────────────────────────────────────
 
 /**
- * All gateways. Polls faster while any has a job open, so the app-wide apply
- * banner follows the confirm steps.
+ * The one `GET /api/v1/gateways` query every page shares (key `['gateways']`):
+ * the config plane, the apply banner, the Gateway overview, networks, shaping
+ * and the guest portal all read this cache entry. Polls faster while any
+ * gateway has a job open, so the app-wide apply banner follows the confirm
+ * steps. A controller without the config plane answers 404: no retry.
  */
-export function useGateways(options: { enabled?: boolean } = {}) {
-  const token = useAuthStore((state) => state.token)
-  return useQuery({
+function gatewaysQueryOptions(enabled: boolean) {
+  return {
     queryKey: gatewaysQueryKey,
     queryFn: () => apiFetch<Gateway[]>('/api/v1/gateways'),
-    enabled: Boolean(token) && options.enabled !== false,
-    refetchInterval: (query) =>
+    enabled,
+    refetchInterval: (query: { state: { data?: Gateway[] } }) =>
       (query.state.data ?? []).some((g) => g.pendingApply) ? 2_000 : 15_000,
-    // A controller without the config plane answers 404: the banner stays quiet.
     retry: false,
+  } as const
+}
+
+/** All gateways. */
+export function useGateways(options: { enabled?: boolean } = {}) {
+  const token = useAuthStore((state) => state.token)
+  return useQuery(gatewaysQueryOptions(Boolean(token) && options.enabled !== false))
+}
+
+/** The parts of a gateway row the default pick needs. */
+export type DefaultGatewayCandidate = { id: number; collectorId: number | null; online: boolean }
+
+/**
+ * The gateway a page shows when the URL names none (`?gateway=N` wins):
+ * `gateways.id`, the first gateway bound to a collector, an online one first.
+ * `null` = no gateway yet (no adopted collector on a router). The one rule
+ * for the Gateway overview, configuration, networks, shaping and the portal.
+ */
+export function pickDefaultGateway(rows: DefaultGatewayCandidate[]): number | null {
+  const bound = rows.filter((g) => g.collectorId !== null)
+  return (bound.find((g) => g.online) ?? bound[0])?.id ?? null
+}
+
+/** `pickDefaultGateway` over the shared gateways query. */
+export function useDefaultGatewayId(options: { enabled?: boolean } = {}) {
+  const token = useAuthStore((state) => state.token)
+  return useQuery({
+    ...gatewaysQueryOptions(Boolean(token) && options.enabled !== false),
+    select: pickDefaultGateway,
   })
+}
+
+/** `?gateway=N` from the URL, else null. */
+export function gatewayIdFromParams(params: URLSearchParams): number | null {
+  const raw = params.get('gateway')
+  if (!raw) return null
+  const id = Number(raw)
+  return Number.isInteger(id) && id > 0 ? id : null
+}
+
+/**
+ * The page's gateway: `?gateway=N`, else the default pick. `settled` turns
+ * true once the choice is final (the URL names one, or the list has loaded
+ * or failed), so pages hold their reads instead of asking twice.
+ */
+export function usePageGatewayId(): { gatewayId: number | null; settled: boolean; error: Error | null } {
+  const [params] = useSearchParams()
+  const explicit = gatewayIdFromParams(params)
+  const fallback = useDefaultGatewayId({ enabled: explicit === null })
+  if (explicit !== null) return { gatewayId: explicit, settled: true, error: null }
+  return {
+    gatewayId: fallback.data ?? null,
+    settled: !fallback.isPending,
+    error: fallback.error,
+  }
 }
 
 export function useGateway(id: number | null) {

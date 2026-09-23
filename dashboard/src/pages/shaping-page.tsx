@@ -55,12 +55,12 @@ const DEVICE_WINDOW = { kind: 'relative', range: '24h' } as const
  * caps (decision 14): the page says so rather than inviting edits.
  */
 export function ShapingPage() {
-  const gatewayId = useQosGatewayId()
+  const { gatewayId, settled } = useQosGatewayId()
   const [params, setParams] = useSearchParams()
   const tabParam = params.get('tab')
   const tab: Tab = TABS.some((t) => t.id === tabParam) ? (tabParam as Tab) : 'overview'
   const isAdmin = useProfile().data?.role === 'admin'
-  const overview = useQosOverview(gatewayId)
+  const overview = useQosOverview(gatewayId, settled)
   const ready = overview.data !== undefined
   const policies = useQosPolicies(gatewayId, ready)
   const groups = useQosGroups(gatewayId, ready)

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/ui/panel'
 import { Segmented } from '@/components/ui/segmented'
 import { PageSpinner } from '@/components/ui/spinner'
+import { NetworkCaptureSwitch } from '@/components/networks/network-capture-switch'
 import { GrantsPanel } from '@/components/portal/grants-panel'
 import { PortalFormDialog } from '@/components/portal/portal-form-dialog'
 import { PortalHealthBadge, PortalNotices, PortalStatusFacts } from '@/components/portal/portal-status'
@@ -156,24 +157,24 @@ function PortalSetupPanel({ portal, isAdmin, onEdit }: { portal: Portal; isAdmin
       </Panel>
 
       <Panel title="Guest privacy" description="Whether Perch records what guests do on this network.">
-        <div className="flex items-start gap-2.5 text-xs">
-          <ShieldCheck className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-          <div className="space-y-2 text-muted-foreground">
+        <div className="space-y-4">
+          <div className="flex items-start gap-2.5 text-xs text-muted-foreground">
+            <ShieldCheck className="mt-0.5 size-4 shrink-0" />
             <p>
               The portal itself keeps only what it needs to run: guests’ MAC addresses, sign-ins and how much time and
               data they used, pruned after the session retention under{' '}
               <Link to="/settings/portal" className="underline underline-offset-2">
                 Settings → Guest portal
               </Link>
-              .
-            </p>
-            <p>
-              Whether the traffic of this network also appears in Perch’s device and destination views is a separate,
-              per-network switch (guest capture) in the gateway’s network settings. Keeping it <strong>off</strong> on a
-              guest network is the privacy-preserving default; if you turn it on, say so in the privacy notice (Data
-              Privacy Act, RA 10173).
+              . Whether the network’s traffic also appears in Perch’s device and destination views is the
+              network’s capture switch below (also on the{' '}
+              <Link to="/networks" className="underline underline-offset-2">
+                Networks
+              </Link>{' '}
+              page).
             </p>
           </div>
+          <NetworkCaptureSwitch gatewayId={portal.gatewayId} perchId={portal.network.perchId} />
         </div>
       </Panel>
     </div>

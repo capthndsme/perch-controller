@@ -1,6 +1,6 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { SidebarSimple, X } from '@phosphor-icons/react'
-import { NAV_ITEMS } from '@/lib/nav'
+import { NAV_ITEMS, underPath } from '@/lib/nav'
 import { cn } from '@/lib/utils'
 
 type SidebarProps = {
@@ -17,6 +17,7 @@ type SidebarProps = {
  * icons; below lg it becomes a drawer over the content.
  */
 export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobile, siteName }: SidebarProps) {
+  const { pathname } = useLocation()
   return (
     <>
       {mobileOpen ? (
@@ -74,7 +75,7 @@ export function Sidebar({ collapsed, onToggleCollapsed, mobileOpen, onCloseMobil
               className={({ isActive }) =>
                 cn(
                   'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors',
-                  isActive
+                  isActive || item.also?.some((prefix) => underPath(pathname, prefix))
                     ? 'bg-brand/10 text-brand'
                     : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground',
                   collapsed && 'lg:justify-center lg:px-0',

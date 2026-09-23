@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { ArrowClockwise, CheckCircle, Info, Warning } from '@phosphor-icons/react'
 import { GatewayBackupsPanel } from '@/components/gateway/gateway-backups-panel'
 import { GatewayFreshnessPanel } from '@/components/gateway/gateway-freshness-panel'
@@ -15,8 +15,8 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { PageSpinner, Spinner } from '@/components/ui/spinner'
 import { useProfile } from '@/hooks/use-auth'
+import { usePageGatewayId } from '@/hooks/use-gateways'
 import {
-  useDefaultGatewayId,
   useGatewayInterfaces,
   useGatewayLeases,
   useGatewayNeighbors,
@@ -39,14 +39,6 @@ import {
 import { cn } from '@/lib/utils'
 import type { GatewayObservationOverview, GatewayObservationPart, GatewayObserveResult } from '@/types/api'
 
-/** `?gateway=N` picks a gateway; otherwise the one reporting gateway stats. */
-function gatewayFromParams(params: URLSearchParams): number | null {
-  const raw = params.get('gateway')
-  if (!raw) return null
-  const id = Number(raw)
-  return Number.isInteger(id) && id > 0 ? id : null
-}
-
 /**
  * The router's runtime state as its Gateway agent reports it: WAN links and
  * failover, DHCP leases, the neighbour table, UPnP mappings, and (admins) the
@@ -54,18 +46,15 @@ function gatewayFromParams(params: URLSearchParams): number | null {
  * here and changes nothing on it (docs/gateway/observation.md).
  */
 export function GatewayPage() {
-  const [params] = useSearchParams()
-  const explicitId = gatewayFromParams(params)
-  const defaultId = useDefaultGatewayId()
-  const gatewayId = explicitId ?? defaultId.data ?? null
+  const { gatewayId, settled, error } = usePageGatewayId()
 
-  if (explicitId === null && defaultId.isPending) return <PageSpinner label="Loading the gateway" />
+  if (!settled) return <PageSpinner label="Loading the gateway" />
 
-  if (explicitId === null && defaultId.error) {
+  if (error) {
     return (
       <div className="flex flex-col gap-5">
         <PageHeader title="Gateway" />
-        <p className="text-sm text-destructive">{defaultId.error.message}</p>
+        <p className="text-sm text-destructive">{error.message}</p>
       </div>
     )
   }

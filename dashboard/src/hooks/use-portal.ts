@@ -1,5 +1,8 @@
+import { useMemo } from 'react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useProfile } from '@/hooks/use-auth'
+import { useGateways } from '@/hooks/use-gateways'
+import { useGatewayNetworks } from '@/hooks/use-networks'
 import { API_URL, ApiError, apiFetch } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 import type {
@@ -114,71 +117,53 @@ export function useDeletePortal() {
 
 // ── Gateways and networks (config plane, docs/gateway/config-plane.md §10) ─
 
-type GatewayRow = { id: number; collectorId: number | null; name: string; online: boolean; mode: string }
-type SectionRow = {
-  perchId: string
-  config: string
-  section: string
-  type: string
-  router: { options: Record<string, unknown> } | null
-  desired: { options: Record<string, unknown> } | null
+const notFound = (error: unknown) => error instanceof ApiError && error.status === 404
+
+/**
+ * The gateways a portal can be created on, from the shared `['gateways']`
+ * query. `null` data = the controller has no gateway list (a build without
+ * the config plane's REST): the create form then offers the gateways of
+ * existing portals and a typed id.
+ */
+export function usePortalGateways(): { data: PortalGatewayOption[] | null | undefined; isPending: boolean } {
+  const gateways = useGateways()
+  const data = useMemo(() => {
+    if (notFound(gateways.error)) return null
+    return gateways.data?.map((g) => ({
+      id: g.id,
+      collectorId: g.collectorId,
+      name: g.name,
+      online: g.online,
+      mode: g.mode,
+    }))
+  }, [gateways.data, gateways.error])
+  return { data, isPending: gateways.isPending && !gateways.error }
 }
 
 /**
- * The gateways a portal can be created on. `null` data = the controller has
- * no gateway list (a build without the config plane's REST): the create form
- * then offers the gateways of existing portals and a typed id.
+ * The gateway's networks that have an interface section (what a portal
+ * stores), from the networks REST; `null` = not available (see above).
  */
-export function usePortalGateways(options: { enabled?: boolean } = {}) {
-  return useQuery({
-    queryKey: [...portalQueryKey, 'gateways'] as const,
-    queryFn: async (): Promise<PortalGatewayOption[] | null> => {
-      try {
-        const rows = await apiFetch<GatewayRow[]>('/api/v1/gateways')
-        return rows.map((g) => ({ id: g.id, collectorId: g.collectorId, name: g.name, online: g.online, mode: g.mode }))
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) return null
-        throw error
-      }
-    },
-    enabled: options.enabled,
-    staleTime: 60_000,
-  })
-}
-
-function optionText(value: unknown): string | null {
-  if (typeof value === 'string') return value
-  if (Array.isArray(value)) return value.filter((v) => typeof v === 'string').join(' ') || null
-  return null
-}
-
-/** The gateway's `network` / `interface` sections; `null` = not available (see above). */
-export function usePortalNetworks(gatewayId: number | null) {
-  return useQuery({
-    queryKey: [...portalQueryKey, 'networks', gatewayId] as const,
-    queryFn: async (): Promise<PortalNetworkOption[] | null> => {
-      try {
-        const rows = await apiFetch<SectionRow[]>(`/api/v1/gateways/${gatewayId}/sections?config=network`)
-        return rows
-          .filter((s) => s.type === 'interface')
-          .map((s) => {
-            const options = s.router?.options ?? s.desired?.options ?? {}
-            return {
-              perchId: s.perchId,
-              name: s.section,
-              proto: optionText(options.proto),
-              ipaddr: optionText(options.ipaddr),
-            }
-          })
-          .filter((n) => n.name !== 'loopback' && !(n.proto ?? '').startsWith('dhcp') && n.proto !== 'pppoe')
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) return null
-        throw error
-      }
-    },
-    enabled: gatewayId !== null,
-    staleTime: 60_000,
-  })
+export function usePortalNetworks(gatewayId: number | null): {
+  data: PortalNetworkOption[] | null | undefined
+  isPending: boolean
+} {
+  const networks = useGatewayNetworks(gatewayId)
+  const data = useMemo(() => {
+    if (notFound(networks.error)) return null
+    return networks.data
+      ?.filter((n) => n.perchId !== null && !n.deleting)
+      .map((n) => ({
+        perchId: n.perchId!,
+        name: n.key,
+        label: n.label,
+        purpose: n.purpose,
+        proto: n.proto,
+        ipaddr: n.ipv4,
+        management: n.management,
+      }))
+  }, [networks.data, networks.error])
+  return { data, isPending: gatewayId !== null && networks.isPending && !networks.error }
 }
 
 // ── Grants and sessions ──────────────────────────────────────────────────

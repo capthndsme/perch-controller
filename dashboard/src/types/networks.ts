@@ -130,7 +130,7 @@ export type NetworkApply = {
   requestedAt: string
   perchIds: string[]
   configs: string[]
-  changes?: Array<{ perchId: string; config: string; section: string; type: string; action: string }>
+  changes?: Array<{ perchId: string | null; config: string; section: string; type: string; action: string }>
 }
 
 export type NetworkConversion = { bridge: string; untaggedVlan: number; moved: string[] }

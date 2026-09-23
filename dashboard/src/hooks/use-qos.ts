@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
+import { usePageGatewayId } from '@/hooks/use-gateways'
 import { devicesQueryKey } from '@/hooks/use-devices'
 import { apiFetch } from '@/lib/api'
 import { recordQosSample } from '@/lib/qos-live'
@@ -35,11 +35,14 @@ export function qosSampleKey(gatewayId: number | null): string {
   return gatewayId ? String(gatewayId) : 'only'
 }
 
-/** The page's gateway: `?gateway=N`, else null (the only one). */
-export function useQosGatewayId(): number | null {
-  const [params] = useSearchParams()
-  const raw = Number(params.get('gateway'))
-  return Number.isInteger(raw) && raw > 0 ? raw : null
+/**
+ * The page's gateway: `?gateway=N`, else the default pick shared by every
+ * gateway page (`pickDefaultGateway`). `null` once settled = no gateway at
+ * all: the server then answers `qos_not_gateway`.
+ */
+export function useQosGatewayId(): { gatewayId: number | null; settled: boolean } {
+  const { gatewayId, settled } = usePageGatewayId()
+  return { gatewayId, settled }
 }
 
 function qs(gatewayId: number | null, extra: Record<string, string | number | undefined> = {}): string {
@@ -61,8 +64,9 @@ const noRetryOn4xx = (count: number, error: unknown) => {
 }
 
 /** `GET /qos`: status, delivery, WAN queues with live counters, policies with live rates, events. Every 5 s. */
-export function useQosOverview(gatewayId: number | null) {
+export function useQosOverview(gatewayId: number | null, enabled = true) {
   return useQuery({
+    enabled,
     queryKey: [...qosQueryKey, gatewayId, 'overview'],
     queryFn: async () => {
       const overview = await apiFetch<QosOverview>(`/api/v1/qos${qs(gatewayId)}`)

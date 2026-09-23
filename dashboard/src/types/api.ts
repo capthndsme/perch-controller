@@ -2326,12 +2326,20 @@ export type PortalGatewayOption = {
   mode: string
 }
 
-/** A network the portal can sit on: a `network` / `interface` section of the config plane. */
+/**
+ * A network the portal can sit on: a gateway network with an interface
+ * section (`GET /gateways/:id/networks`, docs/gateway/networks.md).
+ */
 export type PortalNetworkOption = {
   perchId: string
+  /** The network's key (`guest`). */
   name: string
+  label: string
+  purpose: string | null
   proto: string | null
   ipaddr: string | null
+  /** The network the gateway reaches the controller through: a portal there needs `force`. */
+  management: boolean
 }
 
 // ---------------------------------------------------------------------------
