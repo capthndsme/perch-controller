@@ -70,7 +70,7 @@ export function SettingsPage() {
           <CardTitle className="text-lg">Admin configuration</CardTitle>
           <CardDescription>
             Manage collectors, user accounts, hostname enrichment, OpenWrt WiFi source
-            registration, presence thresholds, and chart detail.
+            registration, presence thresholds, gateway observation, and chart detail.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 pt-6">
@@ -135,6 +135,18 @@ export function SettingsPage() {
                 </div>
                 <Button asChild variant="outline" size="sm">
                   <Link to="/settings/presence">Open</Link>
+                </Button>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Gateway observation</p>
+                  <p className="text-xs text-muted-foreground">
+                    How long the router's past leases, neighbours and UPnP history are kept, and how
+                    many router backups.
+                  </p>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/settings/gateway-observation">Open</Link>
                 </Button>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">

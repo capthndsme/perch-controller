@@ -1713,3 +1713,277 @@ export type UpdateInfraLinkPayload = {
 }
 
 export type InfraPositionEntry = { nodeId: number; x: number; y: number; parentId: number | null }
+
+// ── Gateway observation (docs/gateway/observation.md §7) ─────────────────
+// The router's runtime state as the Gateway agent (perch-collector on the
+// router) reports it: leases, neighbours, interfaces, UPnP, WAN, system.
+// Read-only. Times are ISO strings; `null` = not reported.
+
+/** The parts of the observation channel. */
+export type GatewayObservationPart =
+  | 'interfaces'
+  | 'neighbors'
+  | 'dhcp'
+  | 'upnp'
+  | 'mwan3'
+  | 'resolver'
+  | 'system'
+  | 'wireguard'
+  | 'packages'
+
+/** A device Perch knows (traffic or a label); name = label, else the router's name. */
+export type GatewayDeviceRef = { mac: string; name: string | null }
+
+export type GatewayPartInfo = {
+  observedAt: string
+  changedAt: string
+  secondsSinceReport: number
+  /** The last report is older than 1800 s. */
+  stale: boolean
+  /** Row counts for `dhcp`, `neighbors`, `upnp`; null for the other parts. */
+  counts: Record<string, number> | null
+}
+
+/** `GET /api/v1/gateways/:gatewayId/observation` */
+export type GatewayObservationOverview = {
+  gatewayId: number
+  name: string
+  /** A socket session is open (a polled collector reads false). */
+  online: boolean
+  secure: boolean | null
+  transport: CollectorTransport
+  /** The live session's hello capabilities; null while offline or polled. */
+  capabilities: string[] | null
+  hostname: string | null
+  release: string | null
+  flowOffloadingHw: boolean | null
+  /** Only the parts the agent ever reported. */
+  parts: Partial<Record<GatewayObservationPart, GatewayPartInfo>>
+}
+
+export type DhcpLease = {
+  family: 4 | 6
+  mac: string | null
+  ip: string
+  hostname: string | null
+  /** The router's static host name for the MAC. */
+  staticName: string | null
+  network: string | null
+  expiresAt: string | null
+  infinite: boolean
+  /** The gateway's latest sighting of the MAC (dated renewal or reachable neighbour). */
+  seenAt: string | null
+  /** Config plane; null for now. */
+  reservationId: number | null
+  /** null = Perch has no traffic for it (e.g. a guest VLAN it does not capture). */
+  device: GatewayDeviceRef | null
+}
+
+export type GatewayLeasesResponse = {
+  observedAt: string | null
+  stale: boolean
+  leases: DhcpLease[]
+}
+
+export type GatewayNeighbor = {
+  mac: string
+  ipv4: string | null
+  ipv6: string[]
+  /** The router's L3 device (`br-lan`). */
+  ifname: string | null
+  network: string | null
+  reachable: boolean
+  seenAt: string | null
+  hostname: string | null
+  device: GatewayDeviceRef | null
+}
+
+export type GatewayNeighborsResponse = {
+  observedAt: string | null
+  stale: boolean
+  neighbors: GatewayNeighbor[]
+}
+
+export type ObservedInterface = {
+  network: string
+  device: string | null
+  up: boolean
+  proto: string | null
+  ipv4: string[]
+  ipv6: string[]
+  defaultRoute: boolean | null
+  metric: number | null
+  uptimeSeconds: number | null
+  gateway4: string | null
+  gateway6: string | null
+  dnsServers: string[]
+  error: string | null
+}
+
+export type GatewayInterfacesResponse = {
+  observedAt: string | null
+  stale: boolean
+  interfaces: ObservedInterface[]
+}
+
+export type UpnpMapping = {
+  proto: 'TCP' | 'UDP'
+  externalPort: number
+  internalIp: string
+  internalPort: number
+  description: string | null
+  /** null = permanent. */
+  expiresAt: string | null
+  firstSeenAt: string
+  device: GatewayDeviceRef | null
+}
+
+export type UpnpEvent = {
+  id: number
+  event: 'opened' | 'closed'
+  proto: string
+  externalPort: number
+  internalIp: string
+  internalPort: number
+  description: string | null
+  at: string
+  device: GatewayDeviceRef | null
+}
+
+export type GatewayUpnpResponse = {
+  observedAt: string | null
+  stale: boolean
+  /** null = never reported; false = no miniupnpd on the router. */
+  installed: boolean | null
+  enabled: boolean | null
+  running: boolean | null
+  mappings: UpnpMapping[]
+  /** Newest 200. */
+  events: UpnpEvent[]
+}
+
+/** mwan3 as observed: config (UCI) and service state apart from its live status. Read-only. */
+export type Mwan3Observation = {
+  service: { installed: boolean | null; enabled: boolean | null; running: boolean | null } | null
+  configInterfaces: { name: string; enabled: boolean | null; family: string | null; trackIps: string[] }[]
+  configPolicies: Record<string, string[]>
+  interfaces: {
+    name: string
+    status: string | null
+    enabled: boolean | null
+    running: boolean | null
+    up: boolean | null
+    uptimeSeconds: number | null
+    tracking: string | null
+    trackIps: { ip: string; up: boolean | null }[]
+  }[]
+  policies: Record<string, { interface: string; percent: number | null }[]>
+  observedAt: string
+}
+
+export type WanInterface = {
+  network: string
+  ifname: string | null
+  up: boolean
+  proto: string | null
+  ipv4: string[]
+  ipv6: string[]
+  metric: number | null
+  uptimeSeconds: number | null
+  defaultRoute: boolean | null
+  gateway4: string | null
+  gateway6: string | null
+  dnsServers: string[]
+  error: string | null
+  /** mwan3's view of it when mwan3 reports, else null. */
+  mwan3Status: string | null
+}
+
+/** `GET /api/v1/gateways/:gatewayId/wan-status` */
+export type GatewayWanStatus = {
+  observedAt: string | null
+  /** null = mwan3 is not installed (or never reported). */
+  mwan3: Mwan3Observation | null
+  /** L3 devices carrying a default route, lowest metric first. */
+  defaultRoutes: string[]
+  wans: WanInterface[]
+}
+
+export type GatewayResolver = {
+  /** null without dnsmasq, 0 = its DNS is off. */
+  dnsmasqPort: number | null
+  port53Process: string | null
+  port53Processes: string[]
+  controllerHost: { name: string; addresses: string[]; error: string | null } | null
+}
+
+export type GatewayFeatureDecision = 'observe' | 'manage' | 'never' | 'later'
+
+/** `GET /api/v1/gateways/:gatewayId/system` (admin) */
+export type GatewaySystem = {
+  observedAt: string | null
+  hostname: string | null
+  timezone: null
+  zonename: null
+  ntp: null
+  board: string | null
+  boardName: string | null
+  model: string | null
+  release: string | null
+  version: string | null
+  revision: string | null
+  kernel: string | null
+  uptimeSeconds: number | null
+  flowOffloading: boolean | null
+  flowOffloadingHw: boolean | null
+  resolver: GatewayResolver | null
+  packageManager: string | null
+  packages: { name: string; version: string }[] | null
+  upgradable: { name: string; version: string }[] | null
+  features: { name: string; installed: boolean | null; decision: GatewayFeatureDecision }[]
+}
+
+export type GatewayObservePartResult = 'written' | 'unchanged' | 'invalid' | 'failed'
+
+/** `POST /api/v1/gateways/:gatewayId/observe` (admin) */
+export type GatewayObserveResult = {
+  observedAt: string
+  parts: Partial<Record<GatewayObservationPart, GatewayObservePartResult>>
+}
+
+export type GatewayBackupSummary = {
+  id: number
+  createdAt: string
+  size: number
+  sha256: string
+  release: string | null
+  filename: string | null
+  redacted: boolean
+  redactions: { file: string; option: string | null; removed: boolean }[]
+  note: string | null
+  requestedByUserId: number | null
+}
+
+/** `POST /api/v1/gateways/:gatewayId/backups` */
+export type CreateGatewayBackupPayload = { note?: string; redact?: boolean }
+
+/** `GET /api/v1/devices/:mac/network`: what the gateway knows of one device. */
+export type DeviceNetworkResponse = {
+  /** null = no gateway lists this MAC. */
+  gatewayId: number | null
+  lease: DhcpLease | null
+  /** Config plane; null for now. */
+  reservation: null
+  dnsName: null
+  wanBlocked: null
+  neighbor: {
+    ipv4: string | null
+    ipv6: string[]
+    ifname: string | null
+    reachable: boolean
+    seenAt: string | null
+  } | null
+  network: string | null
+  seenAt: string | null
+  upnp: UpnpMapping[]
+}

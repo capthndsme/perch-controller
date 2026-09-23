@@ -5,6 +5,7 @@ import {
   Devices,
   Gauge,
   GearSix,
+  Globe,
   HardDrives,
   TreeStructure,
 } from '@phosphor-icons/react'
@@ -24,6 +25,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/devices', label: 'Devices', icon: Devices },
   { to: '/servers', label: 'Servers', icon: HardDrives },
   { to: '/wifi', label: 'WiFi', icon: Broadcast },
+  { to: '/gateway', label: 'Gateway', icon: Globe },
   { to: '/infrastructure', label: 'Infrastructure', icon: TreeStructure },
   { to: '/settings', label: 'Settings', icon: GearSix },
 ]

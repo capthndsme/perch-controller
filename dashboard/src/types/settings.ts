@@ -58,13 +58,23 @@ export type PresenceThresholds = {
   nowRateIntervals: number
 }
 
-export type PresenceLimits = Record<keyof PresenceThresholds, { min: number; max: number }>
+/**
+ * The thresholds plus the switches a newer controller adds. `gatewaySightings`
+ * (0/1): the gateway's DHCP and neighbour sightings count as traffic
+ * (docs/gateway/observation.md §5). Absent on a controller without the
+ * gateway observation channel: the form then neither shows nor sends it.
+ */
+export type PresenceSettings = PresenceThresholds & { gatewaySightings?: number }
+
+export type PresenceLimits = Record<keyof PresenceThresholds, { min: number; max: number }> & {
+  gatewaySightings?: { min: number; max: number }
+}
 
 /** `GET` / `PATCH /api/v1/settings/presence`. */
 export type PresenceSettingsView = {
   /** The values in force. */
-  settings: PresenceThresholds
-  defaults: PresenceThresholds
+  settings: PresenceSettings
+  defaults: PresenceSettings
   limits: PresenceLimits
   /** Idle time after which a client its AP still lists stops counting. Fixed, not a setting. */
   wifiIdleSeconds: number
@@ -85,4 +95,18 @@ export type ChartSettingsView = {
   limits: ChartLimits
   /** How long the per-poll rows the floor applies to are kept. */
   nativeRetentionDays: number
+}
+
+/** Settings → Gateway observation: what the observation channel keeps (docs/gateway/observation.md §6). */
+export type GatewayObservationSettings = {
+  hostRetentionDays: number
+  upnpEventRetentionDays: number
+  backupsKept: number
+}
+
+/** `GET` / `PATCH /api/v1/settings/gateway-observations`. */
+export type GatewayObservationSettingsView = {
+  settings: GatewayObservationSettings
+  defaults: GatewayObservationSettings
+  limits: Record<keyof GatewayObservationSettings, { min: number; max: number }>
 }

@@ -5,20 +5,22 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { PageSpinner } from '@/components/ui/spinner'
+import { Switch } from '@/components/ui/switch'
 import {
   fieldErrorsFromApi,
   usePresenceSettings,
   useUpdatePresenceSettings,
 } from '@/hooks/use-settings'
 import { ApiError } from '@/lib/api'
-import type { PresenceSettingsView, PresenceThresholds } from '@/types/settings'
+import type { PresenceSettings, PresenceSettingsView, PresenceThresholds } from '@/types/settings'
 
 type ThresholdKey = keyof PresenceThresholds
 
 type FormState = Record<ThresholdKey, string>
 
-function toFormState(settings: PresenceThresholds): FormState {
+function toFormState(settings: PresenceSettings): FormState {
   return {
     lanQuietMinutes: String(settings.lanQuietMinutes),
     wifiTrailingTrafficMinutes: String(settings.wifiTrailingTrafficMinutes),
@@ -26,6 +28,15 @@ function toFormState(settings: PresenceThresholds): FormState {
     apStaleMinSeconds: String(settings.apStaleMinSeconds),
     nowRateIntervals: String(settings.nowRateIntervals),
   }
+}
+
+/**
+ * The gateway-sightings switch, or null when the server does not have it (a
+ * controller without the gateway observation channel): then it is neither
+ * shown nor sent.
+ */
+function sightingsOf(settings: PresenceSettings): boolean | null {
+  return settings.gatewaySightings === undefined ? null : settings.gatewaySightings === 1
 }
 
 /** The field as a whole number, or null while it is empty or not one. */
@@ -82,14 +93,16 @@ export function PresenceSettingsPage() {
 function PresenceSettingsForm({ view }: { view: PresenceSettingsView }) {
   const update = useUpdatePresenceSettings()
   const [form, setForm] = useState<FormState>(() => toFormState(view.settings))
+  const [sightings, setSightings] = useState<boolean | null>(() => sightingsOf(view.settings))
   const [formError, setFormError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   const fieldErrors = update.error ? fieldErrorsFromApi(update.error) : {}
   const defaults = toFormState(view.defaults)
-  const atDefaults = (Object.keys(defaults) as ThresholdKey[]).every(
-    (key) => form[key] === defaults[key],
-  )
+  const defaultSightings = sightingsOf(view.defaults)
+  const atDefaults =
+    (Object.keys(defaults) as ThresholdKey[]).every((key) => form[key] === defaults[key]) &&
+    (sightings === null || defaultSightings === null || sightings === defaultSightings)
   const example = silenceExample(form)
 
   function thresholdProps(id: ThresholdKey) {
@@ -108,6 +121,7 @@ function PresenceSettingsForm({ view }: { view: PresenceSettingsView }) {
     setFormError(null)
     setSuccessMessage(null)
     setForm(defaults)
+    if (sightings !== null && defaultSightings !== null) setSightings(defaultSightings)
   }
 
   async function onSubmit(event: React.FormEvent) {
@@ -122,8 +136,11 @@ function PresenceSettingsForm({ view }: { view: PresenceSettingsView }) {
     }
 
     try {
-      const saved = await update.mutateAsync(payload)
+      const saved = await update.mutateAsync(
+        sightings === null ? payload : { ...payload, gatewaySightings: sightings ? 1 : 0 },
+      )
       setForm(toFormState(saved.settings))
+      setSightings(sightingsOf(saved.settings))
       setSuccessMessage('Presence settings saved.')
     } catch (error) {
       if (error instanceof ApiError) {
@@ -172,6 +189,33 @@ function PresenceSettingsForm({ view }: { view: PresenceSettingsView }) {
                 hint="After a device leaves WiFi, the gateway keeps sending to it for a few minutes (up to 7 measured). Traffic within this time of its last WiFi sighting still belongs to that visit (Last seen on WiFi); later traffic means it came back another way, such as a cable or an AP Perch does not read (Wired / unknown). A larger value also delays noticing a device that moved to a cable. Devices marked Ethernet skip this."
               />
             </section>
+
+            {sightings !== null ? (
+              <section className={formClassName('border-t pt-6')}>
+                <h3 className="text-sm font-medium">Gateway</h3>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <Label htmlFor="gatewaySightings" className="text-xs font-medium">
+                      Count the gateway's sightings as traffic
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      The router's neighbour table (a device answered ARP or NDP) and DHCP renewals
+                      keep a device Connected like its traffic does, so a quiet device on a cable
+                      does not drop to Disconnected after the wired timeout. Needs a Gateway agent
+                      that reports its neighbours and leases. Long leases (the router's lease time
+                      in days) only count when a device actually renews; the neighbour table does
+                      the rest. Default {defaultSightings === false ? 'off' : 'on'}.
+                    </p>
+                  </div>
+                  <Switch
+                    id="gatewaySightings"
+                    checked={sightings}
+                    onCheckedChange={setSightings}
+                    aria-label="Count the gateway's sightings as traffic"
+                  />
+                </div>
+              </section>
+            ) : null}
 
             <section className={formClassName('border-t pt-6')}>
               <div className="space-y-1">

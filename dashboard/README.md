@@ -26,10 +26,11 @@ different origin than the API; `.env.example` explains both.
 | `/` | Dashboard: totals and live rate, Sites / Networks, month-to-date usage, Wi-Fi clients now and over time, gateway health, top talkers. |
 | `/traffic` | Network-wide bandwidth with LAN overlay and period comparison, protocol and application mix, Destinations (domains and networks), Gateway panel. |
 | `/usage` | vnstat-style daily / weekly / monthly table with per-protocol and per-application splits, hourly breakdown chart, connected-device averages. |
-| `/devices`, `/devices/:mac` | Device list with filters (search, connection, device type, tag) and sorting, top talkers over time; per-device card with traffic, protocols, peers, sites served and destinations, Wi-Fi context, and the name / type / tags / notes editor. |
+| `/devices`, `/devices/:mac` | Device list with filters (search, connection, device type, tag) and sorting, top talkers over time; per-device card with traffic, protocols, peers, sites served and destinations, Wi-Fi context, the gateway's Network card (lease, neighbour entry, UPnP mappings), and the name / type / tags / notes editor. |
 | `/servers` | Bytes served per TLS/HTTP name by your own hosts, with a rate overlay. |
 | `/wifi`, `/wifi/ssids/:ssid`, `/wifi/aps/:id`, `/wifi/clients/:mac` | Client distribution by band or AP, throughput per AP, SSIDs, active clients, APs; SSID throughput and clients; AP health; client signal history and roaming. |
-| `/settings`, `/settings/users`, `/settings/wifi-sources`, `/settings/hostname-enrichment` | Profile and password; users and roles; access points (probe, two-way commands); hostname sources. |
+| `/gateway` | The router's runtime state from its Gateway agent (`?gateway=N` picks one): WAN links and failover (route metrics vs mwan3 config and service state), all networks, DHCP leases, neighbours, UPnP mappings and events, per-part freshness; admins also see the resolver, system facts, an on-demand refresh and backups. Read-only. |
+| `/settings`, `/settings/users`, `/settings/wifi-sources`, `/settings/hostname-enrichment`, `/settings/presence`, `/settings/gateway-observation`, `/settings/charts` | Profile and password; users and roles; access points (probe, two-way commands); hostname sources; presence thresholds and the gateway-sightings switch; retention of gateway observations and backups; chart detail. |
 
 ## Conventions
 

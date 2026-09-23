@@ -90,6 +90,32 @@ export async function apiFetch<T>(
   return body as T
 }
 
+/**
+ * A binary download behind the bearer token (a plain link cannot carry it):
+ * the body as a Blob plus the file name from `Content-Disposition`. Errors
+ * throw the same `ApiError` as `apiFetch`.
+ */
+export async function apiFetchBlob(path: string): Promise<{ blob: Blob; filename: string | null }> {
+  const headers = new Headers()
+  const token = readToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  const response = await fetch(`${API_URL}${path}`, { headers })
+  if (!response.ok) {
+    const contentType = response.headers.get('content-type') ?? ''
+    const body: unknown = contentType.includes('application/json')
+      ? await response.json().catch(() => null)
+      : await response.text().catch(() => '')
+    const message =
+      typeof body === 'object' && body !== null && 'message' in body && typeof body.message === 'string'
+        ? body.message
+        : `API ${response.status}: ${response.statusText}`
+    throw new ApiError(response.status, message, body)
+  }
+  const disposition = response.headers.get('content-disposition') ?? ''
+  const match = /filename="?([^";]+)"?/i.exec(disposition)
+  return { blob: await response.blob(), filename: match ? match[1] : null }
+}
+
 /** The `{ "error": "code" }` the API returns for domain failures, or `null`. */
 export function apiErrorCode(error: unknown): string | null {
   if (!(error instanceof ApiError)) return null
