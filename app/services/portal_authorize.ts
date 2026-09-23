@@ -33,7 +33,7 @@ import { createHash } from 'node:crypto'
 
 /**
  * The per-MAC authorize API (docs/gateway/portal.md section 11.6): what a
- * Piso WiFi-style coin box (or any integration, or an admin for their own
+ * paid-hotspot integration such as a coin-operated vending box (or any integration, or an admin for their own
  * devices) calls to put a device online. Shared by `POST
  * /portal/authorizations` and the router relay (decision 22; the socket side
  * calls these functions with `via: 'relay'` and the relaying gateway).

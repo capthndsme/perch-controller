@@ -942,7 +942,7 @@ type PortalSession = {
   Reconciliation does the same (`grantClocks`, §7).
 - A deleted portal's grants end without promotion.
 
-### 11.6 Authorize API (decision 22; the Piso WiFi hook)
+### 11.6 Authorize API (decision 22; the Paid Hotspot API)
 
 Routes, all **K**, `Cache-Control: no-store`:
 
@@ -1010,7 +1010,8 @@ created_by_user_id, external_ref, portal_id, grant_id, mac, outcome
 (created|extended), minutes, bytes, request_sha, via (http|relay), address,
 created_at`. `api_clients.last_used_at` is updated per accepted call.
 
-**The Piso WiFi hook.** No coin component: a custom template (§12) reads
+**The Paid Hotspot API.** For paid-hotspot integrations such as
+coin-operated vending boxes. No coin component: a custom template (§12) reads
 `{{client_mac}}` / `{{status_json}}`, talks to the operator's coin box on the
 guest subnet (its origin listed in the portal's `cspConnectSrc`, which only
 takes `http(s)://` / `ws(s)://` origins without path, lower-cased, at most
@@ -1051,7 +1052,7 @@ validated with `authorizeValidator` like HTTP.
 | Admin token exposure through the relay                               | Relay accepts only `perch_pa_` tokens                                                                                                                                                                           | –                                                                                                                                                                                |
 | Integration flooding the router with grants                          | `maxActiveGrants` per client, per-minute limit, deltas coalesced in the outbox                                                                                                                                  | A client may still churn within its limits                                                                                                                                       |
 | CSP injection through `cspConnectSrc`                                | Origin-only regex (scheme, host, port), lower-cased, ≤ 16                                                                                                                                                       | –                                                                                                                                                                                |
-| Custom page script (Piso page)                                       | Runs only on the router's portal origin (§12.1); never served by the controller                                                                                                                                 | A malicious admin-uploaded page can phish guests on the portal: admins are trusted                                                                                               |
+| Custom page script (Paid Hotspot API page)                           | Runs only on the router's portal origin (§12.1); never served by the controller                                                                                                                                 | A malicious admin-uploaded page can phish guests on the portal: admins are trusted                                                                                               |
 | Guest spoofing a paying device (MAC cloning)                         | Out of scope for the API (L2 portal, §10 of the design)                                                                                                                                                         | Accepted                                                                                                                                                                         |
 
 ### 11.7 Deviations from the design's §7

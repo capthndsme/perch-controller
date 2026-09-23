@@ -412,8 +412,8 @@ router
 
     /**
      * Guest portal authorize API (docs/gateway/portal.md section 11.6):
-     * outside `auth()`, because its callers are integrations (a Piso
-     * WiFi-style coin box) with their own scoped `perch_pa_` tokens;
+     * outside `auth()`, because its callers are integrations (paid-hotspot
+     * integrations such as coin-operated vending boxes) with their own scoped `perch_pa_` tokens;
      * `portalApiAuth` also takes an admin's token. Rate-limited per token,
      * failed tokens per address.
      */

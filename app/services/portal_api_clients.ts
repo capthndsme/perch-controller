@@ -9,7 +9,8 @@ import { DateTime } from 'luxon'
 
 /**
  * Integration tokens of the authorize API (docs/gateway/portal.md section
- * 11.6): Piso WiFi-style coin boxes and other systems that grant guests
+ * 11.6): paid-hotspot integrations such as coin-operated vending boxes, and
+ * other systems that grant guests
  * access. A token is `perch_pa_` + 32 base64url characters (192 random bits);
  * only its SHA-256 is stored, it is shown once (create, rotate). A client is
  * scoped to its portals, its scopes, per-call caps and a cap on its live
