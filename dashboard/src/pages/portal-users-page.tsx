@@ -26,6 +26,7 @@ import {
   PortalSectionNav,
 } from '@/components/portal/portal-ui'
 import { useConfirm } from '@/hooks/use-confirm'
+import { useDeviceGroups } from '@/hooks/use-device-groups'
 import {
   useCreatePortalUser,
   useDeletePortalUser,
@@ -41,6 +42,7 @@ import {
   mbpsToKbps,
   rateLabel,
   relativeTime,
+  selectClassName,
   splitMinutes,
   toMinutes,
   vineFieldErrors,
@@ -187,6 +189,8 @@ function PortalUserDialog({ user, portals, onClose }: { user: PortalUser | null;
   const [up, setUp] = useState(kbpsToMbpsText(user?.upKbps ?? null))
   const [everyPortal, setEveryPortal] = useState(user ? user.portalIds === null : true)
   const [portalIds, setPortalIds] = useState<number[]>(user?.portalIds ?? [])
+  const groups = useDeviceGroups(null)
+  const [deviceGroupId, setDeviceGroupId] = useState(user?.deviceGroupId ? String(user.deviceGroupId) : '')
   const fieldErrors = vineFieldErrors(mutation.error)
 
   function submit(event: React.FormEvent) {
@@ -200,6 +204,7 @@ function PortalUserDialog({ user, portals, onClose }: { user: PortalUser | null;
       downKbps: mbpsToKbps(down) ?? null,
       upKbps: mbpsToKbps(up) ?? null,
       portalIds: everyPortal ? null : portalIds,
+      deviceGroupId: deviceGroupId ? Number(deviceGroupId) : null,
     }
     if (user) update.mutate({ id: user.id, ...payload }, { onSuccess: onClose })
     else create.mutate({ ...payload, password }, { onSuccess: onClose })
@@ -241,6 +246,21 @@ function PortalUserDialog({ user, portals, onClose }: { user: PortalUser | null;
               </FormField>
               <FormField label="Upload (Mbps)" htmlFor="pu-up" error={fieldErrors.upKbps}>
                 <Input id="pu-up" inputMode="decimal" placeholder="No limit" value={up} onChange={(e) => setUp(e.target.value)} className="rounded-md" />
+              </FormField>
+              <FormField
+                label="Device group"
+                htmlFor="pu-group"
+                error={fieldErrors.deviceGroupId}
+                hint="Signing in binds the device to it; a group with its own network moves the device there."
+              >
+                <select id="pu-group" value={deviceGroupId} onChange={(e) => setDeviceGroupId(e.target.value)} className={selectClassName}>
+                  <option value="">None</option>
+                  {(groups.data ?? []).map((g) => (
+                    <option key={g.id} value={String(g.id)}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
               </FormField>
             </div>
             <Checkbox id="pu-enabled" checked={enabled} onChange={setEnabled} label="Enabled" />

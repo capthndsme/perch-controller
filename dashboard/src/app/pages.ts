@@ -55,6 +55,11 @@ export const pages = {
   portalTerminals: lazyPage(() => import('@/pages/portal-terminals-page').then((m) => m.PortalTerminalsPage)),
   portalPriceTables: lazyPage(() => import('@/pages/portal-price-tables-page').then((m) => m.PortalPriceTablesPage)),
   portalUsers: lazyPage(() => import('@/pages/portal-users-page').then((m) => m.PortalUsersPage)),
+  deviceGroups: lazyPage(() => import('@/pages/device-groups-page').then((m) => m.DeviceGroupsPage)),
+  deviceGroup: lazyPage(() => import('@/pages/device-group-page').then((m) => m.DeviceGroupPage)),
+  settingsDeviceGroups: lazyPage(() =>
+    import('@/pages/device-groups-settings-page').then((m) => m.DeviceGroupsSettingsPage),
+  ),
   portalApiClients: lazyPage(() => import('@/pages/portal-api-clients-page').then((m) => m.PortalApiClientsPage)),
   portalTemplates: lazyPage(() => import('@/pages/portal-templates-page').then((m) => m.PortalTemplatesPage)),
   portalTemplate: lazyPage(() => import('@/pages/portal-template-page').then((m) => m.PortalTemplatePage)),

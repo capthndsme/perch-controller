@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useState, type FormEvent } from 'react'
 import { PencilSimple, Plus, Trash, UsersThree, X } from '@phosphor-icons/react'
 import { RefusalAlert } from '@/components/qos/qos-bits'
@@ -46,7 +47,15 @@ export function GroupsPanel({ groups, assignments, policies, devices, canEdit, w
   return (
     <Panel
       title="Groups"
-      description="Devices that share one assignment, for example the kids' tablets. A device is in at most one group."
+      description={
+        <>
+          Devices that share one assignment, for example the kids&apos; tablets. These are the{' '}
+          <Link to="/groups" className="underline underline-offset-2">
+            device groups
+          </Link>
+          : a device is in at most one.
+        </>
+      }
       actions={
         canEdit ? (
           <Button size="sm" variant="outline" onClick={() => setEditing('new')}>

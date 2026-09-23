@@ -194,6 +194,17 @@ export function SettingsPage() {
                   <Link to="/settings/traffic-shaping">Open</Link>
                 </Button>
               </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Device groups</p>
+                  <p className="text-xs text-muted-foreground">
+                    The shared SSIDs that carry the groups’ Wi-Fi keys, and the access points’ confirm window.
+                  </p>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/settings/device-groups">Open</Link>
+                </Button>
+              </div>
             </>
           ) : (
             <p className="text-sm text-muted-foreground">

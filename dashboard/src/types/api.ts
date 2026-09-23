@@ -2287,6 +2287,8 @@ export type PortalUser = {
   upKbps: number | null
   /** null = every portal. */
   portalIds: number[] | null
+  /** Decision 31: signing in binds the device to this device group. */
+  deviceGroupId: number | null
   lastLoginAt: string | null
   activeDevices: number
   createdAt: string | null
@@ -2302,6 +2304,7 @@ export type PortalUserPayload = {
   downKbps?: number | null
   upKbps?: number | null
   portalIds?: number[] | null
+  deviceGroupId?: number | null
 }
 
 export type PortalApiScope = 'authorize' | 'read'

@@ -18,6 +18,7 @@ import {
   Speedometer,
   SquaresFour,
   TreeStructure,
+  UsersThree,
 } from '@phosphor-icons/react'
 
 export type NavItem = {
@@ -45,6 +46,7 @@ export const GATEWAY_SECTION: NavItem[] = [
   { to: '/gateway', label: 'Overview', icon: SquaresFour, end: true },
   { to: '/gateway/config', label: 'Configuration', icon: SlidersHorizontal },
   { to: '/networks', label: 'Networks', icon: Network },
+  { to: '/groups', label: 'Groups', icon: UsersThree },
   { to: '/gateway/dhcp', label: 'DHCP', icon: AddressBook },
   { to: '/gateway/dns', label: 'DNS', icon: Planet },
   { to: '/firewall', label: 'Firewall', icon: ShieldCheck },

@@ -10,6 +10,7 @@ import { DeviceDestinationsTable } from '@/components/destinations/device-destin
 import { DeviceLabelCard } from '@/components/devices/device-label-editor'
 import { DeviceNetworkCard } from '@/components/gateway/device-network-card'
 import { DeviceReservationCard } from '@/components/gateway-config/device-reservation-card'
+import { DeviceGroupCard } from '@/components/device-groups/device-group-card'
 import { DeviceWanAccessCard } from '@/components/firewall/device-wan-access-card'
 import { PeersPanel } from '@/components/devices/peers-panel'
 import { DeviceSpeedLimitCard } from '@/components/qos/device-speed-limit'
@@ -355,6 +356,7 @@ export function DevicePage() {
 
           <DeviceNetworkCard mac={mac} />
           <DeviceWanAccessCard mac={mac ?? ''} deviceName={displayName} />
+          <DeviceGroupCard mac={mac ?? ''} />
 
           <Panel
             title="WiFi"
