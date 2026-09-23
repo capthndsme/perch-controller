@@ -340,8 +340,9 @@ test.group('infra | state', (group) => {
     const state = await stateOf(client, operatorToken)
     const presence = byId(state.nodes, nas.id).presence
     // The presence endpoint also says where the map puts the device; the node's
-    // presence is the rule's answer alone.
-    const { lastSeenAt, attachment, ...rest } = expected.body().data
+    // presence is the rule's answer alone (and the gateway network, null here).
+    const { lastSeenAt, attachment, network, ...rest } = expected.body().data
+    assert.isNull(network)
     assert.deepEqual(attachment, { nodeId: nas.id, nodeName: 'NAS', uplink: null })
     // Same rule, same inputs; each request fixes "now" itself (ages are whole seconds).
     assert.deepEqual({ ...presence, lastSeenAt: undefined }, { ...rest, lastSeenAt: undefined })

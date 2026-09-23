@@ -38,6 +38,7 @@ import {
   type TrafficResolution,
   type TrafficScope,
 } from '#validators/devices'
+import { deviceNetworksFor, type DeviceNetworkLatest } from '#services/gateway_network_accounting'
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import { DateTime } from 'luxon'
@@ -277,6 +278,11 @@ type ProtocolTopDeviceRow = {
   packetsOut: bigint | number | string
 }
 
+/** The device's gateway network for a row (docs/gateway/networks.md 4.3). */
+function networkOf(latest: DeviceNetworkLatest | undefined) {
+  return latest ? { gatewayId: latest.gatewayId, name: latest.network, since: latest.seenAt } : null
+}
+
 export default class DevicesController {
   async index({ request, response, serialize }: HttpContext) {
     const qs = await devicesIndexValidator.validate(request.qs())
@@ -386,19 +392,21 @@ export default class DevicesController {
     // they are read per request, never from the cached rows above (a past
     // window's rows are kept for hours).
     const macs = rows.map((row) => row.mac)
-    const [wifiByMac, trafficSeenAt, hostnameMatches, labelsByMac, placements] = await Promise.all([
-      queryLatestWifiContext(macs, thresholds),
-      queryTrafficSeenAt(macs),
-      getHostnameMatches(
-        rows.map((row) => ({
-          mac: row.mac,
-          primaryIp: row.primaryIp,
-          ips: parseIps(row.ips),
-        }))
-      ),
-      getDeviceLabels(macs),
-      loadDeviceAttachments(macs, thresholds),
-    ])
+    const [wifiByMac, trafficSeenAt, hostnameMatches, labelsByMac, placements, networksByMac] =
+      await Promise.all([
+        queryLatestWifiContext(macs, thresholds),
+        queryTrafficSeenAt(macs),
+        getHostnameMatches(
+          rows.map((row) => ({
+            mac: row.mac,
+            primaryIp: row.primaryIp,
+            ips: parseIps(row.ips),
+          }))
+        ),
+        getDeviceLabels(macs),
+        loadDeviceAttachments(macs, thresholds),
+        deviceNetworksFor(macs),
+      ])
     const rowsWithHostnames = rows.map((row, i) => {
       const match = hostnameMatches[i]
       const wifi = wifiByMac.get(row.mac.toLowerCase())
@@ -439,6 +447,7 @@ export default class DevicesController {
         wifiHeardAt: wifi ? new Date(wifi.heardAt).toISOString() : null,
         presence,
         attachment: placement?.attachment ?? null,
+        network: networkOf(networksByMac.get(row.mac.toLowerCase())),
       } satisfies DeviceSummaryRow
     })
 
@@ -893,8 +902,15 @@ export default class DevicesController {
     const mac = normalizeMac(params.mac) ?? String(params.mac).toLowerCase()
     const placements = await loadDeviceAttachments([mac], thresholds)
     const placement = placements.get(mac)
-    const presence = await queryDevicePresence(params.mac, thresholds, placement?.onMap ?? null)
-    return serialize({ ...presence, attachment: placement?.attachment ?? null })
+    const [presence, networks] = await Promise.all([
+      queryDevicePresence(params.mac, thresholds, placement?.onMap ?? null),
+      deviceNetworksFor([mac]),
+    ])
+    return serialize({
+      ...presence,
+      attachment: placement?.attachment ?? null,
+      network: networkOf(networks.get(mac)),
+    })
   }
 }
 

@@ -12,6 +12,7 @@ import {
 } from '#services/collector_poller'
 import { keysMatch } from '#services/collector_announce'
 import { recordDhcpObservationSerial } from '#services/gateway_dhcp'
+import { captureExcludeFor } from '#services/gateway_network_accounting'
 import {
   configureBlockFor,
   type GatewayConfigureBlock,
@@ -56,6 +57,13 @@ export type CollectorConfigureParams = {
    * watcher.
    */
   gatewayConfig?: GatewayConfigureBlock
+  /**
+   * Networks the collector leaves out of its capture (README 7.21, the
+   * per-network capture toggle; docs/gateway/networks.md section 5), only
+   * for a collector with a gateway row. Added to the router's own
+   * `capture_exclude`; `[]` = capture everything the router selects.
+   */
+  capture?: { exclude: string[] }
 }
 
 export type CollectorPushOutcome =
@@ -155,6 +163,7 @@ export function closeSessionOnKeyMismatch(collector: Collector): boolean {
 export function collectorConfigureParams(collector: Collector): CollectorConfigureParams {
   const inService = collector.lifecycle === 'adopted' && Boolean(collector.enabled)
   const gatewayConfig = configureBlockFor(collector.id)
+  const exclude = captureExcludeFor(collector.id)
   return {
     metricsIntervalSeconds: inService ? collector.pollIntervalSeconds : 0,
     lifecycle: collector.lifecycle,
@@ -165,6 +174,7 @@ export function collectorConfigureParams(collector: Collector): CollectorConfigu
             : { ...gatewayConfig, mode: 'off', authoritative: false },
         }
       : {}),
+    ...(exclude !== undefined ? { capture: { exclude } } : {}),
   }
 }
 

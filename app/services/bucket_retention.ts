@@ -284,6 +284,9 @@ export async function pruneOldBuckets(
       timeColumn: 'recorded_at',
       cutoff: cutoffFor(routerSampleDays),
     },
+    // Closed network intervals of a device (docs/gateway/networks.md 4.3);
+    // the open one (ended_at NULL) is never pruned.
+    { tables: ['device_network_history'], timeColumn: 'ended_at', cutoff: cutoffFor(hourlyDays) },
     {
       tables: ['device_destination_buckets_hourly'],
       timeColumn: 'hour_start',

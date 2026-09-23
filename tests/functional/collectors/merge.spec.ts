@@ -1055,6 +1055,8 @@ test.group('collectors:merge and :purge | managed gateways', (group) => {
       'gateway_networks',
       'gateway_network_samples',
       'device_network_latest',
+      'device_network_history',
+      'gateway_scope_changes',
     ]) {
       assert.notInclude(referencing, child, `${child} hangs off gateways, not collectors`)
     }

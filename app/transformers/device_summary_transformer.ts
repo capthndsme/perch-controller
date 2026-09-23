@@ -82,6 +82,11 @@ export type DeviceSummaryRow = {
   presence?: DevicePresence
   /** Where the network map puts the device, read per request; null when no node carries it. */
   attachment?: DeviceAttachment | null
+  /**
+   * The gateway network the device was last seen on (perch-collector with
+   * capture_networks; docs/gateway/networks.md 4.3), read per request.
+   */
+  network?: { gatewayId: number; name: string; since: string } | null
 }
 
 /**
@@ -183,6 +188,7 @@ export default class DeviceSummaryTransformer extends BaseTransformer<DeviceSumm
       wifi: this.wifi(),
       presence: this.resource.presence ?? { status: 'disconnected', via: 'lan', lastSeenAt: null },
       attachment: this.resource.attachment ?? null,
+      network: this.resource.network ?? null,
     }
   }
 

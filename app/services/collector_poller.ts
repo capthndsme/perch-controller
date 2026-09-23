@@ -21,6 +21,11 @@ import { recordDhcpObservationSerial } from '#services/gateway_dhcp'
 import { recordAgentPorts } from '#services/infra_ports'
 import { upsertProtocolCategories, type ProtocolCategoryInput } from '#services/protocol_categories'
 import { recordGatewaySample, type GatewayReport } from '#services/router_metrics'
+import {
+  recordDeviceNetworks,
+  recordGatewayNetworks,
+  withoutExcludedDevices,
+} from '#services/gateway_network_accounting'
 import logger from '@adonisjs/core/services/logger'
 import { DateTime } from 'luxon'
 
@@ -55,6 +60,12 @@ type CollectorDevice = {
   packets_out_lan?: number
   first_seen?: string
   last_seen?: string
+  /**
+   * The capture network where the MAC was last an endpoint, and every one it
+   * was seen on (perch-collector with capture_networks; docs/gateway/networks.md).
+   */
+  network?: string
+  networks?: string[]
   top_peers?: CollectorPeer[]
   top_lan_peers?: CollectorPeer[]
   protocols?: Array<{
@@ -535,7 +546,9 @@ async function ingest(
     const destinationDeltas: DestinationBucketDelta[] = []
     const peerGroups: PeerGroup[] = []
     const identityInputs: DeviceIdentityInput[] = []
-    const devices = snapshot.devices ?? []
+    // A network whose capture is off (README 7.21) leaves nothing behind,
+    // even when an older collector still captures there.
+    const devices = await withoutExcludedDevices(collector, snapshot.devices ?? [])
     let activeDevices = 0
 
     for (const dev of devices) {
@@ -765,6 +778,16 @@ async function ingest(
 
     await upsertDeviceIdentities(collector.id, identityInputs, now)
 
+    // Which network each device is on (written on a change only). Non-fatal.
+    try {
+      await recordDeviceNetworks(collector, devices, now)
+    } catch (networkErr) {
+      logger.warn(
+        { collectorId: collector.id, error: String(networkErr) },
+        'collector_poller: device networks failed (non-fatal)'
+      )
+    }
+
     // ── Latest-peer mirror is non-fatal ──
     // It is a point-in-time snapshot, not cumulative. A failed upsert just
     // means stale peer data until the next successful tick — far better
@@ -811,6 +834,16 @@ async function ingest(
         )
       }
       if (gateway) gateway = withPortsReported(gateway, Array.isArray(ports))
+      // Per-network counters (docs/gateway/networks.md). Non-fatal the same
+      // way; a report without `networks` writes nothing.
+      try {
+        await recordGatewayNetworks(collector, snapshot.gateway.networks, now)
+      } catch (networksErr) {
+        logger.warn(
+          { collectorId: collector.id, error: String(networksErr) },
+          'collector_poller: network report failed (non-fatal)'
+        )
+      }
     }
 
     collector.lastSeenAt = now

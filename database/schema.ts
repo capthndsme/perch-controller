@@ -285,6 +285,23 @@ export class DeviceLabelSchema extends BaseModel {
   declare updatedByUserId: number | null
 }
 
+export class DeviceNetworkHistorySchema extends BaseModel {
+  static $columns = ['endedAt', 'gatewayId', 'id', 'mac', 'network', 'startedAt'] as const
+  $columns = DeviceNetworkHistorySchema.$columns
+  @column.dateTime()
+  declare endedAt: DateTime | null
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare mac: string
+  @column()
+  declare network: string
+  @column.dateTime()
+  declare startedAt: DateTime
+}
+
 export class DeviceNetworkLatestSchema extends BaseModel {
   static $columns = ['gatewayId', 'mac', 'network', 'seenAt'] as const
   $columns = DeviceNetworkLatestSchema.$columns
@@ -802,10 +819,14 @@ export class GatewayHostSchema extends BaseModel {
 }
 
 export class GatewayNetworkSchema extends BaseModel {
-  static $columns = ['capture', 'createdAt', 'gatewayId', 'id', 'interfacePerchId', 'label', 'purpose', 'updatedAt'] as const
+  static $columns = ['capture', 'captureChangedAt', 'captureChangedByUserId', 'createdAt', 'gatewayId', 'id', 'interfacePerchId', 'label', 'network', 'purpose', 'updatedAt'] as const
   $columns = GatewayNetworkSchema.$columns
   @column()
   declare capture: boolean
+  @column.dateTime()
+  declare captureChangedAt: DateTime | null
+  @column()
+  declare captureChangedByUserId: number | null
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
   @column()
@@ -813,9 +834,11 @@ export class GatewayNetworkSchema extends BaseModel {
   @column({ isPrimary: true })
   declare id: number
   @column()
-  declare interfacePerchId: string
+  declare interfacePerchId: string | null
   @column()
   declare label: string
+  @column()
+  declare network: string | null
   @column()
   declare purpose: string
   @column.dateTime({ autoCreate: true, autoUpdate: true })
@@ -881,6 +904,19 @@ export class GatewayRevisionSchema extends BaseModel {
   declare source: string
   @column()
   declare summary: string
+}
+
+export class GatewayScopeChangeSchema extends BaseModel {
+  static $columns = ['changedAt', 'gatewayId', 'id', 'scope'] as const
+  $columns = GatewayScopeChangeSchema.$columns
+  @column.dateTime()
+  declare changedAt: DateTime
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare scope: string
 }
 
 export class GatewaySecretSchema extends BaseModel {
