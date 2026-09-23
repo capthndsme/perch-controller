@@ -42,6 +42,7 @@ Section numbers follow plan 1 of the design (and the code comments cite them): 2
 | `rpc_signing.ts`, `pairing_crypto.ts`, `pairing.ts` | the signed envelope, pairing crypto and state machine (4.3, 4.4) |
 | `device_names.ts` | reservations, DNS records, label names (10.3) |
 | `events.ts`, `errors.ts` | the audit log, REST refusals |
+| `hooks.ts` | listeners feature code registers: every saved apply, every merged read (6.8) |
 
 ## 2. Model
 
@@ -490,6 +491,43 @@ never the one offered). Restoring that revision (`POST
 …/revisions/:number/restore`) puts it into the draft and clears the offer;
 `POST …/rejoin/dismiss` drops it.
 
+### 6.8 Writes by Perch itself, pauses, one-way domains, listeners
+
+Built with the QoS writers (task plane-writer, 2026-09-23).
+
+- **System actor.** A write no user made (the QoS sender's `perch-qos` package after a
+  portal grant or an expiry sweep, Authoritative Mode's reverts) is authored by a
+  `PlaneActor`: `number` (a user id, what the admin REST handlers pass) or `{ system:
+  'qos' | 'portal' | 'enforcement' | 'system' }`. `editSections(gatewayId, actor,
+  domain, edits)`, `requestApply({ userId, actor })`, `discardDraft(gatewayId, actor)`,
+  `recordGatewayEvent({ actor })` and `writeRevision({ actor })` take it; it is stored
+  in `system_actor` (events, revisions, applies; migration `110`) and served as
+  `{ id: null, email: null, system: true, name: 'Perch (system)', via }` wherever a user
+  reference is (`GatewayApply.requestedBy`, `GatewayRevision.author`, `GatewayEvent.user`).
+  Only in-process callers can name a system actor: every REST write stays admin-only.
+- **Router-side pauses (owner decision 15).** A domain may declare `routerPause: { type,
+  option, isPaused(value) }` (`sqm` `queue.enabled`, `perch_qos` `globals.enabled`). On a
+  read (managed mode, not in flight), when the router's value is paused and the agreed
+  base is not, the engine **holds** the option: the row's ownership (from the domain's
+  `ownership` of the router's section) leaves it out, so it is never drift, never a
+  conflict and never reverted, and C follows the router's value (event `router_paused`).
+  When the router's value comes back, the hold is **released** (ownership whole again, B
+  and C take the router's value, event `router_resumed`). A pause Perch wrote itself (the
+  base is paused) is no hold. `planSectionEdits` keeps a held option at the router's value
+  unless the put names it in `reclaim` (only an admin's explicit resume does:
+  `POST /qos/resume {overrideRouter: true}`). A section Perch creates is never held.
+- **One-way domains.** `oneWay: true` (`perch_qos`, README 2: Perch-owned config): in
+  managed mode the domain's sections are authoritative whatever the gateway's flag (router
+  edits are drift, `authoritativeFor()`), and the tick reverts them after the grace delay
+  like Authoritative Mode (suspension rules the same). A config's first import is never
+  drift.
+- **Listeners** (`hooks.ts`): `onApplySaved(apply)` runs on every save of a
+  `gateway_applies` row (the model's after-save hook), `onRouterRead({gatewayId, configs,
+  perchIds})` after every merged read. They run inside the gateway's queue, awaited, and
+  a failing listener is only logged. The QoS writers use them (qos.md 6.3).
+- A refused apply keeps the agent's error data on `outcome.data` (`detail`,
+  `minWanKbit`, `configs`, …), served on `GatewayApply.outcome.data`.
+
 ## 7. Domains (the extension point)
 
 ```ts
@@ -506,6 +544,8 @@ interface ConfigDomain<Obj = unknown> {
   normalize?(type: string, option: string, value: UciValue): UciValue
   identityKeys?(section: { type: string; options: UciOptions }): string[]
   touchesManagement?(section: { type: string; name: string; options: UciOptions }, path: ManagementPath): boolean
+  oneWay?: boolean                               // Perch-owned: drift without Authoritative Mode (6.8)
+  routerPause?: { type: string; option: string; isPaused(value: UciValue | undefined): boolean }  // decision 15 (6.8)
   parse(sections: SyncedSection[]): Obj[]
   render(obj: Obj, current: SyncedSection[]): SectionEdit[]   // unknown options kept verbatim
   validate(desired: SyncedSection[], ctx: ValidationCtx): Issue[]
@@ -513,7 +553,8 @@ interface ConfigDomain<Obj = unknown> {
 
 type SectionEdit =
   | { op: 'put'; perchId: string | null; config: string; type: string; name?: string
-      options: UciOptions; secrets?: Record<string, { ref: string; fingerprint: string } | { keep: true }> }
+      options: UciOptions; secrets?: Record<string, { ref: string; fingerprint: string } | { keep: true }>
+      reclaim?: string[] }                       // take a held pause option back (6.8)
   | { op: 'delete'; perchId: string }
   | { op: 'order'; config: string; type: string; perchIds: string[] }
 ```
@@ -532,6 +573,9 @@ Normalises MAC sets, lease times and the `dns` flag; identity keys `mac:<mac>` a
 unmanaged hosts), the router's own address (errors), a duplicate name or an address outside every
 LAN network (warnings). REST: the device page's reservation (10.3).
 
+**`sqm`** and **`perch_qos`**: the QoS domains (qos.md 2.2 and 6.3), registered after
+`dhcp_hosts` in that order.
+
 **`dns_records`** (`dhcp` config, `domain` and `cname` sections; plan 2 section 4.2). Claims
 records with scalar `name`/`ip` (`domain`) or `cname`/`target` (`cname`); owns those two options,
 everything else rides along. Names and values normalised to lowercase; identity key
@@ -542,7 +586,8 @@ imported from the router never blocks other applies.
 
 ## 9. Storage
 
-Migrations `1779000000048`–`051`. JSON columns are text parsed by the models (`jsonColumn`,
+Migrations `1779000000048`–`051`, and `110` (`system_actor` on `gateway_config_events`,
+`gateway_revisions`, `gateway_applies`: section 6.8). JSON columns are text parsed by the models (`jsonColumn`,
 listed in `database/schema_rules.ts`). Only `gateways` references `collectors`; everything else
 hangs off `gateways` with ON DELETE CASCADE.
 

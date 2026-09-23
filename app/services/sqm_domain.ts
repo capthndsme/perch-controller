@@ -23,9 +23,10 @@ import {
 } from '#services/sqm_mapping'
 
 /**
- * The `sqm` config domain (docs/gateway/qos.md section 2.3; plan 3 section
+ * The `sqm` config domain (docs/gateway/qos.md section 2.2; plan 3 section
  * 9.2): how the config plane models `/etc/config/sqm` `queue` sections.
- * Registered in `gateway_config/domains/index.ts`.
+ * Registered in `gateway_config/domains/index.ts`; `SQM_PAUSE` makes the
+ * engine hold a router-side pause on every read (config-plane.md 6.8).
  *
  * Two-way synced, whole-package ownership, untagged pre-existing sections
  * (the live gateway's `eth1`) are imported as they are; `normalizeSqmOption`

@@ -9,20 +9,12 @@ import type { PlanSection } from '#services/qos_plan'
  *
  * The planner renders the whole file (`planQos().sections`); the sender
  * submits it here whenever its fingerprint changes, `applyDebounceSeconds`
- * after the last write. Until the plane's apply path exists,
- * `StubQosPlaneWriter` is installed: it records the change (bounded) and
- * refuses with `plane_unavailable`, which the sender keeps as the config
- * state (`config.state 'queued'`, `error 'plane_unavailable'`) and retries
- * on the next change or expiry sweep.
- *
- * Wiring the real plane (TODO wave 2): register a `perch-qos` domain that
- * owns the whole package (sections `globals`, `bucket`, `network`,
- * `schedule`), with the `globals.enabled` import exception; implement
- * `submit` by turning `sections` into section edits for
- * `gatewayConfig.editSections(gatewayId, userId, edits)` (sections the plan
- * no longer has are deleted); `overrideRouterPause` = the admin resumed over
- * a router-side pause (POST /qos/resume with `overrideRouter`). Return the
- * draft revision. Install it with `setQosPlaneWriter` at boot.
+ * after the last write. The real writer is `PlaneQosWriter`
+ * (`qos_plane_writers.ts`: the `perch_qos` domain, an apply confirmed by the
+ * agent, `globals.revision`), installed at boot by
+ * `providers/qos_plane_provider.ts` (web only). `StubQosPlaneWriter` stays
+ * the default elsewhere: it records the change (bounded) and refuses with
+ * `plane_unavailable`, which the sender keeps as the config state.
  */
 
 export interface QosConfigChange {

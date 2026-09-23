@@ -2,21 +2,16 @@ import type { UciOptions } from '#services/gateway_config/types'
 
 /**
  * The seam between the WAN queue REST endpoints and the config plane
- * (docs/gateway/qos.md section 2.5; plan 3 section 9.2). Every router write
+ * (docs/gateway/qos.md section 2.4; plan 3 section 9.2). Every router write
  * goes through the config plane (README section 2, "one write path"); the
  * QoS code never talks to the agent about `sqm` itself.
  *
- * The plane's apply path does not exist yet (gw/data builds
- * `gatewayConfig.editSections` and the apply lifecycle in wave 2). Until it
- * lands, `StubSqmPlaneWriter` is installed: it records the intended change
- * (bounded, for tests and debugging) and refuses with `plane_unavailable`,
- * which the endpoints return as 409 with the intended change in the body.
- *
- * Wiring the real plane (TODO wave 2): implement `SqmPlaneWriter.submit` by
- * turning the change into `sqmDomain.render(...)` section edits and handing
- * them to `gatewayConfig.editSections(gatewayId, userId, edits)`; return the
- * section's perchId / name and the draft revision. Install it with
- * `setSqmPlaneWriter` at boot (a provider), never per request.
+ * The real writer is `PlaneSqmWriter` (`qos_plane_writers.ts`): the change
+ * rendered through `sqmDomain.render()` into `editSections`, then an apply
+ * of that section. `providers/qos_plane_provider.ts` installs it at boot
+ * (web only). `StubSqmPlaneWriter` stays the default elsewhere (tests, ace
+ * commands): it records the intended change (bounded) and refuses with
+ * `plane_unavailable`.
  */
 
 /** One intended change to a gateway's `sqm` config. */
