@@ -1147,6 +1147,273 @@ export class InfraPortSchema extends BaseModel {
   declare updatedAt: DateTime | null
 }
 
+export class PortalSchema extends BaseModel {
+  static $columns = ['appliedRevision', 'createdAt', 'deletedAt', 'enforcement', 'gatewayId', 'id', 'instance', 'name', 'networkPerchId', 'privacyNotice', 'revision', 'templateId', 'updatedAt'] as const
+  $columns = PortalSchema.$columns
+  @column()
+  declare appliedRevision: number | null
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column.dateTime()
+  declare deletedAt: DateTime | null
+  @column()
+  declare enforcement: string
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare instance: string | null
+  @column()
+  declare name: string
+  @column()
+  declare networkPerchId: string
+  @column()
+  declare privacyNotice: string | null
+  @column()
+  declare revision: number
+  @column()
+  declare templateId: number | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class PortalApiClientSchema extends BaseModel {
+  static $columns = ['createdAt', 'createdByUserId', 'id', 'lastUsedAt', 'maxActiveGrants', 'maxBytesPerCall', 'maxMinutesPerCall', 'name', 'revokedAt', 'tokenPrefix', 'updatedAt'] as const
+  $columns = PortalApiClientSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdByUserId: number | null
+  @column({ isPrimary: true })
+  declare id: number
+  @column.dateTime()
+  declare lastUsedAt: DateTime | null
+  @column()
+  declare maxActiveGrants: number
+  @column()
+  declare maxBytesPerCall: bigint | number
+  @column()
+  declare maxMinutesPerCall: number
+  @column()
+  declare name: string
+  @column.dateTime()
+  declare revokedAt: DateTime | null
+  @column()
+  declare tokenPrefix: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class PortalEventSchema extends BaseModel {
+  static $columns = ['createdAt', 'gatewayId', 'grantId', 'id', 'mac', 'portalId', 'type'] as const
+  $columns = PortalEventSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare gatewayId: number
+  @column()
+  declare grantId: bigint | number | null
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare mac: string | null
+  @column()
+  declare portalId: number | null
+  @column()
+  declare type: string
+}
+
+export class PortalGatewayStateSchema extends BaseModel {
+  static $columns = ['ackedEventSeq', 'createdAt', 'gatewayId', 'keyEpoch', 'lastReportAt', 'lastSyncAt', 'routerKeyEpoch', 'updatedAt'] as const
+  $columns = PortalGatewayStateSchema.$columns
+  @column()
+  declare ackedEventSeq: bigint | number
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column({ isPrimary: true })
+  declare gatewayId: number
+  @column()
+  declare keyEpoch: number
+  @column.dateTime()
+  declare lastReportAt: DateTime | null
+  @column.dateTime()
+  declare lastSyncAt: DateTime | null
+  @column()
+  declare routerKeyEpoch: number | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class PortalGrantSchema extends BaseModel {
+  static $columns = ['apiClientId', 'bytesDown', 'bytesUp', 'createdAt', 'createdByUserId', 'delivery', 'downKbps', 'durationMode', 'endReason', 'endedAt', 'expiresAt', 'externalRef', 'groupKey', 'hostname', 'id', 'ip', 'lastSeenAt', 'localRef', 'mac', 'note', 'portalId', 'portalUserId', 'quotaBytes', 'revision', 'source', 'startedAt', 'state', 'timeBudgetSeconds', 'timeUsedSeconds', 'upKbps', 'updatedAt', 'voucherId'] as const
+  $columns = PortalGrantSchema.$columns
+  @column()
+  declare apiClientId: number | null
+  @column()
+  declare bytesDown: bigint | number
+  @column()
+  declare bytesUp: bigint | number
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdByUserId: number | null
+  @column()
+  declare delivery: string
+  @column()
+  declare downKbps: number | null
+  @column()
+  declare durationMode: string
+  @column()
+  declare endReason: string | null
+  @column.dateTime()
+  declare endedAt: DateTime | null
+  @column.dateTime()
+  declare expiresAt: DateTime | null
+  @column()
+  declare externalRef: string | null
+  @column()
+  declare groupKey: string
+  @column()
+  declare hostname: string | null
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare ip: string | null
+  @column.dateTime()
+  declare lastSeenAt: DateTime | null
+  @column()
+  declare localRef: string | null
+  @column()
+  declare mac: string
+  @column()
+  declare note: string | null
+  @column()
+  declare portalId: number
+  @column()
+  declare portalUserId: number | null
+  @column()
+  declare quotaBytes: bigint | number | null
+  @column()
+  declare revision: number
+  @column()
+  declare source: string
+  @column.dateTime()
+  declare startedAt: DateTime | null
+  @column()
+  declare state: string
+  @column()
+  declare timeBudgetSeconds: number | null
+  @column()
+  declare timeUsedSeconds: number
+  @column()
+  declare upKbps: number | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+  @column()
+  declare voucherId: number | null
+}
+
+export class PortalSessionSchema extends BaseModel {
+  static $columns = ['bytesDown', 'bytesUp', 'endReason', 'endedAt', 'grantId', 'id', 'ip', 'mac', 'portalId', 'startBytesDown', 'startBytesUp', 'startedAt'] as const
+  $columns = PortalSessionSchema.$columns
+  @column()
+  declare bytesDown: bigint | number
+  @column()
+  declare bytesUp: bigint | number
+  @column()
+  declare endReason: string | null
+  @column.dateTime()
+  declare endedAt: DateTime | null
+  @column()
+  declare grantId: bigint | number
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare ip: string | null
+  @column()
+  declare mac: string
+  @column()
+  declare portalId: number
+  @column()
+  declare startBytesDown: bigint | number
+  @column()
+  declare startBytesUp: bigint | number
+  @column.dateTime()
+  declare startedAt: DateTime
+}
+
+export class PortalTemplateSchema extends BaseModel {
+  static $columns = ['builtin', 'createdAt', 'createdByUserId', 'id', 'name', 'sha256', 'totalBytes', 'updatedAt'] as const
+  $columns = PortalTemplateSchema.$columns
+  @column()
+  declare builtin: boolean
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdByUserId: number | null
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare name: string
+  @column()
+  declare sha256: string
+  @column()
+  declare totalBytes: number
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class PortalTemplateFileSchema extends BaseModel {
+  static $columns = ['bytes', 'contentType', 'createdAt', 'id', 'name', 'sha256', 'templateId', 'updatedAt'] as const
+  $columns = PortalTemplateFileSchema.$columns
+  @column()
+  declare bytes: number
+  @column()
+  declare contentType: string
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare name: string
+  @column()
+  declare sha256: string
+  @column()
+  declare templateId: number
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class PortalUserSchema extends BaseModel {
+  static $columns = ['createdAt', 'displayName', 'downKbps', 'enabled', 'id', 'lastLoginAt', 'maxDevices', 'revision', 'sessionMinutes', 'upKbps', 'updatedAt', 'username'] as const
+  $columns = PortalUserSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare displayName: string | null
+  @column()
+  declare downKbps: number | null
+  @column()
+  declare enabled: boolean
+  @column({ isPrimary: true })
+  declare id: number
+  @column.dateTime()
+  declare lastLoginAt: DateTime | null
+  @column()
+  declare maxDevices: number
+  @column()
+  declare revision: number
+  @column()
+  declare sessionMinutes: number | null
+  @column()
+  declare upKbps: number | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+  @column()
+  declare username: string
+}
+
 export class ProtocolCategorySchema extends BaseModel {
   static $columns = ['category', 'protocol', 'updatedAt'] as const
   $columns = ProtocolCategorySchema.$columns
@@ -1213,6 +1480,80 @@ export class UserSchema extends BaseModel {
   declare password: string
   @column()
   declare role: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class VoucherSchema extends BaseModel {
+  static $columns = ['batchId', 'boundPortalId', 'bytesUsed', 'createdAt', 'exhaustedAt', 'expiresAt', 'firstUsedAt', 'hint', 'id', 'revision', 'revokedAt', 'startsAt', 'timeUsedSeconds', 'updatedAt'] as const
+  $columns = VoucherSchema.$columns
+  @column()
+  declare batchId: number
+  @column()
+  declare boundPortalId: number | null
+  @column()
+  declare bytesUsed: bigint | number
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column.dateTime()
+  declare exhaustedAt: DateTime | null
+  @column.dateTime()
+  declare expiresAt: DateTime | null
+  @column.dateTime()
+  declare firstUsedAt: DateTime | null
+  @column()
+  declare hint: string
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare revision: number
+  @column.dateTime()
+  declare revokedAt: DateTime | null
+  @column.dateTime()
+  declare startsAt: DateTime | null
+  @column()
+  declare timeUsedSeconds: number
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class VoucherBatchSchema extends BaseModel {
+  static $columns = ['codeLength', 'count', 'createdAt', 'createdByUserId', 'downKbps', 'durationMinutes', 'durationMode', 'id', 'maxDevices', 'name', 'note', 'portalId', 'quotaBytes', 'redeemBy', 'revokedAt', 'startMode', 'upKbps', 'updatedAt'] as const
+  $columns = VoucherBatchSchema.$columns
+  @column()
+  declare codeLength: number
+  @column()
+  declare count: number
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdByUserId: number | null
+  @column()
+  declare downKbps: number | null
+  @column()
+  declare durationMinutes: number | null
+  @column()
+  declare durationMode: string
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare maxDevices: number
+  @column()
+  declare name: string
+  @column()
+  declare note: string | null
+  @column()
+  declare portalId: number | null
+  @column()
+  declare quotaBytes: bigint | number | null
+  @column.dateTime()
+  declare redeemBy: DateTime | null
+  @column.dateTime()
+  declare revokedAt: DateTime | null
+  @column()
+  declare startMode: string
+  @column()
+  declare upKbps: number | null
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime | null
 }

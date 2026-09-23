@@ -47,5 +47,27 @@ export default {
     gateway_config_events: {
       skipColumns: ['detail'],
     },
+    // Guest portal (docs/gateway/portal.md section 5): JSON text columns
+    // parsed by their models, the APP_KEY-encrypted voucher code, the
+    // template file bytes (Buffer) and the generated uniqueness column.
+    portals: {
+      skipColumns: ['methods', 'csp_connect_src', 'status', 'active_network'],
+    },
+    portal_template_files: {
+      skipColumns: ['content'],
+    },
+    vouchers: {
+      skipColumns: ['code_encrypted', 'code_hash'],
+    },
+    portal_users: {
+      // password → scrypt hash set by the model, never serialized.
+      skipColumns: ['portal_ids', 'password'],
+    },
+    portal_api_clients: {
+      skipColumns: ['scopes', 'portal_ids', 'token_hash'],
+    },
+    portal_events: {
+      skipColumns: ['detail'],
+    },
   },
 } satisfies SchemaRules
