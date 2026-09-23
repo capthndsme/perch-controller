@@ -15,6 +15,8 @@ import { ShareBar } from '@/components/ui/share-bar'
 import { useDashboardScope, useDashboardTime } from '@/hooks/use-dashboard-time'
 import { useDeviceLabels } from '@/hooks/use-device-labels'
 import { useDevices, useTopTraffic } from '@/hooks/use-devices'
+import { uplinkLine } from '@/lib/attachment'
+import { formatLastSeen } from '@/lib/collectors'
 import {
   DEVICE_TYPE_OPTIONS,
   deviceDisplayName,
@@ -22,6 +24,7 @@ import {
   deviceTypeMeta,
 } from '@/lib/device-labels'
 import { formatBytes, formatMbps } from '@/lib/format-bytes'
+import { connectionLabel } from '@/lib/presence'
 import {
   RATE_DIRECTION_OPTIONS,
   RATE_MODE_OPTIONS,
@@ -147,8 +150,10 @@ export function DevicesPage() {
     const all = (devices.data ?? []).map((device) => ({ device, ...pickRates(device, scope) }))
     const total = all.reduce((sum, r) => sum + r.bytes, 0)
     const filtered = all.filter(({ device, mbpsIn, mbpsOut }) => {
-      if (connection === 'wifi' && !device.wifi.connected) return false
-      if (connection === 'wired' && device.wifi.connected) return false
+      // By how it was last attached, so a Wi-Fi device that left stays under WiFi.
+      // Wired is everything else: marked Ethernet or cabled on the map (both `ethernet`), and Wired / unknown.
+      if (connection === 'wifi' && device.presence.via !== 'wifi') return false
+      if (connection === 'wired' && device.presence.via === 'wifi') return false
       if (activeOnly && mbpsIn + mbpsOut <= 0) return false
       if (deviceType === 'unclassified' && device.deviceType) return false
       if (deviceType !== 'all' && deviceType !== 'unclassified' && device.deviceType !== deviceType)
@@ -357,6 +362,7 @@ export function DevicesPage() {
                   <tr
                     key={`${device.collector.id}-${device.mac}`}
                     data-clickable="true"
+                    data-prefetch-href={`/devices/${macPath(device.mac)}`}
                     onClick={() => navigate(`/devices/${macPath(device.mac)}`)}
                   >
                     <td>
@@ -373,12 +379,27 @@ export function DevicesPage() {
                             {device.wifi.ap} · {formatWifiBand(device.wifi.band)} · {formatSignal(device.wifi.signalDbm)}
                           </span>
                         </span>
-                      ) : (
+                      ) : device.presence.via === 'wifi' && device.wifi.last ? (
                         <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
                           <span aria-hidden className="inline-block size-2 rounded-full bg-muted-foreground/40" />
-                          Wired / unknown
+                          <span className="truncate">
+                            Last seen on WiFi · {device.wifi.last.ap} · {formatLastSeen(device.presence.lastSeenAt)}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                          <span aria-hidden className="inline-block size-2 shrink-0 rounded-full bg-muted-foreground/40" />
+                          <span className="truncate" data-connection-line>
+                            {/* On the map with a cable (A4): "Ethernet · Garage AP · lan1 · 100 Mb/s". */}
+                            {[connectionLabel(device.presence.via), uplinkLine(device.attachment)]
+                              .filter(Boolean)
+                              .join(' · ')}
+                            {device.presence.status === 'disconnected' && device.presence.lastSeenAt
+                              ? ` · last seen ${formatLastSeen(device.presence.lastSeenAt)}`
+                              : null}
+                          </span>
                           {device.collector.lastStatus?.ok === false ? (
-                            <span className="text-status-critical">· collector offline</span>
+                            <span className="shrink-0 text-status-critical">· collector offline</span>
                           ) : null}
                         </span>
                       )}

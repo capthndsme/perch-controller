@@ -21,18 +21,19 @@ import { useDashboardScope, useDashboardTime } from '@/hooks/use-dashboard-time'
 import { useProfile } from '@/hooks/use-auth'
 import { useCollectorSummaries, useCollectors } from '@/hooks/use-collectors'
 import { useAggregateProtocols, useAggregateTraffic, useDevices } from '@/hooks/use-devices'
-import { deviceDisplayName } from '@/lib/device-labels'
+import { deviceDisplayName } from '@/lib/device-names'
 import { useDestinations } from '@/hooks/use-destinations'
 import { useRouter } from '@/hooks/use-router'
 import { formatCompactCount } from '@/lib/gateway'
 import { useTopPeers } from '@/hooks/use-peers'
 import { useUsage } from '@/hooks/use-usage'
-import { useWifiClients, useWifiClientsHistory, useWifiOverview } from '@/hooks/use-wifi'
+import { useWifiClientsHistory, useWifiOverview } from '@/hooks/use-wifi'
 import { formatBytes, formatMbps } from '@/lib/format-bytes'
 import {
   contextRangeForWindow,
   DEFAULT_AGGREGATE_WINDOW,
   formatRangeLabel,
+  shouldAutoRefresh,
   type RefreshInterval,
   type TimeWindow,
 } from '@/lib/time-window'
@@ -107,7 +108,6 @@ export function DashboardPage() {
   })
   const sites = useDestinations({ window, limit: 8, refreshInterval, enabled: destinationView === 'sites' })
   const wifi = useWifiOverview({ window, refreshInterval })
-  const wifiClients = useWifiClients({ activeOnly: true, refreshInterval })
   // Only the latest sample matters here; a short window keeps the read cheap.
   const gateway = useRouter({ window: { kind: 'relative', range: '1h' }, resolution: '5m', refreshInterval })
   // Month to date + the whole previous month (62 days always spans both).
@@ -222,9 +222,12 @@ export function DashboardPage() {
   }, [deviceRows, scope])
 
   const signalMix = wifi.data?.signalDistribution
+  // Same response as the SSID rows and the signal mix, so tile, "now" and the table add up.
+  const wifiClientsNow = wifi.data?.totalClients ?? 0
   const wifiHistoryBuckets = wifiHistory.data?.buckets ?? []
-  const wifiPeakInWindow = wifiHistoryBuckets.reduce((max, b) => Math.max(max, b.total), 0)
-  const wifiClientsNow = wifiClients.data?.length ?? 0
+  const wifiHistoryPeak = wifiHistoryBuckets.reduce((max, b) => Math.max(max, b.total), 0)
+  // A window ending now cannot peak below "now"; the history's live slot is recomputed only every 5 min.
+  const wifiPeakInWindow = shouldAutoRefresh(window) ? Math.max(wifiHistoryPeak, wifiClientsNow) : wifiHistoryPeak
 
   return (
     <div className="flex flex-col gap-5">

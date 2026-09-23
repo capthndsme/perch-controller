@@ -7,6 +7,7 @@ import {
 } from '#services/client_distribution_rollup'
 import { getDeviceLabels } from '#services/device_labels'
 import { getHostnameMatches } from '#services/hostname_enrichment'
+import { getPresenceSettings } from '#services/presence_settings'
 import { cacheKey, cacheTtlForResolution, cachedQuery, windowSegment } from '#services/query_cache'
 import { queryApThroughputHistory } from '#services/wifi_ap_throughput'
 import { pickAggregateTier, pickSeriesTier, windowSpanSeconds } from '#services/rollup_tiers'
@@ -19,6 +20,12 @@ import {
   runAgentCommand,
 } from '#services/wifi_command_channel'
 import hub from '#services/ap_agent_hub'
+import {
+  CONNECTED_INACTIVE_MS,
+  stationConnectedSql,
+  stationHeardAgoSql,
+  type PresenceThresholds,
+} from '#services/wifi_presence'
 import { classifySignalQuality } from '#services/wifi_signal_quality'
 import {
   RESOLUTION_SECONDS,
@@ -43,7 +50,6 @@ import {
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import { DateTime } from 'luxon'
-const WIFI_RES_MS = 200000
 
 /** Window width from which the 5-minute WiFi snapshot rollups serve reads. */
 const ROLLUP_MIN_SPAN_SECONDS = 6 * 3600
@@ -61,6 +67,10 @@ type LatestStationRow = {
   rxRateKbps: number | null
   inactiveMs: number | null
   recordedAt: Date | string
+  /** Its AP still lists it and it is not idle past the threshold (`wifi_presence.ts`). */
+  connected: boolean
+  /** When its AP last heard from it (ISO): last listing minus the idle time. */
+  heardAt: string
 }
 
 type LatestNetworkRow = {
@@ -124,11 +134,13 @@ export default class WifiController {
     const window = resolveTimeWindow(qs, '1h')
     if (window.error) return response.badRequest(window.error)
 
-    const latestStations = await queryLatestStations(qs.apId)
+    // Clients, signal mix, SSID and AP counts all come from the same connected
+    // stations, so they add up to `totalClients`.
+    const stations = await queryConnectedStations(qs.apId)
     const latestNetworks = await queryLatestNetworks(qs.apId)
     const throughputBySsid = await querySsidThroughput(window.since, window.until, qs.apId)
-    const signalDistribution = summarizeSignalDistribution(latestStations)
-    const ssids = buildSsidSummaries(latestStations, latestNetworks, throughputBySsid)
+    const signalDistribution = summarizeSignalDistribution(stations)
+    const ssids = buildSsidSummaries(stations, latestNetworks, throughputBySsid)
     const aps = await queryAccessPointsWithHealth(qs.apId, true)
 
     const tz = (await SystemSetting.get<string>('timezone')) || 'UTC'
@@ -136,8 +148,16 @@ export default class WifiController {
     const todayStart = now.startOf('day').toUTC()
     const sevenDaysAgo = now.minus({ days: 7 }).toUTC()
 
-    const peakClientsToday = await queryPeakClients(todayStart, now.toUTC(), qs.apId)
-    const peakClients7d = await queryPeakClients(sevenDaysAgo, now.toUTC(), qs.apId)
+    // These windows end now, so their peak is at least the current count; the
+    // rollup behind them is recomputed every 5 minutes and can trail a rise.
+    const peakClientsToday = Math.max(
+      await queryPeakClients(todayStart, now.toUTC(), qs.apId),
+      stations.length
+    )
+    const peakClients7d = Math.max(
+      await queryPeakClients(sevenDaysAgo, now.toUTC(), qs.apId),
+      stations.length
+    )
     const peakClientsAllTime = Math.max(
       await queryPeakClients(null, now.toUTC(), qs.apId),
       peakClients7d
@@ -147,7 +167,7 @@ export default class WifiController {
       range: window.range,
       from: window.since.toISO(),
       to: window.until.toISO(),
-      totalClients: latestStations.length,
+      totalClients: stations.length,
       ssidCount: ssids.length,
       accessPointCount: aps.length,
       signalDistribution,
@@ -167,10 +187,10 @@ export default class WifiController {
     const window = resolveTimeWindow(qs, '1h')
     if (window.error) return response.badRequest(window.error)
 
-    const latestStations = await queryLatestStations(qs.apId)
+    const stations = await queryConnectedStations(qs.apId)
     const latestNetworks = await queryLatestNetworks(qs.apId)
     const throughputBySsid = await querySsidThroughput(window.since, window.until, qs.apId)
-    const ssids = buildSsidSummaries(latestStations, latestNetworks, throughputBySsid)
+    const ssids = buildSsidSummaries(stations, latestNetworks, throughputBySsid)
 
     return serialize({
       range: window.range,
@@ -186,8 +206,8 @@ export default class WifiController {
   async ssidClients({ params, request, serialize }: HttpContext) {
     const qs = await wifiSsidClientsQueryValidator.validate(request.qs())
     const ssid = decodeURIComponent(String(params.ssid))
-    const latestStations = await queryLatestStations(qs.apId)
-    const clients = latestStations
+    const stations = await queryConnectedStations(qs.apId)
+    const clients = stations
       .filter((station) => station.ssid === ssid)
       .map((station) => ({
         mac: station.mac,
@@ -202,7 +222,7 @@ export default class WifiController {
         txRateKbps: station.txRateKbps,
         rxRateKbps: station.rxRateKbps,
         inactiveMs: station.inactiveMs,
-        lastSeenAt: toIso(station.recordedAt),
+        lastSeenAt: station.heardAt,
       }))
       .sort((left, right) => (right.signalDbm ?? -999) - (left.signalDbm ?? -999))
 
@@ -255,12 +275,15 @@ export default class WifiController {
 
   /**
    * GET /api/v1/wifi/clients
+   *
+   * Every MAC with a latest row (last known state, search uses it); with
+   * `activeOnly` just the connected ones. `active` = connected right now.
    */
   async clients({ request, serialize }: HttpContext) {
     const qs = await wifiClientsQueryValidator.validate(request.qs())
     const latestStations = await queryLatestStations(qs.apId)
     const rows = (
-      qs.activeOnly ? latestStations.filter((station) => isActiveStation(station)) : latestStations
+      qs.activeOnly ? latestStations.filter((station) => station.connected) : latestStations
     )
       .map((station) => ({
         mac: station.mac,
@@ -275,8 +298,8 @@ export default class WifiController {
         txRateKbps: station.txRateKbps,
         rxRateKbps: station.rxRateKbps,
         inactiveMs: station.inactiveMs,
-        active: isActiveStation(station),
-        lastSeenAt: toIso(station.recordedAt),
+        active: station.connected,
+        lastSeenAt: station.heardAt,
       }))
       .sort((left, right) => (right.signalDbm ?? -999) - (left.signalDbm ?? -999))
 
@@ -343,7 +366,7 @@ export default class WifiController {
       const where: string[] = [
         's.recorded_at >= ?',
         's.recorded_at < ?',
-        's.inactive_ms < ' + Number(WIFI_RES_MS),
+        's.inactive_ms < ' + CONNECTED_INACTIVE_MS,
       ]
       bindings.push(resolutionSeconds, resolutionSeconds, sinceSql, untilSql)
       if (qs.apId) {
@@ -383,7 +406,7 @@ export default class WifiController {
       const where: string[] = [
         's.recorded_at >= ?',
         's.recorded_at < ?',
-        's.inactive_ms < ' + Number(WIFI_RES_MS),
+        's.inactive_ms < ' + CONNECTED_INACTIVE_MS,
       ]
       distinctBindings.push(resolutionSeconds, resolutionSeconds, sinceSql, untilSql)
       if (qs.apId) {
@@ -513,8 +536,8 @@ export default class WifiController {
         txRateKbps: latest.txRateKbps,
         rxRateKbps: latest.rxRateKbps,
         inactiveMs: latest.inactiveMs,
-        active: isActiveStation(latest),
-        lastSeenAt: toIso(latest.recordedAt),
+        active: latest.connected,
+        lastSeenAt: latest.heardAt,
       },
       roamingEvents: roamingEvents.map((row) => ({
         id: row.id,
@@ -588,9 +611,9 @@ export default class WifiController {
   async rf({ request, serialize }: HttpContext) {
     const qs = await wifiRfQueryValidator.validate(request.qs())
     const latestNetworks = await queryLatestNetworks(qs.apId)
-    const latestStations = await queryLatestStations(qs.apId)
+    const stations = await queryConnectedStations(qs.apId)
     const clientCountByInterface = new Map<string, number>()
-    for (const station of latestStations) {
+    for (const station of stations) {
       const key = `${station.apId}:${station.ifname}`
       clientCountByInterface.set(key, (clientCountByInterface.get(key) ?? 0) + 1)
     }
@@ -1099,10 +1122,6 @@ function toIso(value: Date | string | null | undefined): string | null {
   return iso.isValid ? iso.toUTC().toISO() : String(value)
 }
 
-function isActiveStation(station: LatestStationRow): boolean {
-  return (station.inactiveMs ?? Number.POSITIVE_INFINITY) < 30000
-}
-
 function resolveTimeWindow(
   qs: { range?: string; from?: string; to?: string },
   defaultRange: string
@@ -1148,14 +1167,38 @@ function resolveTimeWindow(
 
 async function queryLatestStations(apId?: number): Promise<LatestStationRow[]> {
   const ttlMs = cacheTtlForResolution(null)
-  return cachedQuery(cacheKey(['wifi:latestStations', apId ?? '']), ttlMs, () =>
-    queryLatestStationsUncached(apId)
+  // The AP silence bound decides `connected`: part of the key, so a saved
+  // change (Settings → Presence) applies to the next request.
+  const thresholds = await getPresenceSettings()
+  return cachedQuery(
+    cacheKey([
+      'wifi:latestStations',
+      apId ?? '',
+      thresholds.apStaleIntervals,
+      thresholds.apStaleMinSeconds,
+    ]),
+    ttlMs,
+    () => queryLatestStationsUncached(thresholds, apId)
   )
 }
 
-async function queryLatestStationsUncached(apId?: number): Promise<LatestStationRow[]> {
+/**
+ * The stations that are clients right now. Anything that counts or lists
+ * current clients reads these, never the whole latest table: that also
+ * holds every MAC seen during the snapshot retention.
+ */
+async function queryConnectedStations(apId?: number): Promise<LatestStationRow[]> {
+  const stations = await queryLatestStations(apId)
+  return stations.filter((station) => station.connected)
+}
+
+async function queryLatestStationsUncached(
+  thresholds: PresenceThresholds,
+  apId?: number
+): Promise<LatestStationRow[]> {
   // One row per MAC, maintained by the poller (`upsertWifiLatest`) — no
-  // "latest per group" derivation over the snapshot history.
+  // "latest per group" derivation over the snapshot history. `connected` is
+  // decided here, in SQL, while the row is read.
   const where: string[] = []
   const bindings: number[] = []
   if (apId) {
@@ -1176,16 +1219,21 @@ async function queryLatestStationsUncached(apId?: number): Promise<LatestStation
       s.tx_rate_kbps                         AS txRateKbps,
       s.rx_rate_kbps                         AS rxRateKbps,
       s.inactive_ms                          AS inactiveMs,
-      s.recorded_at                          AS recordedAt
+      s.recorded_at                          AS recordedAt,
+      ${stationConnectedSql(thresholds, 's', 'ap')} AS connected,
+      ${stationHeardAgoSql('s')}             AS heardAgoSeconds
     FROM wifi_station_latest s
     INNER JOIN wifi_access_points ap ON ap.id = s.ap_id
     ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
     ORDER BY s.recorded_at DESC
   `
-  return rawRows<LatestStationRow>(await db.rawQuery(sql, bindings))
+  const rows = rawRows<LatestStationQueryRow>(await db.rawQuery(sql, bindings))
+  const now = DateTime.utc()
+  return rows.map((row) => toLatestStation(row, now))
 }
 
 async function queryLatestStationByMac(mac: string): Promise<LatestStationRow | null> {
+  const thresholds = await getPresenceSettings()
   const sql = `
     SELECT
       s.ap_id                               AS apId,
@@ -1200,14 +1248,34 @@ async function queryLatestStationByMac(mac: string): Promise<LatestStationRow | 
       s.tx_rate_kbps                         AS txRateKbps,
       s.rx_rate_kbps                         AS rxRateKbps,
       s.inactive_ms                          AS inactiveMs,
-      s.recorded_at                          AS recordedAt
+      s.recorded_at                          AS recordedAt,
+      ${stationConnectedSql(thresholds, 's', 'ap')} AS connected,
+      ${stationHeardAgoSql('s')}             AS heardAgoSeconds
     FROM wifi_station_latest s
     INNER JOIN wifi_access_points ap ON ap.id = s.ap_id
     WHERE s.mac = ?
     LIMIT 1
   `
-  const rows = rawRows<LatestStationRow>(await db.rawQuery(sql, [mac.toLowerCase()]))
-  return rows[0] ?? null
+  const rows = rawRows<LatestStationQueryRow>(await db.rawQuery(sql, [mac.toLowerCase()]))
+  return rows[0] ? toLatestStation(rows[0], DateTime.utc()) : null
+}
+
+type LatestStationQueryRow = Omit<LatestStationRow, 'connected' | 'heardAt'> & {
+  connected: unknown
+  heardAgoSeconds: number | string
+}
+
+/**
+ * The database decides `connected` and how long ago the AP heard the station;
+ * the instant is fixed here, as the row is read, so a cached row keeps it.
+ */
+function toLatestStation(row: LatestStationQueryRow, now: DateTime): LatestStationRow {
+  const { heardAgoSeconds, ...rest } = row
+  return {
+    ...rest,
+    connected: Number(row.connected) === 1,
+    heardAt: now.minus({ seconds: Number(heardAgoSeconds) }).toISO()!,
+  }
 }
 
 async function queryLatestNetworks(apId?: number): Promise<LatestNetworkRow[]> {
@@ -1438,7 +1506,7 @@ async function queryAccessPointsWithHealth(apId?: number, includeDisabled = true
   const [aps, systems, stations] = await Promise.all([
     apsQuery,
     queryLatestSystems(apId),
-    queryLatestStations(apId),
+    queryConnectedStations(apId),
   ])
 
   const systemByAp = new Map<number, LatestSystemRow>()

@@ -234,6 +234,68 @@ test.group('device labels API', (group) => {
     assert.equal(overview.body().data.identity[0].deviceType, 'tv')
   })
 
+  test('the Ethernet mark is stored, merged and cleared like the other fields', async ({
+    client,
+    assert,
+  }) => {
+    const { token } = await bootstrap()
+
+    // On its own it is a label worth keeping.
+    const marked = await client
+      .patch(LABEL_ENDPOINT)
+      .bearerToken(token)
+      .json({ connection: 'ethernet' })
+    marked.assertStatus(200)
+    assert.equal(marked.body().data.label.connection, 'ethernet')
+    assert.lengthOf(await db.from('device_labels').select('mac'), 1)
+
+    const named = await client.patch(LABEL_ENDPOINT).bearerToken(token).json({ name: 'Desk NAS' })
+    assert.equal(named.body().data.label.connection, 'ethernet', 'an omitted mark is kept')
+
+    const unmarked = await client
+      .patch(LABEL_ENDPOINT)
+      .bearerToken(token)
+      .json({ connection: null })
+    unmarked.assertStatus(200)
+    assert.isNull(unmarked.body().data.label.connection)
+    assert.equal(unmarked.body().data.label.name, 'Desk NAS')
+
+    const unknown = await client
+      .patch(LABEL_ENDPOINT)
+      .bearerToken(token)
+      .json({ connection: 'bluetooth' })
+    unknown.assertStatus(422)
+  })
+
+  test('a device marked Ethernet reads Ethernet, not Wired / unknown', async ({
+    client,
+    assert,
+  }) => {
+    const { token, collector } = await bootstrap()
+    await seedTrafficAndIdentity(collector.id, MAC, '192.168.2.100')
+    type Row = { mac: string; connection: string | null; presence: { via: string } }
+    const listed = async () => {
+      const index = await client.get('/api/v1/devices?range=5m').bearerToken(token)
+      index.assertStatus(200)
+      return (index.body().data as Row[]).find((row) => row.mac === MAC)!
+    }
+
+    const before = await listed()
+    assert.isNull(before.connection)
+    assert.equal(before.presence.via, 'lan')
+
+    await client.patch(LABEL_ENDPOINT).bearerToken(token).json({ connection: 'ethernet' })
+
+    // Labels and presence are read per request: no wait for the list's cache.
+    const after = await listed()
+    assert.equal(after.connection, 'ethernet')
+    assert.containsSubset(after.presence, { status: 'connected', via: 'ethernet' })
+    const presence = await client.get(`/api/v1/devices/${MAC}/presence`).bearerToken(token)
+    assert.containsSubset(presence.body().data, { status: 'connected', via: 'ethernet' })
+    const overview = await client.get(`/api/v1/devices/${MAC}/overview?range=5m`).bearerToken(token)
+    assert.equal(overview.body().data.identity[0].connection, 'ethernet')
+  })
+
   test('delete removes the label and the device reads unnamed again', async ({
     client,
     assert,

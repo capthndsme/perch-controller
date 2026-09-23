@@ -19,8 +19,9 @@ import {
   useWifiClientSignal,
 } from '@/hooks/use-wifi'
 import { controlDisabledReason, wifiCommandErrorMessage } from '@/lib/ap-agents'
-import { deviceDisplayName } from '@/lib/device-labels'
+import { deviceDisplayName } from '@/lib/device-names'
 import { formatBytes, formatMbps } from '@/lib/format-bytes'
+import { presenceDotClass, presenceLabel } from '@/lib/presence'
 import { type TimeWindow } from '@/lib/time-window'
 import { formatSignal, formatWifiBand, wifiSignalQualityLabel } from '@/lib/wifi'
 import { macPath } from '@/lib/traffic'
@@ -52,6 +53,8 @@ export function WifiClientPage() {
   const clientApId = detail.data?.latest.apId
   const clientAp = aps.data?.find((ap) => ap.id === clientApId)
   const controls = clientAp?.controls ?? null
+  // Kick and Steer need the client on its AP right now.
+  const connected = detail.data?.latest.active === true
   const commandReasons = controls
     ? [
         ...new Set(
@@ -177,13 +180,22 @@ export function WifiClientPage() {
         ) : null}
         {detail.data?.latest ? (
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <Badge variant="outline">{detail.data.latest.ap}</Badge>
+            <Badge variant="outline">
+              <span aria-hidden className={`inline-block size-2 rounded-full ${presenceDotClass(connected)}`} />
+              {presenceLabel(connected, detail.data.latest.lastSeenAt)}
+            </Badge>
+            <Badge variant="outline">
+              {connected ? detail.data.latest.ap : `Last on ${detail.data.latest.ap}`}
+            </Badge>
             <Badge variant="outline">{detail.data.latest.ssid ?? 'Unknown SSID'}</Badge>
             <Badge variant="outline">{formatWifiBand(detail.data.latest.band)}</Badge>
-            <Badge variant="outline">
-              {formatSignal(detail.data.latest.signalDbm)} ·{' '}
-              {wifiSignalQualityLabel(detail.data.latest.signalQuality)}
-            </Badge>
+            {/* The last signal of a client that walked away says nothing about its link. */}
+            {connected ? (
+              <Badge variant="outline">
+                {formatSignal(detail.data.latest.signalDbm)} ·{' '}
+                {wifiSignalQualityLabel(detail.data.latest.signalQuality)}
+              </Badge>
+            ) : null}
             <Button asChild size="sm" variant="ghost" className="px-2">
               <Link to={`/devices/${macPath(mac ?? '')}`}>Open device detail</Link>
             </Button>
@@ -192,7 +204,7 @@ export function WifiClientPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={kick.isPending || !controls?.kick}
+                  disabled={kick.isPending || !controls?.kick || !connected}
                   onClick={() => void onKick()}
                 >
                   {kick.isPending ? 'Kicking…' : 'Kick client'}
@@ -200,7 +212,7 @@ export function WifiClientPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={steer.isPending || !controls?.steer}
+                  disabled={steer.isPending || !controls?.steer || !connected}
                   onClick={() => void onSteer()}
                 >
                   {steer.isPending ? 'Steering…' : 'Steer client'}
@@ -211,6 +223,7 @@ export function WifiClientPage() {
         ) : null}
         {profile.data?.role === 'admin' && detail.data?.latest ? (
           <>
+            {!connected ? <p className="text-xs text-muted-foreground">Not connected right now.</p> : null}
             {commandReasons.map((reason) => (
               <p key={reason} className="text-xs text-muted-foreground">
                 {reason}

@@ -85,7 +85,11 @@ type StationLocation = {
   ifname: string
   ssid: string | null
   band: string | null
+  /** When that AP last heard the station, epoch ms: its report time minus the idle time it reported. */
+  heardAt: number
 }
+
+type RoamingEventRow = Record<string, string | number | null>
 
 /**
  * In-memory baseline for counter deltas. A process restart clears this map,
@@ -95,10 +99,22 @@ type StationLocation = {
 const state = new Map<number, PollState>()
 
 /**
- * Global best-known station location by MAC used for roaming detection.
- * Restarting the process loses this map and may miss the next roam edge.
+ * Where each station is, by MAC: which AP (and interface) owns it. It decides
+ * the roaming events and which AP's listing feeds `wifi_station_latest`. A
+ * client that leaves an AP stays in that AP's station list, idle, until
+ * hostapd drops it minutes later, so two APs can list it at once; the AP that
+ * heard it last owns it (`resolveStationOwners`). A restart forgets the map:
+ * the first report afterwards sets the owner, and a fresher report corrects a
+ * stale one.
  */
 const locationByMac = new Map<string, StationLocation>()
+
+/** Another AP takes a station over only when it heard it this much more recently. */
+const ROAM_HYSTERESIS_MS = 2000
+/** Bound on `locationByMac` (CLAUDE.md: every in-process cache has one). */
+const MAX_TRACKED_STATIONS = 4096
+/** Stations nobody has heard for this long go first when the bound is reached. */
+const TRACKED_STATION_MAX_AGE_MS = 24 * 3600 * 1000
 
 export type WifiPollOutcome =
   | {
@@ -135,6 +151,11 @@ export type WifiIngestOptions = {
 export function _resetWifiPollerState() {
   state.clear()
   locationByMac.clear()
+}
+
+/** Test-only: how many stations the roaming map tracks. */
+export function _trackedStationCount(): number {
+  return locationByMac.size
 }
 
 /**
@@ -501,54 +522,116 @@ async function insertSystemSnapshot(
   })
 }
 
-async function insertRoamingEvents(
+/**
+ * Decides, for one AP's report, which of its stations it owns and which moves
+ * are real roams. Synchronous, so the reports of different APs never
+ * interleave inside it.
+ *
+ * - A MAC listed twice in one report (two radios) counts once, by its fresher
+ *   entry.
+ * - The owner AP's own report is authoritative for that AP: a station it now
+ *   lists on another interface moved (band steer or interface switch).
+ * - Another AP takes a station over only when it heard it more than
+ *   `ROAM_HYSTERESIS_MS` after the owner did. A client that left stays listed
+ *   on its old AP with a growing idle time, so that stale listing never wins
+ *   it back: one roam, not one per report.
+ */
+export function resolveStationOwners(
   apId: number,
-  nowSql: string,
-  stations: StationSnapshot[]
-): Promise<number> {
-  const events: Array<Record<string, string | number | null>> = []
-
+  nowMs: number,
+  stations: StationSnapshot[],
+  detectedAtSql: string
+): { owned: StationSnapshot[]; events: RoamingEventRow[] } {
+  const freshest = new Map<string, StationSnapshot>()
   for (const station of stations) {
     const mac = normalizeMac(station.mac)
     if (!mac) continue
+    const seen = freshest.get(mac)
+    if (!seen || (station.inactiveMs ?? 0) < (seen.inactiveMs ?? 0)) freshest.set(mac, station)
+  }
 
-    const previous = locationByMac.get(mac)
+  const owned: StationSnapshot[] = []
+  const events: RoamingEventRow[] = []
+  for (const [mac, station] of freshest) {
     const current: StationLocation = {
       apId,
       ifname: station.ifname,
       ssid: station.ssid,
       band: station.band,
+      heardAt: nowMs - Math.max(0, station.inactiveMs ?? 0),
     }
-
-    if (previous && (previous.apId !== current.apId || previous.ifname !== current.ifname)) {
-      const eventType =
-        previous.apId !== current.apId
-          ? 'ap_roam'
-          : previous.band !== current.band
-            ? 'band_steer'
-            : 'interface_switch'
-      events.push({
-        mac,
-        from_ap_id: previous.apId,
-        to_ap_id: current.apId,
-        from_ifname: previous.ifname,
-        to_ifname: current.ifname,
-        from_ssid: previous.ssid,
-        to_ssid: current.ssid,
-        from_band: previous.band,
-        to_band: current.band,
-        event_type: eventType,
-        detected_at: nowSql,
-      })
+    const previous = locationByMac.get(mac)
+    if (
+      previous &&
+      previous.apId !== apId &&
+      current.heardAt <= previous.heardAt + ROAM_HYSTERESIS_MS
+    ) {
+      continue // listed here, but another AP heard it more recently: a stale listing
     }
-
+    if (previous && (previous.apId !== apId || previous.ifname !== current.ifname)) {
+      events.push(roamingEventRow(mac, previous, current, detectedAtSql))
+    }
     locationByMac.set(mac, current)
+    owned.push(station)
   }
 
+  pruneStationLocations(nowMs)
+  return { owned, events }
+}
+
+function roamingEventRow(
+  mac: string,
+  previous: StationLocation,
+  current: StationLocation,
+  detectedAtSql: string
+): RoamingEventRow {
+  const eventType =
+    previous.apId !== current.apId
+      ? 'ap_roam'
+      : previous.band !== current.band
+        ? 'band_steer'
+        : 'interface_switch'
+  return {
+    mac,
+    from_ap_id: previous.apId,
+    to_ap_id: current.apId,
+    from_ifname: previous.ifname,
+    to_ifname: current.ifname,
+    from_ssid: previous.ssid,
+    to_ssid: current.ssid,
+    from_band: previous.band,
+    to_band: current.band,
+    event_type: eventType,
+    detected_at: detectedAtSql,
+  }
+}
+
+/** The stations of `stations` that `apId` still owns (another AP may have taken one since). */
+function stillOwnedBy(apId: number, stations: StationSnapshot[]): StationSnapshot[] {
+  return stations.filter((station) => {
+    const mac = normalizeMac(station.mac)
+    const location = mac ? locationByMac.get(mac) : undefined
+    return location?.apId === apId && location.ifname === station.ifname
+  })
+}
+
+/** Keeps `locationByMac` bounded: day-old entries first, then the least recently heard. */
+function pruneStationLocations(nowMs: number) {
+  if (locationByMac.size <= MAX_TRACKED_STATIONS) return
+  for (const [mac, location] of locationByMac) {
+    if (nowMs - location.heardAt > TRACKED_STATION_MAX_AGE_MS) locationByMac.delete(mac)
+  }
+  if (locationByMac.size <= MAX_TRACKED_STATIONS) return
+  // Down to 90 % so a busy network does not sort on every report.
+  const excess = locationByMac.size - Math.floor(MAX_TRACKED_STATIONS * 0.9)
+  const oldest = [...locationByMac].sort((a, b) => a[1].heardAt - b[1].heardAt).slice(0, excess)
+  for (const [mac] of oldest) locationByMac.delete(mac)
+}
+
+async function insertRoamingEvents(events: RoamingEventRow[]): Promise<number> {
   if (events.length > 0) {
     await db.insertQuery().table('wifi_roaming_events').multiInsert(events)
   }
-
   return events.length
 }
 
@@ -687,19 +770,23 @@ export async function ingestWifiMetrics(
 
     const networkRows = [...networks.values()]
     const stationRows = [...stations.values()]
+    const { owned, events } = resolveStationOwners(ap.id, now.toMillis(), stationRows, nowSql)
 
     const [networkSnapshots, stationSnapshots, roamingEvents] = await Promise.all([
       insertNetworkSnapshots(ap.id, nowSql, networkRows),
       insertStationSnapshots(ap.id, nowSql, stationRows),
-      insertRoamingEvents(ap.id, nowSql, stationRows),
+      insertRoamingEvents(events),
       insertSystemSnapshot(ap.id, nowSql, system),
     ])
 
     // Point-in-time mirror the WiFi pages read instead of deriving "latest
-    // per key" from the append-only snapshot history.
+    // per key" from the append-only snapshot history. Only the stations this
+    // AP owns: a client that just left is still listed here, idle, and must not
+    // pull its row back from the AP it is on now. Checked again after the
+    // awaits above, in case another AP's report took a station over meanwhile.
     await upsertWifiLatest(ap.id, now, {
       networks: networkRows,
-      stations: stationRows,
+      stations: stillOwnedBy(ap.id, owned),
       system,
     })
 

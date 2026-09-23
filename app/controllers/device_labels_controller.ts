@@ -11,11 +11,11 @@ import { deviceLabelUpdateValidator } from '#validators/device_labels'
 import type { HttpContext } from '@adonisjs/core/http'
 
 /**
- * Operator-supplied device identity: personal name, device type, tags and
- * notes. Writes are open to every signed-in user (same audience as the read
- * API) — naming a device is an annotation, not a configuration change, and
- * an operator looking at the dashboard is exactly who knows which laptop is
- * whose.
+ * Operator-supplied device identity: personal name, device type, how it
+ * attaches (Ethernet, when marked), tags and notes. Writes are open to every
+ * signed-in user (same audience as the read API) — naming a device is an
+ * annotation, not a configuration change, and an operator looking at the
+ * dashboard is exactly who knows which laptop is whose.
  */
 export default class DeviceLabelsController {
   /**

@@ -1,4 +1,5 @@
 import SystemSetting from '#models/system_setting'
+import { CONNECTED_INACTIVE_MS } from '#services/wifi_presence'
 import db from '@adonisjs/lucid/services/db'
 import { DateTime } from 'luxon'
 
@@ -9,8 +10,8 @@ import { DateTime } from 'luxon'
  */
 export const CLIENT_DISTRIBUTION_GRAINS = [60, 300, 900, 3600] as const
 
-/** Active-station threshold — must match the read path in `wifi_controller`. */
-const INACTIVE_MS = 200000
+/** Active-station threshold, shared with every "clients now" read (`wifi_presence.ts`). */
+const INACTIVE_MS = CONNECTED_INACTIVE_MS
 
 export const CLIENT_DISTRIBUTION_TABLE = 'wifi_client_distribution'
 export const CLIENT_TOTALS_TABLE = 'wifi_client_totals'

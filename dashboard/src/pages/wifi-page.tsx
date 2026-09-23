@@ -11,7 +11,7 @@ import { Segmented } from '@/components/ui/segmented'
 import { useDashboardTime } from '@/hooks/use-dashboard-time'
 import { useDevices } from '@/hooks/use-devices'
 import { useWifiApThroughput, useWifiClients, useWifiOverview, useWifiClientsHistory } from '@/hooks/use-wifi'
-import { deviceDisplayName } from '@/lib/device-labels'
+import { deviceDisplayName } from '@/lib/device-names'
 import { formatBytes, formatMbps } from '@/lib/format-bytes'
 import {
   RATE_DIRECTION_OPTIONS,
@@ -114,7 +114,7 @@ export function WifiPage() {
         <StatCard
           label="Connected clients"
           value={String(overview.data?.totalClients ?? 0)}
-          sub="latest per MAC"
+          sub="connected now"
           icon={<Broadcast className="size-4" />}
         />
         <Card className="rounded-xl py-3 shadow-sm border border-border">

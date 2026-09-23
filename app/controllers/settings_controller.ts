@@ -3,6 +3,11 @@ import {
   normalizeHostnameEnrichmentSettings,
   setHostnameEnrichmentSettings,
 } from '#services/hostname_enrichment_settings'
+import {
+  getPresenceSettings,
+  presenceSettingsView,
+  updatePresenceSettings,
+} from '#services/presence_settings'
 import WifiAccessPoint from '#models/wifi_access_point'
 import {
   createWifiAccessPoint,
@@ -14,6 +19,7 @@ import {
 import { probeWifiAccessPoint } from '#services/wifi_access_point_probe'
 import WifiAccessPointTransformer from '#transformers/wifi_access_point_transformer'
 import { updateHostnameEnrichmentSettingsValidator } from '#validators/hostname_enrichment_settings'
+import { updatePresenceSettingsValidator } from '#validators/presence_settings'
 import {
   wifiSourceCreateValidator,
   wifiSourceProbeValidator,
@@ -38,6 +44,27 @@ export default class SettingsController {
     const settings = normalizeHostnameEnrichmentSettings(payload)
     await setHostnameEnrichmentSettings(settings)
     return serialize(settings)
+  }
+
+  /**
+   * GET /api/v1/settings/presence
+   *
+   * The thresholds behind "connected right now" (`wifi_presence.ts`), with
+   * their defaults and accepted ranges.
+   */
+  async presence({ serialize }: HttpContext) {
+    return serialize(presenceSettingsView(await getPresenceSettings()))
+  }
+
+  /**
+   * PATCH /api/v1/settings/presence
+   *
+   * Any subset of the thresholds; the others keep their value. Applies from
+   * the next request: every threshold is used when data is read.
+   */
+  async updatePresence({ request, serialize }: HttpContext) {
+    const payload = await request.validateUsing(updatePresenceSettingsValidator)
+    return serialize(presenceSettingsView(await updatePresenceSettings(payload)))
   }
 
   /**

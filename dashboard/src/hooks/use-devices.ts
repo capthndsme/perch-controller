@@ -12,6 +12,7 @@ import type {
   AggregateTrafficResponse,
   DeviceOverviewResponse,
   DevicePeersResponse,
+  DevicePresenceResponse,
   DeviceSummary,
   DeviceTrafficResponse,
   PeerScope,
@@ -267,6 +268,27 @@ export function useDeviceOverview(
       ),
     enabled: Boolean(mac) && (options.enabled ?? true),
     refetchInterval: effectiveRefreshInterval(window, options.refreshInterval, 10_000),
+  })
+}
+
+export function devicePresenceQueryKey(mac: string) {
+  return ['devices', mac, 'presence'] as const
+}
+
+/**
+ * Whether the device is connected right now, and how, whichever collector saw
+ * it, plus where it is on the network map (A4 `attachment`). Presence
+ * describes now, so it polls whatever window the page shows, including a
+ * zoomed one that has stopped the window-bound queries.
+ */
+export function useDevicePresence(mac: string | undefined) {
+  return useQuery({
+    placeholderData: keepPreviousData,
+    queryKey: devicePresenceQueryKey(mac ?? ''),
+    queryFn: () =>
+      apiFetch<DevicePresenceResponse>(`/api/v1/devices/${encodeURIComponent(mac!)}/presence`),
+    enabled: Boolean(mac),
+    refetchInterval: 10_000,
   })
 }
 

@@ -32,6 +32,16 @@ export const DEVICE_TYPES = [
 
 export type DeviceType = (typeof DEVICE_TYPES)[number]
 
+/**
+ * How the device attaches, when the operator says so; null lets Perch work it
+ * out (`devicePresence`). Without a mark, a device no Perch AP lists reads
+ * "Wired / unknown": a cable, or Wi-Fi Perch does not read. Append-only, like
+ * `DEVICE_TYPES`.
+ */
+export const DEVICE_CONNECTIONS = ['ethernet'] as const
+
+export type DeviceConnection = (typeof DEVICE_CONNECTIONS)[number]
+
 /** Human-readable names for the catalog endpoint; the UI picks the icons. */
 const DEVICE_TYPE_LABELS: Record<DeviceType, string> = {
   phone: 'Phone',
@@ -57,6 +67,7 @@ export type DeviceLabel = {
   mac: string
   name: string | null
   deviceType: DeviceType | null
+  connection: DeviceConnection | null
   tags: string[]
   notes: string | null
   updatedAt: string | null
@@ -66,6 +77,7 @@ export type DeviceLabel = {
 export type DeviceLabelInput = {
   name?: string | null
   deviceType?: DeviceType | null
+  connection?: DeviceConnection | null
   tags?: string[] | null
   notes?: string | null
 }
@@ -74,6 +86,7 @@ type DeviceLabelRow = {
   mac: string
   name: string | null
   deviceType: string | null
+  connection: string | null
   tags: string | null
   notes: string | null
   updatedAt: Date | string | null
@@ -105,6 +118,10 @@ export function normalizeMac(raw: string | null | undefined): string | null {
 
 export function isDeviceType(value: string | null | undefined): value is DeviceType {
   return typeof value === 'string' && (DEVICE_TYPES as readonly string[]).includes(value)
+}
+
+export function isDeviceConnection(value: string | null | undefined): value is DeviceConnection {
+  return typeof value === 'string' && (DEVICE_CONNECTIONS as readonly string[]).includes(value)
 }
 
 /** The `{ id, label }` catalog the settings/filter UIs render. */
@@ -162,6 +179,7 @@ function toLabel(row: DeviceLabelRow): DeviceLabel {
     mac: row.mac.toLowerCase(),
     name: row.name,
     deviceType: isDeviceType(row.deviceType) ? row.deviceType : null,
+    connection: isDeviceConnection(row.connection) ? row.connection : null,
     tags: parseTags(row.tags),
     notes: row.notes,
     updatedAt: toIso(row.updatedAt),
@@ -176,6 +194,7 @@ async function loadAll(): Promise<Map<string, DeviceLabel>> {
       'mac',
       'name',
       'device_type as deviceType',
+      'connection',
       'tags',
       'notes',
       'updated_at as updatedAt',
@@ -250,7 +269,9 @@ export async function listDeviceTags(): Promise<string[]> {
 }
 
 function isEmptyLabel(label: DeviceLabel): boolean {
-  return !label.name && !label.deviceType && label.tags.length === 0 && !label.notes
+  return (
+    !label.name && !label.deviceType && !label.connection && label.tags.length === 0 && !label.notes
+  )
 }
 
 /**
@@ -283,6 +304,12 @@ export async function saveDeviceLabel(
         : isDeviceType(input.deviceType)
           ? input.deviceType
           : null,
+    connection:
+      input.connection === undefined
+        ? (current?.connection ?? null)
+        : isDeviceConnection(input.connection)
+          ? input.connection
+          : null,
     tags: input.tags === undefined ? (current?.tags ?? []) : normalizeTags(input.tags),
     notes:
       input.notes === undefined
@@ -305,6 +332,7 @@ export async function saveDeviceLabel(
       mac: key,
       name: next.name,
       device_type: next.deviceType,
+      connection: next.connection,
       tags: JSON.stringify(next.tags),
       notes: next.notes,
       updated_by_user_id: updatedByUserId,
@@ -315,6 +343,7 @@ export async function saveDeviceLabel(
     .merge({
       name: next.name,
       device_type: next.deviceType,
+      connection: next.connection,
       tags: JSON.stringify(next.tags),
       notes: next.notes,
       updated_by_user_id: updatedByUserId,

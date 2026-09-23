@@ -2,6 +2,7 @@ import Collector from '#models/collector'
 import SystemSetting from '#models/system_setting'
 import User from '#models/user'
 import { recomputeClientDistribution } from '#services/client_distribution_rollup'
+import { _resetQueryCache } from '#services/query_cache'
 import { rebuildWifiLatestTables } from '#services/wifi_bucket_writer'
 import {
   resetHostnameEnrichmentCacheForTesting,
@@ -19,6 +20,7 @@ import { DateTime } from 'luxon'
 async function resetDb() {
   const teardown = await testUtils.db().truncate()
   await teardown()
+  _resetQueryCache()
   return teardown
 }
 
@@ -73,6 +75,10 @@ async function bootstrap() {
   const ap = await db.from('wifi_access_points').where('name', 'living-room-ap').firstOrFail()
 
   const older = now.minus({ minutes: 10 }).toFormat('yyyy-MM-dd HH:mm:ss')
+  // A station counts as connected only while its AP keeps listing it (within
+  // 3 × 15 s here), so the station rows are seconds old, not up to a minute;
+  // 2 s back keeps them inside a window that ends at the request's second.
+  const stationSql = DateTime.utc().minus({ seconds: 2 }).toFormat('yyyy-MM-dd HH:mm:ss')
   await db
     .insertQuery()
     .table('wifi_network_snapshots')
@@ -132,7 +138,7 @@ async function bootstrap() {
         rx_bytes: 20000,
         tx_packets: 100,
         rx_packets: 200,
-        recorded_at: nowSql,
+        recorded_at: stationSql,
       },
       {
         ap_id: ap.id,
@@ -153,7 +159,7 @@ async function bootstrap() {
         rx_bytes: 9000,
         tx_packets: 60,
         rx_packets: 90,
-        recorded_at: nowSql,
+        recorded_at: stationSql,
       },
     ])
 

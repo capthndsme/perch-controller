@@ -1,4 +1,4 @@
-import { DEVICE_TYPES, MAX_TAGS, TAG_MAX_LENGTH } from '#services/device_labels'
+import { DEVICE_CONNECTIONS, DEVICE_TYPES, MAX_TAGS, TAG_MAX_LENGTH } from '#services/device_labels'
 import vine from '@vinejs/vine'
 
 /**
@@ -15,6 +15,7 @@ export const deviceLabelUpdateValidator = vine.compile(
   vine.object({
     name: vine.string().trim().maxLength(80).nullable().optional(),
     deviceType: vine.enum(DEVICE_TYPES).nullable().optional(),
+    connection: vine.enum(DEVICE_CONNECTIONS).nullable().optional(),
     tags: vine
       .array(vine.string().trim().maxLength(TAG_MAX_LENGTH))
       .maxLength(MAX_TAGS)

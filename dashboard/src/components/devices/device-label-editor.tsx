@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Panel } from '@/components/ui/panel'
+import { Switch } from '@/components/ui/switch'
 import { useDeleteDeviceLabel, useDeviceLabels, useSaveDeviceLabel } from '@/hooks/use-device-labels'
 import { DEVICE_TYPE_OPTIONS, deviceTypeMeta } from '@/lib/device-labels'
+import { connectionLabel } from '@/lib/presence'
 import type { DeviceLabel, DeviceType } from '@/types/api'
 
 const SELECT_CLASS =
@@ -25,8 +27,8 @@ type DeviceLabelCardProps = {
 
 /**
  * Read + edit surface for one device's operator-supplied identity: name,
- * type, tags and notes. Starts read-only (this panel sits on a page people
- * mostly come to *look* at) and flips to a form on Edit.
+ * type, the Ethernet mark, tags and notes. Starts read-only (this panel sits
+ * on a page people mostly come to *look* at) and flips to a form on Edit.
  *
  * Saves go through `PATCH …/label`, which merges — so the form submits every
  * field explicitly, `null` for the ones left blank, rather than relying on
@@ -105,6 +107,13 @@ function DeviceLabelSummary({
           <span className="text-muted-foreground">not set</span>
         )}
       </Row>
+      <Row label="Connection">
+        {label?.connection ? (
+          connectionLabel(label.connection)
+        ) : (
+          <span className="text-muted-foreground">Detected automatically</span>
+        )}
+      </Row>
       <Row label="Tags">
         {label?.tags.length ? (
           <span className="flex flex-wrap justify-end gap-1">
@@ -146,6 +155,7 @@ function DeviceLabelForm({
   const fieldId = useId()
   const [name, setName] = useState(label?.name ?? '')
   const [deviceType, setDeviceType] = useState<DeviceType | ''>(label?.deviceType ?? '')
+  const [ethernet, setEthernet] = useState(label?.connection === 'ethernet')
   const [tags, setTags] = useState<string[]>(label?.tags ?? [])
   const [tagDraft, setTagDraft] = useState('')
   const [notes, setNotes] = useState(label?.notes ?? '')
@@ -179,6 +189,7 @@ function DeviceLabelForm({
         payload: {
           name: name.trim() || null,
           deviceType: deviceType || null,
+          connection: ethernet ? 'ethernet' : null,
           tags,
           notes: notes.trim() || null,
         },
@@ -222,6 +233,19 @@ function DeviceLabelForm({
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <Label htmlFor={`${fieldId}-ethernet`} className="text-xs font-medium">
+            Ethernet device
+          </Label>
+          <p className="text-[11px] text-muted-foreground">
+            Wired to the network: shown as Ethernet instead of Wired / unknown. If an access point
+            lists it, WiFi still shows.
+          </p>
+        </div>
+        <Switch id={`${fieldId}-ethernet`} checked={ethernet} onCheckedChange={setEthernet} />
       </div>
 
       <div className="space-y-1.5">

@@ -39,9 +39,9 @@ export function useDeviceLabels(options: { enabled?: boolean } = {}) {
 }
 
 /**
- * Names, types, tags and notes ride along on the device, Wi-Fi, traffic and
- * service responses, so a write has to invalidate all of them — otherwise a
- * renamed device keeps its old name until the next poll.
+ * Names, types, tags and notes ride along on the device, Wi-Fi, traffic,
+ * service and network-map responses, so a write has to invalidate all of
+ * them — otherwise a renamed device keeps its old name until the next poll.
  */
 function invalidateLabelledViews(queryClient: ReturnType<typeof useQueryClient>) {
   for (const key of [
@@ -51,6 +51,7 @@ function invalidateLabelledViews(queryClient: ReturnType<typeof useQueryClient>)
     ['protocols'],
     ['wifi'],
     ['services'],
+    ['infra'],
   ]) {
     queryClient.invalidateQueries({ queryKey: key })
   }

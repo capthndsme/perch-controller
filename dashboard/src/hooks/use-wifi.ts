@@ -4,7 +4,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
-import { apiFetch } from '@/lib/api'
+import { ApiError, apiFetch } from '@/lib/api'
 import {
   DEFAULT_DEVICE_WINDOW,
   applyWindowToParams,
@@ -234,7 +234,16 @@ export function useWifiClientsHistory(options: {
 }
 
 
-export function useWifiClient(mac: string | undefined) {
+/**
+ * A client's last AP report and its 30 latest roams. A 404 means no AP has
+ * listed the MAC (in the 14 days the latest reports are kept).
+ * `refetchInterval` defaults to 10 s; `retryNotFound: false` takes the 404 as
+ * the answer instead of asking again.
+ */
+export function useWifiClient(
+  mac: string | undefined,
+  options: { refetchInterval?: number | false; retryNotFound?: boolean } = {},
+) {
   return useQuery({
     // Hold the previous window's data on screen while the new window loads,
     // so changing range / dragging the mini-map doesn't blank the charts.
@@ -242,8 +251,15 @@ export function useWifiClient(mac: string | undefined) {
     queryKey: [...wifiQueryKey, 'client', mac ?? ''] as const,
     queryFn: () => apiFetch<WifiClientDetailResponse>(`/api/v1/wifi/clients/${encodeURIComponent(mac!)}`),
     enabled: Boolean(mac),
-    refetchInterval: 10_000,
+    refetchInterval: options.refetchInterval ?? 10_000,
+    ...(options.retryNotFound === false ? { retry: retryUnlessNotFound } : {}),
   })
+}
+
+/** For queries whose 404 is an answer ("never seen"): no second try on it, one on anything else. */
+export function retryUnlessNotFound(failureCount: number, error: Error): boolean {
+  if (error instanceof ApiError && error.status === 404) return false
+  return failureCount < 1
 }
 
 export function useWifiClientSignal(
