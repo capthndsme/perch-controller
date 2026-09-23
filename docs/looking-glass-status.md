@@ -2167,3 +2167,45 @@ back and forth. Each flip wrote a roaming event, and `wifi_station_latest` flipp
 - **Not done here.** The live controller, gateway and APs were not touched: they still run the
   pre-release builds (collector 0.3.0-pre.1, perch-apd 0.2.0-pre.1), built from this work before it
   was committed; moving them to the rc packages is a separate step.
+
+## 2026-09-23 — Hostnames from the gateway agent (`observe.dhcp`)
+
+- **What.** perch-collector on the router reports its DHCP leases and static hosts in
+  `collector.push` as `observe.dhcp` (design: `docs/collector-agent.md` section 4.3, the DHCP part of
+  the observation channel in `docs/design/gateway/plan-2-native-sync.md` section 3). The controller
+  mirrors it into `gateway_hosts` / `gateway_observations` (migration 046) and names devices from it
+  with nothing to configure; the lxc/ssh command path stays as the fallback and stands by while an
+  agent reports. Settings → Hostname enrichment shows "provided by the gateway agent (collector …)"
+  (`GET /api/v1/settings/hostname-enrichment/sources`).
+- **Collector.** Lease files from `uci show dhcp` (`leasefile`, default `/tmp/dhcp.leases`), odhcpd
+  over `ubus` when configured, named `host` sections. Re-read only on a size/mtime change; sent on
+  a fingerprint change, first in each session and every `dhcp_leases_refresh` (600 s). Option
+  `dhcp_leases` auto/on/off (auto = on under OpenWrt). `perch-collector dhcp` prints the section.
+  Independent of the DNS port, so dnsmasq behind another resolver on :53 reports the same.
+- **Controller.** A push's observation is recorded beside the traffic ingest (a too-early or
+  coalesced push still delivers it), serialised per collector, adopted + enabled agent rows only;
+  polls record the summary's copy. Unchanged reports touch only `observed_at` (≤ 1/min); the
+  fingerprint cache is bounded (256). A source counts while its last report is ≤ 2 h old. Both
+  tables are in `collectors:merge`'s `NON_HISTORY_TABLES` (the merged collector keeps `--into`'s
+  rows). Static hosts without a MAC are kept in the observation's payload and matched by address,
+  as the command path did.
+- **Tests.** Collector: fixture lease files (IPv4, dnsmasq DHCPv6, `*` names, duplicates,
+  non-Ethernet hardware, bad lines), `uci show` with lists and quoting, odhcpd JSON, the reader's
+  change detection, push/refresh behaviour, config, the subcommand; Go 1.26 and 1.22.12 with
+  `GOWORK=off`. Controller: 511/511 (unit + functional: ingest, weird input, too-early pushes,
+  socket and poll paths, zero-config names, fallback takeover, sources endpoint, merge), lint,
+  typecheck, dashboard lint and build with `VITE_API_URL=` empty. One existing query-shape test
+  now warms the hostname cache before measuring.
+- **Lab.** Static build from the stable worktree (published kit v0.2.0) swapped onto the lab gateway
+  (old binary kept in `/root`), lab controller redeployed from the worktree. With the command path
+  unconfigured the lab clients got their DHCP names (8 leases, 8 named); a `uci`-added static host
+  took over its device's name within one push; releasing a client's lease removed its row and a
+  renew brought it back. `status.sh`: all checks as expected. The test host section was removed again.
+- **Live.** Controller rebuilt and redeployed (`docker compose up -d --build`, migration 046 ran;
+  previous image tagged `perch-controller-rollback:pre-observe-dhcp`), then the gateway's collector
+  swapped to the new static build (1.0.0-rc.2-pre.1; the 0.3.0-pre.1 binary kept as
+  `/root/perch-collector-0.3.0-pre.1.bak`). It reconnected over the socket (transport agent) and sent
+  92 IPv4 leases and 7 static hosts: 96 `gateway_hosts` rows. `/devices` before and after: 33
+  devices, 18 named (14 lease, 4 static) both times, 0 differences; names now come from the agent
+  and the existing SSH setting stands by as the fallback. Pushes every 5 s, gateway samples every
+  30 s, no warnings.
