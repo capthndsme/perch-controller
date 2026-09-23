@@ -2341,3 +2341,39 @@ tagged yet.
   (separate code, `devices_controller.ts`). The name lists on the Servers and destinations pages sum
   hourly rows with `hour_start >= from`, so a window shorter than the time since the hour began lists
   nothing, and the first partial hour of any window is left out.
+
+## 2026-09-23 — Perch 1.0.0-rc.2 released and rolled out to the live network
+
+- **Versions.** perch-controller, perch-collector and perch-apd v1.0.0-rc.2 (annotated tags on
+  `stable`: controller 5e893bb, collector 05f0794, apd 2d4cf13), all GitHub pre-releases.
+  perch-agentkit unchanged (v0.2.0). `main` and `stable` pushed together (both at the tag).
+- **Before the push.** Tree and `origin/main..stable` diffs scanned for the domain, LAN addresses
+  (dotted and hex), container and host names, non-`02:00:00` MACs and global IPv6: nothing. The
+  MAC-like strings in the new DHCP tests are DUIDs and client ids wrapping `02:00:00…`, the
+  addresses `192.168.1.x` / `fd00::` placeholders.
+- **Workflows.** Controller Docker (main + tag), collector ci + Docker + Release (10 OpenWrt cells +
+  static), perch-apd CI + Release + OpenWrt packages: all green on the first run. The controller
+  release was written by hand from the draft; the daemons' generated releases got the drafts as
+  notes plus the compare link. `releases/latest` still resolves to collector v0.2.0 and apd v0.1.2.
+  GHCR: `1.0.0-rc.2` and `rc` published for both images, `latest` untouched (it is still the last
+  `main` build from before `edge`, 2026-09-21/22, not the 0.2.0 image: it moves again with 1.0.0).
+  Right after publishing, the releases API listed the collector release with 0 assets for a while
+  though `/releases/{id}/assets` had all 12: a listing lag, not a failed upload.
+- **Controller.** Rollback image tagged `perch-controller:rollback-rc1-2026-09-23` (the running
+  rc.1-era build), then `docker compose up -d --build` from `metrics-be/` (image now
+  `perch-controller:local`). Migration 047 (`device_service_buckets`) ran in 255 ms;
+  `/api/v1/version` = 1.0.0-rc.2; collector #1 and APs #2–#4 reconnected within 2 s; no warnings.
+- **Gateway.** Static x86_64 musl build from the release (`perch-collector-linux-amd64-ndpi`,
+  checksum verified) swapped into `/usr/bin/perch-collector` (stop, cp, chmod, start). Previous
+  binary kept as `/root/perch-collector-1.0.0-rc.2-pre.1.bak` in the container. Reconnected as
+  agent on row #1 with version 1.0.0-rc.2; ports (9), DHCP leases (92 + 7 static) and gateway stats
+  flowing.
+- **APs.** One at a time, RAX3000M → WRX36 (`.ipk`, 24.10) → AX23 (`.apk`, 25.12). Over the
+  0.1.2-r1 package record a plain `opkg install` upgraded to `1.0.0~rc2-r1` (no
+  `--force-downgrade` needed: these APs never had the rc.1 `_rc1` package). apk upgraded
+  `0.1.2-r1 → 1.0.0_rc2-r1` and its post-upgrade restarted the daemon; the AX23 has 4.2 MB flash
+  free after. Default conffiles beside the kept config (`perch-apd-opkg`, `perch-apd.apk-new`)
+  removed. Each reconnected within 2 s, 5 s pushes, ports reported, `agent_version` 1.0.0-rc.2.
+- **Rollbacks** outside the repos, in `~/metricslite-rollback/2026-09-23-rc2/`: the three APs'
+  0.2.0-pre.1 binaries and configs (mode 600), the gateway's rc.2-pre.1 binary, and the downloaded
+  rc.2 artifacts.
