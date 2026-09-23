@@ -639,6 +639,24 @@ ensureTierPolicy(i: { collectorId?; gatewayId?; key: string; name: string; share
   assignment, nor another grant's: 409 `qos_mac_assigned` (+`assignmentId`, `source`, `sourceRef`).
 - Writes go through the same validation and delivery as the REST writes (managed mode required).
 
+## 8a. Dashboard (branch `gw/fe-qos`)
+
+- `/shaping` (every signed-in user reads; edits need an admin and a managed gateway, else the page
+  is read-only and says why): Overview (status chips, loud banners for a router-side pause and for a
+  WAN queue switched off on the router, the `plane_unavailable` explanation, capability problems,
+  WAN queues with live rate / delay / drops and line-type presets, a live rate chart kept in the
+  browser), Policies & groups (the bucket tree with children's sums against the parent's ceiling and
+  the client-side mirror of `checkPolicyTree` / `qos_each_exceeds_shared`), Assignments (device /
+  group / network, own rate, quota bars with reset, expiry), Schedules (day chips, time window, a
+  week strip, "active now" in `previewTimezone` and the router's own report), Devices
+  (`/qos/devices` with usage against the cap), Events. `?gateway=N` names the gateway; `?tab=` the
+  section.
+- Settings → Traffic shaping (`/settings/traffic-shaping`, section 4.7; rates in Mbit/s).
+- Device page: a Speed limit card (`/devices/:mac/shaping`), hidden when nothing shapes the device.
+  Devices list: a badge from the rows' `shaping`.
+- 409 `qos_not_managed` / `plane_unavailable` and the other refusals of section 5.2 are shown in
+  plain words (`dashboard/src/lib/qos.ts`), with the planner's `issues` listed under a refused save.
+
 ## 9. Not built yet
 
 - The agent: `perch-collector` `internal/qos`, the `perch-qos` package, the schedule evaluator on the

@@ -66,6 +66,13 @@ different origin than the API; `.env.example` explains both.
   that draw charts. A chunk that fails to load (a tab opened before a
   redeploy) reloads the page once per build, then shows a Reload button
   (`src/lib/chunk-reload.ts`).
+- Traffic shaping (`/shaping`, Settings → Traffic shaping, the device page's
+  Speed limit card and the devices list's badge) reads and writes the QoS API
+  of [`../docs/gateway/qos.md`](../docs/gateway/qos.md) through
+  `src/hooks/use-qos.ts`; rates are shown and typed in Mbit/s and sent in
+  kbit/s (`src/lib/qos.ts`). Its live chart draws a short in-browser history
+  (`src/lib/qos-live.ts`, bounded) because the controller keeps only the
+  router's latest report.
 - UI patterns (loading states, panels, tables, empty states) are in
   [`STYLEGUIDE.md`](STYLEGUIDE.md).
 

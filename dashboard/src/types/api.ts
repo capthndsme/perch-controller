@@ -309,6 +309,8 @@ export type DeviceSummary = {
   presence: DevicePresence
   /** Its box on the network map, if it has one (A4; absent from controllers before it). */
   attachment?: DeviceAttachment | null
+  /** How a managed gateway shapes it (docs/gateway/qos.md 7.4); absent before QoS, null when none. */
+  shaping?: DeviceShaping | null
 }
 
 export type WifiSignalDistribution = {
@@ -1713,3 +1715,374 @@ export type UpdateInfraLinkPayload = {
 }
 
 export type InfraPositionEntry = { nodeId: number; x: number; y: number; parentId: number | null }
+
+// ---------------------------------------------------------------------------
+// Traffic shaping (QoS) on a managed gateway: metrics-be/docs/gateway/qos.md
+// sections 5 and 7. Rates travel in kbit/s (the dashboard shows Mbit/s).
+
+/** A rate pair; `null` = unlimited that way. */
+export type QosRate = { downloadKbit: number | null; uploadKbit: number | null }
+
+/** A schedule's rate override: `null` = keep the normal value, `0` = unlimited. */
+export type QosRateOverride = { downloadKbit: number | null; uploadKbit: number | null }
+
+export type QosApplyStateName =
+  | 'in_sync'
+  | 'queued'
+  | 'applying'
+  | 'rolled_back'
+  | 'failed'
+  | 'offline'
+  | 'drift'
+  | 'conflict'
+
+export type QosApplyState = {
+  revision: number
+  state: QosApplyStateName
+  at: string | null
+  error: string | null
+}
+
+export type QosQdiscStats = {
+  kind: string
+  bandwidthKbit: number | null
+  rateKbit: number | null
+  bytes: number
+  packets: number
+  drops: number
+  overlimits: number
+  backlogBytes: number
+  ecnMarks: number | null
+  peakDelayUs: number | null
+}
+
+export type QosDiffserv = 'besteffort' | 'diffserv3' | 'diffserv4' | 'diffserv8'
+export type QosWanFairness = 'per_host' | 'triple_isolate' | 'per_flow'
+export type QosLinkLayer = 'none' | 'ethernet' | 'atm'
+
+export type QosWanQueue = {
+  id: number
+  gatewayId: number
+  collectorId: number | null
+  device: string
+  enabled: boolean
+  downloadKbit: number
+  uploadKbit: number
+  qdisc: string
+  script: string
+  diffserv: QosDiffserv | null
+  fairness: QosWanFairness | null
+  nat: boolean | null
+  linkLayer: QosLinkLayer
+  overhead: number | null
+  mpu: number | null
+  ingressEcn: boolean
+  egressEcn: boolean
+  squashDscp: boolean
+  squashIngress: boolean
+  options: Record<string, string | string[]>
+  uciSection: string | null
+  perchId: string | null
+  origin: 'controller' | 'router'
+  flags: string[]
+  /** Owner decision 15: the router switched the queue off; Perch never switches it back. */
+  pausedByRouter: { at: string } | null
+  sync: QosApplyState
+  routerUpdatedAt: string | null
+  updatedAt: string
+  live: { egress: QosQdiscStats | null; ingress: QosQdiscStats | null; reportedAt: string } | null
+}
+
+/** `POST /qos/wan-queues` (PATCH: any subset but the gateway). */
+export type QosWanQueueInput = {
+  gatewayId?: number
+  collectorId?: number
+  device?: string
+  downloadKbit?: number
+  uploadKbit?: number
+  enabled?: boolean
+  qdisc?: 'cake' | 'fq_codel'
+  diffserv?: QosDiffserv
+  fairness?: QosWanFairness
+  nat?: boolean
+  linkLayer?: QosLinkLayer
+  overhead?: number | null
+  mpu?: number | null
+  ingressEcn?: boolean
+  egressEcn?: boolean
+  squashDscp?: boolean
+  squashIngress?: boolean
+  advanced?: Record<string, string | null>
+}
+
+export type QosWanQueueWrite = { queue: QosWanQueue; warnings: QosWarning[] }
+
+export type QosWarning = { code: string; message?: string; field?: string; observedKbit?: number } & Record<
+  string,
+  unknown
+>
+
+export type QosPolicyFairness = 'per_host' | 'per_flow'
+
+export type QosPolicy = {
+  id: number
+  gatewayId: number
+  collectorId: number | null
+  name: string
+  notes: string | null
+  /** The bucket everything assigned shares; null = no shared bucket. */
+  shared: QosRate | null
+  /** The cap each member gets; null = no per-device cap. */
+  each: QosRate | null
+  fairness: QosPolicyFairness
+  /** Owner decision 13: also shape LAN↔LAN traffic (default internet only). */
+  includeLan: boolean
+  parentPolicyId: number | null
+  classMinor: number
+  enabled: boolean
+  source: 'admin' | 'portal'
+  sourceRef: string | null
+  counts: { devices: number; groups: number; networks: string[]; children: number }
+  /** Only in `GET /qos`: the bucket's measured rate. */
+  live: { downloadKbit: number; uploadKbit: number; activeMembers: number } | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type QosPolicyInput = {
+  gatewayId?: number
+  collectorId?: number
+  name?: string
+  notes?: string | null
+  shared?: QosRate | null
+  each?: QosRate | null
+  fairness?: QosPolicyFairness
+  includeLan?: boolean
+  parentPolicyId?: number | null
+  enabled?: boolean
+}
+
+export type QosGroup = {
+  id: number
+  gatewayId: number
+  collectorId: number | null
+  name: string
+  notes: string | null
+  members: { mac: string; name: string | null }[]
+  createdAt: string
+  updatedAt: string
+}
+
+export type QosGroupCreate = {
+  gatewayId?: number
+  collectorId?: number
+  name: string
+  notes?: string | null
+  members?: string[]
+}
+
+export type QosGroupPatch = {
+  name?: string
+  notes?: string | null
+  addMacs?: string[]
+  removeMacs?: string[]
+}
+
+export type QosTarget =
+  | { type: 'device'; mac: string }
+  | { type: 'group'; groupId: number }
+  | { type: 'network'; network: string }
+
+export type QosQuota = {
+  limitBytes: number
+  usedBytes: number
+  onExhausted: 'block' | 'throttle'
+  throttle: QosRate | null
+  exhaustedAt: string | null
+  resetAt: string | null
+}
+
+export type QosAssignment = {
+  id: number
+  gatewayId: number
+  collectorId: number | null
+  policyId: number | null
+  target: QosTarget
+  /** Overrides the policy's per-device cap. */
+  rate: QosRate | null
+  quota: QosQuota | null
+  expiresAt: string | null
+  source: 'admin' | 'portal'
+  sourceRef: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type QosQuotaInput = {
+  limitBytes: number
+  onExhausted: 'block' | 'throttle'
+  throttle?: QosRate | null
+}
+
+export type QosAssignmentInput = {
+  gatewayId?: number
+  collectorId?: number
+  /** Create only: the target never changes (delete and create instead). */
+  target?: QosTarget
+  policyId?: number | null
+  rate?: QosRate | null
+  quota?: QosQuotaInput | null
+  expiresAt?: string | null
+}
+
+export type QosDay = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
+export type QosScheduleAction = 'limit' | 'unlimited' | 'block' | 'policy'
+
+export type QosSchedule = {
+  id: number
+  gatewayId: number
+  collectorId: number | null
+  name: string
+  enabled: boolean
+  target: { type: 'policy'; policyId: number } | { type: 'assignment'; assignmentId: number }
+  action: QosScheduleAction
+  usePolicyId: number | null
+  shared: QosRateOverride | null
+  each: QosRateOverride | null
+  rate: QosRateOverride | null
+  days: QosDay[]
+  startMinute: number
+  endMinute: number
+  /** As the router gets it (`mon-fri 18:00-23:00`). */
+  window: string
+  /** Preview only: in force now, judged in `previewTimezone`. The router decides on its own clock. */
+  active: boolean
+  previewTimezone: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type QosScheduleInput = {
+  gatewayId?: number
+  collectorId?: number
+  name?: string
+  enabled?: boolean
+  /** Create only. */
+  target?: QosSchedule['target']
+  action?: QosScheduleAction
+  usePolicyId?: number | null
+  shared?: QosRateOverride | null
+  each?: QosRateOverride | null
+  rate?: QosRateOverride | null
+  days?: QosDay[]
+  startMinute?: number
+  endMinute?: number
+}
+
+export type QosShapingState = 'enforced' | 'pending' | 'not_seen' | 'paused' | 'exhausted' | 'failed'
+
+export type DeviceShaping = {
+  gatewayId: number
+  collectorId: number | null
+  mac: string
+  via: 'device' | 'group' | 'network'
+  assignmentId: number | null
+  policy: { id: number; name: string } | null
+  cap: QosRate
+  bucket: { policyId: number; name: string; rate: QosRate } | null
+  quota: QosQuota | null
+  state: QosShapingState
+  classId: string | null
+  dynamic: boolean
+  network: string | null
+  routerState: string | null
+  schedules: string[]
+  includeLan: boolean
+  usage: {
+    downloadKbit: number
+    uploadKbit: number
+    dropPct: { download: number; upload: number }
+    source: 'class' | 'capture'
+    at: string
+  } | null
+}
+
+export type QosPlanIssue = {
+  severity: 'error' | 'warning'
+  code: string
+  message: string
+  policyId?: number
+  assignmentId?: number
+  scheduleId?: number
+  mac?: string
+  network?: string
+}
+
+export type QosEvent = {
+  type: string
+  at: string
+  receivedAt: string
+  mac?: string
+  detail?: unknown
+}
+
+export type QosOverview = {
+  gatewayId: number
+  collectorId: number | null
+  managed: boolean
+  authoritative: boolean
+  online: boolean
+  agentSupportsQos: boolean | null
+  capabilities: {
+    sqm: { installed: boolean; version: string | null; luci: boolean }
+    shaper: { available: boolean; missing: string[] }
+    conflicts: string[]
+    flowOffload: { software: boolean; hardware: boolean }
+    timezone: string | null
+    clockSynced: boolean | null
+    configured: boolean | null
+    probedAt: string
+  } | null
+  paused: { by: 'controller' | 'router'; at: string | null } | null
+  config: QosApplyState
+  devices: QosApplyState & { entries: number; rejected: { mac: string; error: string }[] }
+  wan: QosWanQueue[]
+  policies: QosPolicy[]
+  counts: { shapedDevices: number; dynamicDevices: number; quotasExhausted: number }
+  errors: { code: string; message: string; mac?: string; device?: string }[]
+  issues: QosPlanIssue[]
+  schedules: {
+    activePreview: number[]
+    nextChangeAt: string | null
+    reported: { name: string; active: boolean; since: string | null; until: string | null }[]
+  }
+  events: QosEvent[]
+  report: {
+    epoch: string
+    state: 'active' | 'paused' | 'error'
+    configRevision: number | null
+    devicesRevision: number | null
+    reportedAt: string | null
+  } | null
+}
+
+export type QosSettings = {
+  minWanKbit: number
+  minDeviceKbit: number
+  dynamicIdleMinutes: number
+  dynamicClassLimit: number
+  leafFlows: number
+  leafLimitPackets: number
+  leafMemoryKb: number
+  restMemlimitKb: number
+  applyDebounceSeconds: number
+  quotaPersistSeconds: number
+  maxBucketDepth: number
+  expiredKeepMinutes: number
+}
+
+export type QosSettingsView = {
+  settings: QosSettings
+  defaults: QosSettings
+  limits: Record<keyof QosSettings, { min: number; max: number }>
+}

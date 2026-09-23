@@ -68,6 +68,8 @@ export const router = createBrowserRouter([
           { path: 'settings/presence', ...page('settingsPresence') },
           { path: 'settings/charts', ...page('settingsCharts') },
           { path: 'settings/wifi-sources', ...page('settingsWifiSources') },
+          { path: 'shaping', ...page('shaping') },
+          { path: 'settings/traffic-shaping', ...page('settingsTrafficShaping') },
           { path: '*', ...page('notFound') },
         ],
       },

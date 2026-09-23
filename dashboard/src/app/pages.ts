@@ -35,6 +35,8 @@ export const pages = {
   settingsWifiSources: lazyPage(() =>
     import('@/pages/wifi-sources-settings-page').then((m) => m.WifiSourcesSettingsPage),
   ),
+  shaping: lazyPage(() => import('@/pages/shaping-page').then((m) => m.ShapingPage)),
+  settingsTrafficShaping: lazyPage(() => import('@/pages/qos-settings-page').then((m) => m.QosSettingsPage)),
   notFound: lazyPage(() => import('@/pages/not-found-page').then((m) => m.NotFoundPage)),
 }
 

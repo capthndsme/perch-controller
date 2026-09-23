@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { ScopeToggle } from '@/components/dashboard/scope-toggle'
 import { TimePicker } from '@/components/dashboard/time-picker'
 import { PageHeader } from '@/components/layout/page-header'
+import { ShapingBadge } from '@/components/qos/shaping-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -443,8 +444,9 @@ function DeviceCell({ device }: { device: DeviceSummary }) {
         <p className="truncate font-mono text-[11px] text-muted-foreground">
           {device.primaryIp ?? '—'} · {device.mac}
         </p>
-        {tags.length > 0 ? (
+        {tags.length > 0 || device.shaping ? (
           <p className="mt-0.5 flex flex-wrap gap-1">
+            {device.shaping ? <ShapingBadge shaping={device.shaping} /> : null}
             {tags.map((tag) => (
               <Badge key={tag} variant="outline" className="h-4 rounded px-1 text-[10px]">
                 {tag}
