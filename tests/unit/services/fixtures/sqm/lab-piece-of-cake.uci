@@ -1,0 +1,15 @@
+# The lab gateway's second WAN, set up by hand for the QoS spike (piece_of_cake).
+package sqm
+
+config queue 'wan2'
+	option enabled '1'
+	option interface 'wan2'
+	option download '50000'
+	option upload '50000'
+	option qdisc 'cake'
+	option script 'piece_of_cake.qos'
+	option linklayer 'none'
+	option qdisc_advanced '1'
+	option qdisc_really_really_advanced '1'
+	option eqdisc_opts 'nat dual-srchost'
+	option iqdisc_opts 'nat dual-dsthost ingress'
