@@ -2209,3 +2209,72 @@ back and forth. Each flip wrote a roaming event, and `wifi_station_latest` flipp
   devices, 18 named (14 lease, 4 static) both times, 0 differences; names now come from the agent
   and the existing SSH setting stands by as the fallback. Pushes every 5 s, gateway samples every
   30 s, no warnings.
+
+## 2026-09-23 — 1.0.0-rc.2 punch list (fresh-install walkthrough)
+
+A fresh install from the public docs (lab, Debian + Docker, a stock OpenWrt 24.10 AP) found one
+blocker and a list of friction points. Fixed on `stable` in all three repositories; nothing pushed or
+tagged yet.
+
+- **Wizard lockout (blocker).** Losing the session after step 1 (tab closed, other browser, a
+  scripted `setup/admin`) left `/auth/login` at `503 setup_required` and every setup route wanting the
+  token only step 1 returns; the only way out was `docker compose down -v`. New
+  `POST /api/v1/setup/login` {email, password} → `{ user, token }` like `setup/admin`: only while
+  setup is incomplete (409 `setup_complete`), only after step 1 (409 `admin_missing`), only for an
+  admin (401 `invalid_credentials`, same body for a wrong password, an unknown e-mail or a non-admin;
+  `verifyCredentials` hashes a dummy for unknown e-mails), 10 failures per address per 15 min → 429 +
+  `Retry-After` (`app/services/setup_login_rate_limit.ts`, in-process like the AP join limiter; a
+  malformed body counts). `/auth/login` stays gated. The wizard shows "Sign in to continue setup"
+  when it is past step 1 without a session, or a setup call answers 401. Someone racing the owner on
+  the LAN still cannot create a second admin (409) or move the wizard without the admin's password.
+  Not done: a step-1 claim code (Jenkins-style, printed in the logs) against a LAN user who beats the
+  owner to step 1; it costs a step and the owner's goal is a short install.
+- **Versions.** package.json is `1.0.0-rc.2` and carries `perch.apdVersion` / `perch.collectorVersion`,
+  the daemon releases this controller is cut with (`app/services/perch_version.ts`; env
+  `PERCH_APD_VERSION` / `PERCH_COLLECTOR_VERSION` override, `latest` allowed). Public
+  `GET /api/v1/version` → `{ version, apdVersion, collectorVersion, apdReleaseUrl, collectorReleaseUrl }`;
+  `setup/status` gains `version`. The dashboard shows "Perch Network Controller <version>" at the
+  foot of Settings and the setup pages.
+- **AP install commands** (docs/ap-controller.md A5): `releaseBaseUrl` defaults to the paired tag
+  (`…/releases/download/v1.0.0-rc.2`) instead of `releases/latest` (which never resolves to an rc and
+  gave a 1.0 controller perch-apd 0.1.2); the one-liner passes `PERCH_APD_BASE_URL` so any install.sh
+  fetches the pinned binaries; `rebindDomain` (the controller URL's host when it is a name) makes every
+  command start with `uci -q del_list …rebind_domain=<name>; uci add_list …rebind_domain=<name> && uci
+  commit dhcp && /etc/init.d/dnsmasq reload && `, with a visible note. One install block per token,
+  the wizard's 127.0.0.1 warning on the Wi-Fi sources page too. perch-apd's install.sh defaults to
+  the release it ships with (`make release` stamps it).
+- **Wizard collector step:** install lines for the router package (24.10 opkg, 25.12 apk, with
+  `$DISTRIB_ARCH`), the stale "bundled collector" sentence replaced by the `--profile collector` hint.
+- **OpenWrt package versions** (collector + apd): the Makefiles carry `PERCH_VERSION:=1.0.0-rc.2`;
+  `.ipk` is `1.0.0~rc2`, `.apk` `1.0.0_rc2` (`scripts/openwrt-package.sh` sets both per build; a feed
+  build picks by `CONFIG_USE_APK`). Release files are named with the upstream version
+  (`perch-apd_1.0.0-rc.2-r1_x86_64.ipk`), so one `V` builds tag and file name and GitHub never sees a
+  `~`. rc.1 `.ipk` → rc.2 needs `opkg install --force-downgrade` once (opkg sorts `1.0.0_rc1` above
+  everything later); notes and READMEs say so.
+- **Reconnect cap:** both daemons' transport-error back-off is 1 s doubling to 30 s (was 60 s; the
+  walkthrough saw "next attempt in 1m3s"), and a 5xx `Retry-After` under 30 s (503
+  `gateway_starting`) is honoured. `link.Backoff` in the kit only takes Min/Max from the daemon, so
+  no kit change.
+- **Nits:** join tokens are `mlap_` + 40 lower-case Crockford base32 chars (old tokens still join);
+  passwords up to 128 characters (was 32; scrypt has no length limit); `docker-compose.build.yml`
+  tags `perch-controller:local` / `perch-collector:local` (a source build no longer shadows the GHCR
+  tag; this host's COMPOSE_FILE includes the build file, so its image name changes on the next
+  deploy); hostname-enrichment and Wi-Fi sources copy and placeholders; READMEs: `PERCH_IMAGE_TAG=rc`
+  under the quick start, wizard resume, collector `restart` instead of `enable` + `start`.
+- **Tests.** Controller 523/523 (new: resume, admin-missing, identical 401s, non-admin, the race,
+  throttling incl. malformed bodies, version endpoint, pinned install info, rebind domain, token
+  alphabet); run against a throwaway MariaDB because a parallel suite on the shared server collided
+  on Lucid's migration advisory lock (4 merge tests need `utf8mb4_unicode_ci` as the server default,
+  re-run green). Lint, typecheck, dashboard lint + build (`VITE_API_URL=` empty). Collector and
+  perch-apd `go test` (Go 1.26 and 1.22.12, `GOWORK=off`). One local SDK build each: perch-apd
+  x86_64 `.ipk` (control `Version: 1.0.0~rc2-r1`, installs on OpenWrt 24.10, `--version` 1.0.0-rc.2;
+  opkg: `1.0.0~rc2 << 1.0.0` and `<< 1.0.0~rc3` true, `1.0.0_rc1 << 1.0.0~rc2` false) and `.apk`
+  (`1.0.0_rc2-r1`, installs on 25.12).
+- **Lab.** Static collector from the stable worktree on the lab gateway (0.3.0-pre.1 binary and init
+  script kept in `/root`), lab controller redeployed from a copy of the worktree, `status.sh` green.
+  Lockout re-test on the fresh-install box, fresh stack built from the worktree: admin created with
+  curl and the token dropped → `/auth/login` 503 → the wizard (headless Firefox) showed "Sign in to
+  continue setup", refused a wrong password, continued to step 2 and 3; cleared storage at step 3 →
+  sign-in again → back on the collector step with the 1.0.0-rc.2 package commands. From a LAN
+  client: second `setup/admin` 409, ten wrong passwords 401 then 429 (`Retry-After: 900`),
+  `collector/skip` without a token 401. After finishing: `setup/login` 409, `/auth/login` 200.
