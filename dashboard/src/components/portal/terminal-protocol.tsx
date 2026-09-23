@@ -40,12 +40,13 @@ export function TerminalProtocol({ terminalId, router }: { terminalId: number | 
         <code className="font-mono">session_unknown</code> means: open a new session and retry. A coin reported after the
         checkout closed lands in the ledger as unclaimed, for an admin to credit.
       </p>
-      <div className="overflow-hidden rounded-md border border-border">
+      <div className="min-w-0 overflow-hidden rounded-md border border-border">
         <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/40 px-2.5 py-1.5">
           <span className="text-[11px] font-medium text-muted-foreground">Reference client (sh, curl, openssl, jq)</span>
           <CopyButton value={example} ariaLabel="Copy the reference client" />
         </div>
-        <pre className="max-h-80 overflow-y-auto p-2.5 font-mono text-[10.5px] leading-relaxed break-all whitespace-pre-wrap">{example}</pre>
+        {/* A shell script must not wrap mid-word: it scrolls sideways inside its box, never the page. */}
+        <pre className="max-h-80 max-w-full overflow-auto p-2.5 font-mono text-[10.5px] leading-relaxed whitespace-pre">{example}</pre>
       </div>
       <a
         href={TERMINAL_PROTOCOL_URL}
