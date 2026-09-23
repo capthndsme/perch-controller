@@ -3,7 +3,8 @@
 Status: built through work packages S1–S4 (2026-09-23): data layer and pure core, the agent
 wiring on the collector socket, the per-gateway serial queue, the apply lifecycle, Authoritative
 Mode's enforcement, pairing for plain HTTP, and the REST API with the first domains (DHCP
-reservations, DNS names). Networks (section 8, S5) are not here yet.
+reservations, DNS names). M7 added the firewall domain and the persisted order of ordered types
+(docs/gateway/firewall.md). Networks (section 8, S5) are not here yet.
 
 The collector on an OpenWrt router becomes a managed gateway: controller edits apply to the
 router's native UCI config, and router edits (LuCI, `uci`, ssh) flow back. This document is the
@@ -41,6 +42,8 @@ Section numbers follow plan 1 of the design (and the code comments cite them): 2
 | `gateway_store.ts` | loading and saving rows, revisions, the `sync_state` rollup (DB) |
 | `rpc_signing.ts`, `pairing_crypto.ts`, `pairing.ts` | the signed envelope, pairing crypto and state machine (4.3, 4.4) |
 | `device_names.ts` | reservations, DNS records, label names (10.3) |
+| `section_order.ts`, `order_store.ts` | the order of ordered types (5.7; firewall.md section 3) |
+| `firewall_service.ts`, `post_actions.ts` | the firewall REST layer and work once a job is live (firewall.md) |
 | `events.ts`, `errors.ts` | the audit log, REST refusals |
 
 ## 2. Model
@@ -291,6 +294,17 @@ semantics:
 
 Stored content is never normalised: the round trip reproduces the router's spelling.
 
+### 5.7 Order of ordered types
+
+A domain's `orderedTypes` (firewall `rule`, `redirect`) have their order synced too: per (config,
+type) `gateway_section_orders` keeps B and C as perch ids of the synced sections; R is the rows'
+`position`. Imported two-way, `conflict` when both sides reordered differently, `drift` under
+Authoritative Mode (reverted by a `revert` job with an `order` op after the grace delay), `ahead`
+when only C moved. The planner places created members with a `position` on their `put` and adds an
+`order` op (adopting the members it moves) when R would still differ from C. An order not in sync
+is a sync-status blocker `{kind: 'order', …}` and counts in `sync_state`. Full rules:
+docs/gateway/firewall.md section 3.
+
 ### 5.2 Conflicts (two-way)
 
 A conflict blocks applying that section only; the router's running value stays live until the
@@ -378,7 +392,11 @@ re-plan after it finishes (the hashes change).
   path. Domains add rules with `touchesManagement`.
 - **Secrets**: controller values go as `{"$secret": ref}` (the job lists the refs), router-owned
   values as `{"$keep": true}`.
-- Conflicted sections are `blocked`; a `revert` job plans only drifted sections.
+- Conflicted sections are `blocked`; a `revert` job plans only drifted sections (and drifted
+  orders, section 5.7).
+- **Post actions** (`gateway_applies.post_actions`): work that runs once a job is live (the agent's
+  fresh session and first push, or a confirm without a window), carried along a chain until it ran:
+  the WAN block's `net.conntrack_flush` (firewall.md section 5).
 
 `planSectionEdits` is the pure core of `gatewayConfig.editSections(gatewayId, userId, edits)`, the
 single write entry point for domain REST handlers: it turns a domain's `SectionEdit`s into new C
@@ -532,6 +550,13 @@ Normalises MAC sets, lease times and the `dns` flag; identity keys `mac:<mac>` a
 unmanaged hosts), the router's own address (errors), a duplicate name or an address outside every
 LAN network (warnings). REST: the device page's reservation (10.3).
 
+**`firewall`** (`firewall` config: `zone`, `forwarding`, `rule`, DNAT `redirect`, the
+`perch_block_wan` ipset; ordered `rule`, `redirect`). Sections as verbatim objects, fw4's aliases
+normalised, identity by zone name / forwarding pair / rule or redirect name (else a content
+fingerprint), pre-flight with the management-path guard. Defaults, includes, `nat`, SNAT and other
+ipsets are never claimed (observed only). Registered after the DHCP/DNS domains (networks and pools
+go before it: apply order system → network → dhcp → firewall). docs/gateway/firewall.md.
+
 **`dns_records`** (`dhcp` config, `domain` and `cname` sections; plan 2 section 4.2). Claims
 records with scalar `name`/`ip` (`domain`) or `cname`/`target` (`cname`); owns those two options,
 everything else rides along. Names and values normalised to lowercase; identity key
@@ -542,7 +567,8 @@ imported from the router never blocks other applies.
 
 ## 9. Storage
 
-Migrations `1779000000048`–`051`. JSON columns are text parsed by the models (`jsonColumn`,
+Migrations `1779000000048`–`051`; the firewall's `090`–`092` (firewall.md section 8:
+`gateway_section_orders`, `gateway_applies.post_actions`, `gateway_wan_blocks`). JSON columns are text parsed by the models (`jsonColumn`,
 listed in `database/schema_rules.ts`). Only `gateways` references `collectors`; everything else
 hangs off `gateways` with ON DELETE CASCADE.
 
