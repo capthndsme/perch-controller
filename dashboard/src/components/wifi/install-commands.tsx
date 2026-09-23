@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { LoopbackNotice } from '@/components/security/loopback-notice'
 import { PlainHttpNotice } from '@/components/security/plain-http'
 import { CopyButton } from '@/components/ui/copy-button'
 import { buildInstallCommands } from '@/lib/ap-agents'
@@ -68,6 +69,19 @@ export function InstallCommands({ token, info, infoLoading, infoError }: Install
       {commands ? (
         <>
           {isPlainHttpUrl(info?.controllerUrl) ? <PlainHttpNotice /> : null}
+          <LoopbackNotice url={info?.controllerUrl} device="an AP" />
+          {info?.apdVersion ? (
+            <p className="text-[11px] text-muted-foreground">
+              Installs perch-apd {info.apdVersion}.
+            </p>
+          ) : null}
+          {info?.rebindDomain ? (
+            <p className="text-[11px] text-muted-foreground">
+              The controller is addressed by name, so each command first allows{' '}
+              <span className="font-mono">{info.rebindDomain}</span> through the AP&apos;s DNS rebind
+              protection (OpenWrt drops private answers for names otherwise).
+            </p>
+          ) : null}
           <CommandBlock
             title="One-liner"
             hint="Picks the right binary for the AP and checks its checksum."

@@ -44,7 +44,7 @@ function toFormState(settings: HostnameEnrichmentSettings): FormState {
     refreshSeconds: String(settings.refreshSeconds),
     timeoutMs: String(settings.timeoutMs),
     lxcContainerName: settings.transport === 'lxc' ? settings.lxc.containerName : 'openwrt',
-    sshHost: settings.transport === 'ssh' ? settings.ssh.host : '192.168.0.1',
+    sshHost: settings.transport === 'ssh' ? settings.ssh.host : '',
     sshPort: settings.transport === 'ssh' ? String(settings.ssh.port) : '22',
     sshUsername: settings.transport === 'ssh' ? settings.ssh.username : 'root',
     sshPrivateKeyPath: settings.transport === 'ssh' ? (settings.ssh.privateKeyPath ?? '') : '',
@@ -369,6 +369,7 @@ function HostnameEnrichmentSettingsForm({
                     <Input
                       id="sshHost"
                       value={form.sshHost}
+                      placeholder="192.168.x.1"
                       onChange={(event) =>
                         setForm((current) => ({ ...current, sshHost: event.target.value }))
                       }
@@ -401,7 +402,7 @@ function HostnameEnrichmentSettingsForm({
                   <Field
                     label="Private key path"
                     htmlFor="sshPrivateKeyPath"
-                    hint="Optional path on the metrics-be host."
+                    hint="Optional path inside the controller (Docker mounts PERCH_SSH_DIR at /root/.ssh)."
                     error={fieldErrors['ssh.privateKeyPath']}
                   >
                     <Input
@@ -425,7 +426,7 @@ function HostnameEnrichmentSettingsForm({
               <AlertTitle>Command preview</AlertTitle>
               <AlertDescription>
                 <p className="mb-2">
-                  Metrics also attempts <code className="rounded-sm bg-muted px-1 py-0.5 font-mono text-xs">uci show dhcp</code>{' '}
+                  Perch also runs <code className="rounded-sm bg-muted px-1 py-0.5 font-mono text-xs">uci show dhcp</code>{' '}
                   to pick up static host mappings.
                 </p>
                 <code className="rounded-sm bg-muted px-1 py-0.5 font-mono text-xs">

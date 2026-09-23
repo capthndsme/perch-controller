@@ -6,7 +6,7 @@ import vine from '@vinejs/vine'
  * regular signup path (and the future invite flow that'll replace it).
  */
 const email = () => vine.string().email().maxLength(254)
-const password = () => vine.string().minLength(8).maxLength(32)
+const password = () => vine.string().minLength(8).maxLength(128)
 
 /**
  * Step 1 of the wizard. The unique-email rule prevents collisions with any

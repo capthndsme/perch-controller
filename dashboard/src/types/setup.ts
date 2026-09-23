@@ -12,6 +12,13 @@ export type SetupStatusResponse = {
   suggestedCollectorUrl: string
   defaultPollIntervalSeconds: number
   defaultCollectorName: string
+  /** The controller's version, e.g. "1.0.0-rc.2". */
+  version?: string
+}
+
+export type SetupLoginPayload = {
+  email: string
+  password: string
 }
 
 export type SetupAdminPayload = {

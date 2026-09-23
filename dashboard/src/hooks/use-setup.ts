@@ -10,6 +10,7 @@ import type {
   SetupCollectorPayload,
   SetupCollectorResponse,
   SetupInstancePayload,
+  SetupLoginPayload,
   SetupSkipResponse,
   SetupStatusResponse,
 } from '@/types/setup'
@@ -34,6 +35,29 @@ export function useSetupAdmin() {
   return useMutation({
     mutationFn: (payload: SetupAdminPayload) =>
       apiFetch<SetupAdminResponse>('/api/v1/setup/admin', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        auth: false,
+      }),
+    onSuccess: (data) => {
+      setSession(data.token, data.user)
+      queryClient.invalidateQueries({ queryKey: setupStatusQueryKey })
+    },
+  })
+}
+
+/**
+ * Signs the step-1 admin back in while setup is incomplete (tab closed, other
+ * browser, cleared storage). Credentials are required: there is no
+ * unauthenticated way to continue the wizard.
+ */
+export function useSetupLogin() {
+  const queryClient = useQueryClient()
+  const setSession = useAuthStore((state) => state.setSession)
+
+  return useMutation({
+    mutationFn: (payload: SetupLoginPayload) =>
+      apiFetch<SetupAdminResponse>('/api/v1/setup/login', {
         method: 'POST',
         body: JSON.stringify(payload),
         auth: false,

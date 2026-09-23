@@ -73,7 +73,7 @@ export function AdminStep() {
             <Field
               label="Password"
               htmlFor="password"
-              hint="8–32 characters"
+              hint="8–128 characters"
               error={fieldErrors.password}
             >
               <Input

@@ -159,4 +159,16 @@ export default await Env.create(new URL('../', import.meta.url), {
   */
   AP_AGENT_RELEASE_URL: Env.schema.string.optional({ format: 'url', tld: false }),
   AP_AGENT_CONTROLLER_URL: Env.schema.string.optional({ format: 'url', tld: false }),
+
+  /*
+  |----------------------------------------------------------
+  | Paired daemon versions (app/services/perch_version.ts)
+  |----------------------------------------------------------
+  | The perch-apd / perch-collector release the install commands download.
+  | Default: package.json's `perch.apdVersion` / `perch.collectorVersion`, the
+  | releases this controller was cut with. `latest` = the newest final release.
+  | AP_AGENT_RELEASE_URL (a mirror) still wins over PERCH_APD_VERSION.
+  */
+  PERCH_APD_VERSION: Env.schema.string.optional(),
+  PERCH_COLLECTOR_VERSION: Env.schema.string.optional(),
 })

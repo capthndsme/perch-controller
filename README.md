@@ -27,14 +27,23 @@ devices joining a UniFi controller.
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/capthndsme/perch-controller/main/docker-compose.yml
+# optional, to run a release candidate instead of the newest final release:
+# echo PERCH_IMAGE_TAG=rc > .env
 docker compose up -d          # http://<host>:8080 → create the admin account, done
 ```
 
-The images are `ghcr.io/capthndsme/perch-controller` and `…/perch-collector`:
-`latest` and `1.0` follow final releases, `rc` is the newest release candidate
-(also under its version, e.g. `1.0.0-rc.1`) and `edge` is `main`. Set
-`PERCH_IMAGE_TAG` (for example `PERCH_IMAGE_TAG=1.0.0-rc.1` in `.env`) to run
-another tag than `latest`.
+That runs `latest`, the newest final release. The images are
+`ghcr.io/capthndsme/perch-controller` and `…/perch-collector`: `latest` and
+`1.0` follow final releases, `rc` is the newest release candidate (also under
+its version, e.g. `1.0.0-rc.2`) and `edge` is `main`. `PERCH_IMAGE_TAG` in
+`.env` picks another tag (`rc`, or a version to stay on). The version you run is
+shown at the bottom of Settings and on the setup pages
+(`GET /api/v1/version`).
+
+**Lost the wizard half way?** If the browser session ends after the admin
+account was created (tab closed, another browser), open the dashboard again and
+sign in with that account: setup continues where it stopped. Nobody without
+that account's password can continue it.
 
 Then add a collector. Best is the `perch-collector` OpenWrt package on your
 router: it sees all of the traffic and reports the gateway's stats too. Any

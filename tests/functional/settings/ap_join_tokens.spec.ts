@@ -34,7 +34,7 @@ test.group('perch-apd settings: join tokens', (group) => {
     assert.equal(response.header('cache-control'), 'no-store')
 
     const { token, joinToken } = response.body().data
-    assert.match(token, /^mlap_[A-Za-z0-9_-]{32}$/)
+    assert.match(token, /^mlap_[0-9a-hjkmnp-tv-z]{40}$/)
     assert.equal(joinToken.prefix, token.slice(0, 9))
     assert.equal(joinToken.label, 'upstairs')
     assert.equal(joinToken.status, 'active')
@@ -175,10 +175,14 @@ test.group('perch-apd settings: install info and agent ping', (group) => {
     response.assertStatus(200)
     const data = response.body().data
     assert.equal(data.controllerUrl, 'http://metrics.example.com')
+    // Pinned to the perch-apd release this controller pairs with, never latest.
+    assert.isString(data.apdVersion)
+    assert.notEqual(data.apdVersion, 'latest')
     assert.equal(
       data.releaseBaseUrl,
-      'https://github.com/capthndsme/perch-apd/releases/latest/download'
+      `https://github.com/capthndsme/perch-apd/releases/download/v${data.apdVersion}`
     )
+    assert.equal(data.rebindDomain, 'metrics.example.com')
     assert.equal(data.installScriptUrl, `${data.releaseBaseUrl}/install.sh`)
     assert.deepEqual(
       data.assets.map((asset: { arch: string }) => asset.arch),
@@ -190,6 +194,21 @@ test.group('perch-apd settings: install info and agent ping', (group) => {
       label: 'MIPS little-endian',
       hint: 'MT7621, MT7628 (mipsel_24kc)',
     })
+  })
+
+  test('install info: no rebind domain when the controller is reached by address', async ({
+    client,
+    assert,
+  }) => {
+    const { adminToken } = await seedSetupComplete()
+    for (const host of ['192.168.1.10:8080', '[fd00::10]:8080', 'localhost:3333']) {
+      const response = await client
+        .get('/api/v1/settings/ap-agent/install')
+        .bearerToken(adminToken)
+        .header('Host', host)
+      response.assertStatus(200)
+      assert.isNull(response.body().data.rebindDomain, host)
+    }
   })
 
   test('ping answers with the round trip; 409 offline; 404 without an agent', async ({

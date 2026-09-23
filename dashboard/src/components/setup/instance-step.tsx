@@ -7,9 +7,11 @@ import { Input } from '@/components/ui/input'
 import { fieldErrorsFromApi, useSetupInstance } from '@/hooks/use-setup'
 import { ApiError } from '@/lib/api'
 import { getTimezoneOptions, guessTimezone } from '@/lib/timezones'
+import { useAuthStore } from '@/stores/auth-store'
 
 export function InstanceStep() {
   const instance = useSetupInstance()
+  const clearSession = useAuthStore((state) => state.clearSession)
   const timezones = getTimezoneOptions()
   const [siteName, setSiteName] = useState('')
   const [timezone, setTimezone] = useState(guessTimezone)
@@ -29,9 +31,8 @@ export function InstanceStep() {
     } catch (error) {
       if (error instanceof ApiError) {
         if (error.status === 401) {
-          setFormError(
-            'Your setup session expired. Refresh and complete step 1 again, or reset the database.',
-          )
+          // The session is gone: the setup page asks the admin to sign in again.
+          clearSession()
         } else if (error.status !== 422) {
           setFormError(error.message)
         }

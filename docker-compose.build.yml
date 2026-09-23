@@ -2,8 +2,14 @@
 # perch-collector checkout next to this one, in ../go-collector:
 #
 #   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# Local builds are tagged perch-controller:local / perch-collector:local, never
+# with the published ghcr.io names: a later `docker compose pull` would
+# otherwise replace a source build with the published image without a word.
 services:
   server:
+    image: perch-controller:local
     build: .
   collector:
+    image: perch-collector:local
     build: ../go-collector

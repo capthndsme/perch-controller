@@ -5,9 +5,11 @@ import { AdminStep } from '@/components/setup/admin-step'
 import { CollectorStep } from '@/components/setup/collector-step'
 import { InstanceStep } from '@/components/setup/instance-step'
 import { SetupLayout } from '@/components/setup/setup-layout'
+import { SetupSignIn } from '@/components/setup/setup-sign-in'
 import { SetupStepper } from '@/components/setup/setup-stepper'
 import { PageSpinner } from '@/components/ui/spinner'
 import { useSetupStatus } from '@/hooks/use-setup'
+import { useAuthStore } from '@/stores/auth-store'
 
 export function SetupPage() {
   const { data, error, isPending } = useSetupStatus()
@@ -15,6 +17,9 @@ export function SetupPage() {
   // result (and any other waiting collectors) remain visible until the admin
   // chooses to leave, whatever a status refetch says in the meantime.
   const [stayOnCollectorStep, setStayOnCollectorStep] = useState(false)
+  // Past step 1 the wizard needs the admin's session. Without one (tab closed,
+  // another browser, a 401 from a setup call clears it) the admin signs in again.
+  const token = useAuthStore((state) => state.token)
 
   if (isPending) {
     return (
@@ -39,15 +44,18 @@ export function SetupPage() {
     return <Navigate to="/" replace />
   }
 
+  const needsSignIn = !token && (data.step === 'instance' || data.step === 'collector')
   const showCollectorStep =
-    data.step === 'collector' || (data.step === 'complete' && stayOnCollectorStep)
+    !needsSignIn &&
+    (data.step === 'collector' || (data.step === 'complete' && stayOnCollectorStep))
 
   return (
     <SetupLayout>
       <div className="space-y-6">
         <SetupStepper current={data.step} />
         {data.step === 'admin' ? <AdminStep /> : null}
-        {data.step === 'instance' ? <InstanceStep /> : null}
+        {needsSignIn ? <SetupSignIn /> : null}
+        {data.step === 'instance' && !needsSignIn ? <InstanceStep /> : null}
         {showCollectorStep ? (
           <CollectorStep status={data} onStayChange={setStayOnCollectorStep} />
         ) : null}

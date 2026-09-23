@@ -13,10 +13,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { setupStatusQueryKey, useSetupCandidates, useSetupSkipCollector } from '@/hooks/use-setup'
 import { ApiError } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth-store'
 import type { SetupStatusResponse } from '@/types/setup'
-
-const SESSION_EXPIRED =
-  'Your setup session expired. Refresh and complete step 1 again, or reset the database.'
 
 type CollectorStepProps = {
   status: SetupStatusResponse
@@ -40,7 +38,9 @@ export function CollectorStep({ status, onStayChange }: CollectorStepProps) {
   const [result, setResult] = useState<CollectorStepResult | null>(null)
   const [registered, setRegistered] = useState(0)
   const [showAddressForm, setShowAddressForm] = useState(false)
-  const [sessionExpired, setSessionExpired] = useState(false)
+  // A 401 means the setup session is gone: clearing it makes the setup page
+  // ask the admin to sign in again (nothing is lost).
+  const clearSession = useAuthStore((state) => state.clearSession)
   const [leaving, setLeaving] = useState(false)
   const [leaveError, setLeaveError] = useState<string | null>(null)
 
@@ -50,6 +50,9 @@ export function CollectorStep({ status, onStayChange }: CollectorStepProps) {
 
   const candidatesError = candidates.error
   const candidatesExpired = candidatesError instanceof ApiError && candidatesError.status === 401
+  useEffect(() => {
+    if (candidatesExpired) clearSession()
+  }, [candidatesExpired, clearSession])
   let loadError: string | null = null
   if (candidatesError && !candidatesExpired) {
     loadError =
@@ -92,7 +95,7 @@ export function CollectorStep({ status, onStayChange }: CollectorStepProps) {
     } catch (error) {
       setLeaving(false)
       if (error instanceof ApiError && error.status === 401) {
-        setSessionExpired(true)
+        clearSession()
         return
       }
       setLeaveError(error instanceof ApiError ? error.message : 'Could not skip this step.')
@@ -121,15 +124,13 @@ export function CollectorStep({ status, onStayChange }: CollectorStepProps) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6 pt-6">
-        {sessionExpired || candidatesExpired ? <FormError message={SESSION_EXPIRED} /> : null}
-
         <DiscoveredCollectors
           candidates={waiting}
           discoveryEnabled={candidates.data?.discoveryEnabled ?? true}
           loading={candidates.isPending}
           loadError={loadError}
           onAdopted={onRegistered}
-          onSessionExpired={() => setSessionExpired(true)}
+          onSessionExpired={clearSession}
         />
 
         <section className="space-y-3 border-t pt-4">
@@ -150,7 +151,7 @@ export function CollectorStep({ status, onStayChange }: CollectorStepProps) {
             <CollectorAddressForm
               status={status}
               onAdded={onRegistered}
-              onSessionExpired={() => setSessionExpired(true)}
+              onSessionExpired={clearSession}
             />
           ) : (
             <p className="text-xs text-muted-foreground">

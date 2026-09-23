@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { PlainHttpPageNote } from '@/components/security/plain-http'
 import { useThemeEffect } from '@/hooks/use-theme'
+import { controllerVersionLabel, useVersion } from '@/hooks/use-version'
 
 type SetupLayoutProps = {
   children: ReactNode
@@ -8,6 +9,7 @@ type SetupLayoutProps = {
 
 export function SetupLayout({ children }: SetupLayoutProps) {
   useThemeEffect()
+  const versionLabel = controllerVersionLabel(useVersion().data?.version)
 
   return (
     <div className="relative min-h-svh overflow-hidden bg-background">
@@ -31,6 +33,9 @@ export function SetupLayout({ children }: SetupLayoutProps) {
         </div>
         {children}
         <PlainHttpPageNote className="mt-4" />
+        {versionLabel ? (
+          <p className="mt-4 text-center text-[11px] text-muted-foreground">{versionLabel}</p>
+        ) : null}
       </div>
     </div>
   )

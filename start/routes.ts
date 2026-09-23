@@ -47,17 +47,24 @@ const ApAgentsController = () => import('#controllers/ap_agents_controller')
 const ApJoinTokensController = () => import('#controllers/ap_join_tokens_controller')
 const AgentSocketsController = () => import('#controllers/agent_sockets_controller')
 const InfraController = () => import('#controllers/infra_controller')
+const VersionController = () => import('#controllers/version_controller')
 
 /**
  * Setup wizard endpoints. INTENTIONALLY outside the requireSetupComplete
- * gate (since they ARE the way to complete setup). `status` and `admin` are
- * public; once an admin exists, the rest of the wizard requires that
- * admin's bearer token.
+ * gate (since they ARE the way to complete setup). `status`, `admin` and
+ * `login` are public; once an admin exists, the rest of the wizard requires
+ * that admin's bearer token, which `login` hands out again to the step-1
+ * credentials while setup is incomplete.
  */
 router
   .group(() => {
     router.get('status', [SetupController, 'status']).as('status')
     router.post('admin', [SetupController, 'admin']).as('admin')
+    /**
+     * Resume an unfinished wizard with the step-1 admin's credentials
+     * (409 once setup is complete; rate-limited per address).
+     */
+    router.post('login', [SetupController, 'login']).as('login')
     router
       .post('instance', [SetupController, 'instance'])
       .as('instance')
@@ -82,6 +89,12 @@ router
   })
   .prefix('/api/v1/setup')
   .as('setup')
+
+/**
+ * Controller version and the daemon releases it pairs with. Public and
+ * outside the setup gate, like `setup/status`.
+ */
+router.get('/api/v1/version', [VersionController, 'show']).as('version')
 
 /**
  * Collector self-announcement. INTENTIONALLY outside both `auth` and the

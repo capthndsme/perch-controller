@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input'
 import { fieldErrorsFromApi, useChangePassword, useProfile } from '@/hooks/use-auth'
 import { useCollectors } from '@/hooks/use-collectors'
+import { controllerVersionLabel, useVersion } from '@/hooks/use-version'
 import { useAppStore, type Theme } from '@/stores/app-store'
 import { ApiError } from '@/lib/api'
 
@@ -26,6 +27,7 @@ export function SettingsPage() {
   const setTheme = useAppStore((state) => state.setTheme)
   const isAdmin = profile.data?.role === 'admin'
   const collectors = useCollectors({ enabled: isAdmin })
+  const versionLabel = controllerVersionLabel(useVersion().data?.version)
   const pendingCollectors =
     collectors.data?.filter((collector) => collector.lifecycle === 'pending').length ?? 0
 
@@ -143,6 +145,8 @@ export function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      {versionLabel ? <p className="text-[11px] text-muted-foreground">{versionLabel}</p> : null}
     </div>
   )
 }

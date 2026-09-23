@@ -57,7 +57,7 @@ JSON-RPC gives request/response correlation and error codes for free.
 | `revoked_at` | timestamp null | soft revoke; rows are never deleted |
 | `created_at`, `updated_at` | timestamps | |
 
-Token format: `mlap_` + 32 base64url chars (24 random bytes).
+Token format: `mlap_` + 40 lower-case Crockford base32 chars (200 random bits; no `o`, `i`, `l`, `u`, so nothing to mistype from a screen). Tokens made before 1.0.0-rc.2 were `mlap_` + 32 base64url chars and still work.
 
 ### 1.2 `wifi_access_points` (new columns)
 
@@ -307,8 +307,11 @@ Responses carrying a plaintext token set `Cache-Control: no-store`.
 ```ts
 {
   controllerUrl: string      // AP_AGENT_CONTROLLER_URL, else `${request.protocol()}://${request.host()}`
+  apdVersion: string         // the perch-apd release this controller pairs with (A5, 1.0.0-rc.2)
+  rebindDomain: string | null // controllerUrl's host when it is a name (not an IP, not localhost)
   releaseBaseUrl: string     // AP_AGENT_RELEASE_URL, default
-                             // 'https://github.com/capthndsme/perch-apd/releases/latest/download'
+                             // 'https://github.com/capthndsme/perch-apd/releases/download/v<apdVersion>'
+                             // ('…/releases/latest/download' when apdVersion is 'latest')
   installScriptUrl: string   // `${releaseBaseUrl}/install.sh`
   assets: Array<{ arch: 'mipsle' | 'mips' | 'armv7' | 'armv5' | 'arm64' | 'amd64'; file: string; label: string; hint: string }>
 }
@@ -386,7 +389,8 @@ controls: {
 
 | Env | Default | |
 |---|---|---|
-| `AP_AGENT_RELEASE_URL` | GitHub `…/releases/latest/download` | where install commands download from (self-hosted mirror) |
+| `AP_AGENT_RELEASE_URL` | GitHub `…/releases/download/v<apdVersion>` | where install commands download from (self-hosted mirror) |
+| `PERCH_APD_VERSION` | package.json `perch.apdVersion` | the perch-apd release the install commands pin (`latest` = newest final release) |
 | `AP_AGENT_CONTROLLER_URL` | derived from the request | controller URL shown in install commands |
 
 Reverse proxy: the WebSocket must be passed through. Apache 2.4.47+:
@@ -403,3 +407,23 @@ Reverse proxy: the WebSocket must be passed through. Apache 2.4.47+:
    Same `apId`, history continues, the SSH settings are no longer used.
 3. `opkg remove prometheus-node-exporter-lua*` (or `apk del …`), unless
    something else still scrapes it: the agent serves no `/metrics` of its own.
+
+## Amendment A5 (2026-09-23, 1.0.0-rc.2): pinned daemon version, rebind line
+
+- The controller pairs with one perch-apd release: package.json `perch.apdVersion`,
+  set by each release commit (the same version as the controller's while the three
+  products are released together), overridable with `PERCH_APD_VERSION` (a version,
+  or `latest`). `GET /api/v1/version` and the install info carry it; the dashboard's
+  commands download from that tag, not from `releases/latest` (which never resolves
+  to a release candidate and would hand a 1.0 controller perch-apd 0.1.2).
+- The one-liner sets `PERCH_APD_BASE_URL=<releaseBaseUrl>` in front of `sh`, so any
+  install.sh (rc.1's defaulted to `releases/latest`) fetches the pinned binaries.
+  From rc.2 on, a release's install.sh defaults to its own tag (`make release`
+  stamps `PERCH_APD_RELEASE`).
+- `rebindDomain`: when the controller URL is a host name, every command starts with
+  `uci -q del_list dhcp.@dnsmasq[0].rebind_domain=<name>; uci add_list
+  dhcp.@dnsmasq[0].rebind_domain=<name> && uci commit dhcp && /etc/init.d/dnsmasq reload && `
+  (del_list first so a re-run does not add a duplicate). perch-apd itself never
+  touches the AP's DNS settings; its "no such host" hint stays.
+- Join tokens are `mlap_` + 40 lower-case Crockford base32 characters from rc.2 on.
+

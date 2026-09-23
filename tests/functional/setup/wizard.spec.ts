@@ -2,6 +2,10 @@ import Collector from '#models/collector'
 import SystemSetting from '#models/system_setting'
 import User from '#models/user'
 import { _resetAnnounceState, apiKeyFingerprint } from '#services/collector_announce'
+import {
+  _resetSetupLoginRateLimits,
+  SETUP_LOGIN_FAILURE_LIMIT,
+} from '#services/setup_login_rate_limit'
 import testUtils from '@adonisjs/core/services/test_utils'
 import { test } from '@japa/runner'
 
@@ -71,6 +75,7 @@ test.group('setup wizard | status progression', (group) => {
     assert.isFalse(data.adminExists)
     assert.isFalse(data.hasInstance)
     assert.isFalse(data.hasCollector)
+    assert.match(data.version, /^\d+\.\d+\.\d+/)
     assert.equal(data.suggestedCollectorUrl, 'http://127.0.0.1:9800')
     assert.equal(data.defaultPollIntervalSeconds, 5)
   })
@@ -432,5 +437,182 @@ test.group('setup wizard | controller first', (group) => {
       .json({ apiKey: 'some-other-key' })
     mismatch.assertStatus(422)
     mismatch.assertBodyContains({ error: 'collector_api_key_mismatch' })
+  })
+})
+
+/**
+ * Resume after a lost session (lab walkthrough 2026-09-23, finding 1): the
+ * step-1 admin signs in again through `setup/login`. Nobody else can: the
+ * route wants the admin's own credentials, is rate-limited, and closes once
+ * setup is complete.
+ */
+test.group('setup wizard | resume with the step-1 credentials', (group) => {
+  group.each.setup(resetDb)
+  group.each.setup(() => _resetSetupLoginRateLimits())
+
+  const LOGIN = { email: ADMIN_PAYLOAD.email, password: ADMIN_PAYLOAD.password }
+
+  test('a dropped token is recovered by signing in, and setup can finish', async ({
+    client,
+    assert,
+  }) => {
+    // Step 1, then the token is lost (tab closed, other browser).
+    const created = await client.post('/api/v1/setup/admin').json(ADMIN_PAYLOAD)
+    created.assertStatus(200)
+
+    // The normal login stays behind the setup gate.
+    const gated = await client.post('/api/v1/auth/login').json(LOGIN)
+    gated.assertStatus(503)
+    gated.assertBodyContains({ error: 'setup_required', step: 'instance' })
+
+    const login = await client.post('/api/v1/setup/login').json(LOGIN)
+    login.assertStatus(200)
+    const { token, user } = login.body().data
+    assert.isString(token)
+    assert.equal(user.email, ADMIN_PAYLOAD.email)
+    assert.equal(user.role, 'admin')
+    assert.notProperty(user, 'password')
+
+    const inst = await client
+      .post('/api/v1/setup/instance')
+      .bearerToken(token)
+      .json(INSTANCE_PAYLOAD)
+    inst.assertStatus(200)
+
+    // Lost again at step 3: sign in again, skip the collector, done.
+    const again = await client.post('/api/v1/setup/login').json(LOGIN)
+    again.assertStatus(200)
+    const skip = await client
+      .post('/api/v1/setup/collector/skip')
+      .bearerToken(again.body().data.token)
+    skip.assertStatus(200)
+    assert.isTrue(skip.body().data.setupComplete)
+
+    // From here on it is the ordinary login's job.
+    const closed = await client.post('/api/v1/setup/login').json(LOGIN)
+    closed.assertStatus(409)
+    closed.assertBodyContains({ error: 'setup_complete' })
+    const normal = await client.post('/api/v1/auth/login').json(LOGIN)
+    normal.assertStatus(200)
+  })
+
+  test('refused before step 1: there is nobody to sign in as', async ({ client, assert }) => {
+    const r = await client.post('/api/v1/setup/login').json(LOGIN)
+    r.assertStatus(409)
+    r.assertBodyContains({ error: 'admin_missing' })
+    assert.lengthOf(await User.all(), 0)
+  })
+
+  test('wrong password and unknown e-mail get the same 401', async ({ client, assert }) => {
+    await client.post('/api/v1/setup/admin').json(ADMIN_PAYLOAD)
+
+    const wrongPassword = await client
+      .post('/api/v1/setup/login')
+      .json({ ...LOGIN, password: 'not-the-password' })
+    wrongPassword.assertStatus(401)
+    const unknownEmail = await client
+      .post('/api/v1/setup/login')
+      .json({ ...LOGIN, email: 'someone@example.com' })
+    unknownEmail.assertStatus(401)
+    assert.deepEqual(wrongPassword.body(), unknownEmail.body())
+    assert.equal(wrongPassword.body().error, 'invalid_credentials')
+    assert.notProperty(wrongPassword.body(), 'token')
+  })
+
+  test('a non-admin account cannot continue the wizard', async ({ client }) => {
+    await client.post('/api/v1/setup/admin').json(ADMIN_PAYLOAD)
+    await User.create({
+      fullName: 'Viewer',
+      email: 'viewer@example.com',
+      password: 'viewer-pass-123',
+      role: 'viewer',
+    })
+    const r = await client
+      .post('/api/v1/setup/login')
+      .json({ email: 'viewer@example.com', password: 'viewer-pass-123' })
+    r.assertStatus(401)
+    r.assertBodyContains({ error: 'invalid_credentials' })
+  })
+
+  test('someone racing the owner cannot take over or finish setup', async ({ client, assert }) => {
+    await client.post('/api/v1/setup/admin').json(ADMIN_PAYLOAD)
+
+    // A second step 1 is refused: the first admin owns the instance.
+    const second = await client.post('/api/v1/setup/admin').json({
+      ...ADMIN_PAYLOAD,
+      email: 'intruder@example.com',
+    })
+    second.assertStatus(409)
+    assert.lengthOf(await User.query().where('role', 'admin'), 1)
+
+    // Without the admin's token nothing moves.
+    const inst = await client.post('/api/v1/setup/instance').json(INSTANCE_PAYLOAD)
+    inst.assertStatus(401)
+    const skip = await client.post('/api/v1/setup/collector/skip')
+    skip.assertStatus(401)
+    const forged = await client
+      .post('/api/v1/setup/instance')
+      .bearerToken('oat_bm90LWEtdG9rZW4.bm90LWEtdG9rZW4')
+      .json(INSTANCE_PAYLOAD)
+    forged.assertStatus(401)
+    const status = await client.get('/api/v1/setup/status')
+    assert.equal(status.body().data.step, 'instance')
+    assert.isFalse(status.body().data.hasInstance)
+  })
+
+  test('repeated failures from one address are throttled, even with the right password', async ({
+    client,
+    assert,
+  }) => {
+    await client.post('/api/v1/setup/admin').json(ADMIN_PAYLOAD)
+    for (let i = 0; i < SETUP_LOGIN_FAILURE_LIMIT; i++) {
+      const r = await client
+        .post('/api/v1/setup/login')
+        .json({ ...LOGIN, password: `guess-${i}-xxxx` })
+      r.assertStatus(401)
+    }
+    const blocked = await client.post('/api/v1/setup/login').json(LOGIN)
+    blocked.assertStatus(429)
+    blocked.assertBodyContains({ error: 'rate_limited' })
+    assert.isAbove(Number(blocked.header('retry-after')), 0)
+    assert.isAbove(blocked.body().retryAfterSeconds, 0)
+
+    _resetSetupLoginRateLimits()
+    const ok = await client.post('/api/v1/setup/login').json(LOGIN)
+    ok.assertStatus(200)
+  })
+
+  test('a malformed body counts as a failure', async ({ client }) => {
+    await client.post('/api/v1/setup/admin').json(ADMIN_PAYLOAD)
+    for (let i = 0; i < SETUP_LOGIN_FAILURE_LIMIT; i++) {
+      const r = await client.post('/api/v1/setup/login').json({ email: 'not-an-email' })
+      r.assertStatus(422)
+    }
+    const blocked = await client.post('/api/v1/setup/login').json(LOGIN)
+    blocked.assertStatus(429)
+  })
+})
+
+test.group('version', (group) => {
+  group.each.setup(resetDb)
+
+  test('GET /api/v1/version answers before setup, with the paired daemon releases', async ({
+    client,
+    assert,
+  }) => {
+    const r = await client.get('/api/v1/version')
+    r.assertStatus(200)
+    const data = r.body().data
+    assert.match(data.version, /^\d+\.\d+\.\d+/)
+    assert.isString(data.apdVersion)
+    assert.isString(data.collectorVersion)
+    assert.equal(
+      data.apdReleaseUrl,
+      `https://github.com/capthndsme/perch-apd/releases/download/v${data.apdVersion}`
+    )
+    assert.equal(
+      data.collectorReleaseUrl,
+      `https://github.com/capthndsme/perch-collector/releases/download/v${data.collectorVersion}`
+    )
   })
 })

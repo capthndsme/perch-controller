@@ -16,6 +16,19 @@ export function isPlainHttpUrl(url: string | null | undefined): boolean {
   return typeof url === 'string' && /^http:\/\//i.test(url.trim())
 }
 
+/**
+ * A controller URL another device could never reach: it names this browser's
+ * own machine (the page is open on localhost or through an SSH tunnel).
+ */
+export function isLoopbackUrl(url: string | null | undefined): boolean {
+  if (!url) return false
+  try {
+    return isLocalHostname(new URL(url).hostname)
+  } catch {
+    return false
+  }
+}
+
 /** This browser's own machine: nothing crosses the network to reach it. */
 export function isLocalHostname(hostname: string): boolean {
   const host = hostname.replace(/^\[|\]$/g, '').toLowerCase()

@@ -60,7 +60,8 @@ protected):
   in its `.env` so the existing containers and the database volume keep their
   names. Database name, user and tables do not change.
 - `AP_AGENT_RELEASE_URL` default becomes
-  `https://github.com/capthndsme/perch-apd/releases/latest/download`.
+  `https://github.com/capthndsme/perch-apd/releases/latest/download` (since 1.0.0-rc.2:
+  the paired release's tag, `…/releases/download/v<apdVersion>`, docs/ap-controller.md A5).
 - User agents: `perch-collector/<version>`, `perch-apd/<version>`.
 
 ## 2. perch-agentkit
@@ -265,7 +266,7 @@ counters are cumulative, so a dropped push loses nothing).
 | close 4002 | 60 s | another collector uses this instance id |
 | close 4003 | 6 h | dismissed by an admin |
 | close 1001 | 2–5 s | |
-| anything else | backoff 1 s → 60 s, reset after a session that lasted > 1 min | |
+| anything else | backoff 1 s → 30 s (60 s before 1.0.0-rc.2; a 5xx `Retry-After` under 30 s is honoured), reset after a session that lasted > 1 min | |
 
 ## 4. Gateway stats
 

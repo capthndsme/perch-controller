@@ -113,6 +113,15 @@ export function ApAgentsSection() {
       setOpenInstallId(null)
       return
     }
+    // The token just created shows its commands above: move them to its row
+    // instead of showing the same block twice.
+    if (created?.joinToken.id === token.id) {
+      const createdToken = created.token
+      setCreated(null)
+      setRevealed((current) => ({ ...current, [token.id]: createdToken }))
+      setOpenInstallId(token.id)
+      return
+    }
     if (revealed[token.id]) {
       setOpenInstallId(token.id)
       return

@@ -7,7 +7,11 @@ import { isAnnounceEnabled } from '#services/collector_announce'
 import { probeCollector } from '#services/collector_probe'
 import { adoptCollector } from '#services/collector_registry'
 import { deferCollectors, isSetupComplete, snapshot } from '#services/setup_state'
+import { announceSourceAddress } from '#services/collector_announce'
+import { perchVersions } from '#services/perch_version'
+import { recordSetupLoginFailure, setupLoginBudget } from '#services/setup_login_rate_limit'
 import { collectorAdoptValidator } from '#validators/collectors'
+import { loginValidator } from '#validators/user'
 import {
   setupAdminValidator,
   setupCollectorValidator,
@@ -38,6 +42,7 @@ export default class SetupController {
     const snap = await snapshot()
     return serialize({
       ...snap,
+      version: perchVersions().version,
       suggestedCollectorUrl: DEFAULT_COLLECTOR.suggestedUrl,
       defaultPollIntervalSeconds: DEFAULT_COLLECTOR.defaultPollIntervalSeconds,
       defaultCollectorName: DEFAULT_COLLECTOR.defaultName,
@@ -65,6 +70,73 @@ export default class SetupController {
     const user = await User.create({ fullName, email, password, role: 'admin' })
     const token = await User.accessTokens.create(user)
 
+    return serialize({
+      user: UserTransformer.transform(user),
+      token: token.value!.release(),
+    })
+  }
+
+  /**
+   * POST /api/v1/setup/login
+   *
+   * Resumes an unfinished wizard: the admin from step 1 signs in again after
+   * losing the session (tab closed, other browser, cleared storage). The
+   * normal `/auth/login` stays behind the setup gate; this one only works
+   * while setup is incomplete, only after step 1, and only for an admin, so
+   * it is never a way in without the step-1 credentials. Someone else on the
+   * LAN gets nothing an ordinary login would not give them: a wrong password
+   * is a 401 that says nothing about which half was wrong, and an address
+   * with 10 failures in 15 minutes gets 429 (Retry-After).
+   */
+  async login({ request, response, serialize }: HttpContext) {
+    const address = announceSourceAddress(request.ip())
+    const budget = setupLoginBudget(address)
+    if (!budget.allowed) {
+      response.header('Retry-After', String(budget.retryAfterSeconds))
+      return response.tooManyRequests({
+        error: 'rate_limited',
+        message: 'Too many failed sign-in attempts from this address. Try again later.',
+        retryAfterSeconds: budget.retryAfterSeconds,
+      })
+    }
+
+    const snap = await snapshot()
+    if (snap.step === 'complete') {
+      return response.conflict({
+        error: 'setup_complete',
+        message: 'Setup is complete. Sign in with /api/v1/auth/login instead.',
+      })
+    }
+    if (snap.step === 'admin') {
+      return response.conflict({
+        error: 'admin_missing',
+        message: 'No admin account exists yet. Create one with /api/v1/setup/admin.',
+      })
+    }
+
+    let credentials
+    try {
+      credentials = await request.validateUsing(loginValidator)
+    } catch (error) {
+      recordSetupLoginFailure(address)
+      throw error
+    }
+
+    let user: User
+    try {
+      // Hashes a dummy password for an unknown e-mail, so the timing does not
+      // tell which half was wrong either.
+      user = await User.verifyCredentials(credentials.email, credentials.password)
+    } catch {
+      recordSetupLoginFailure(address)
+      return invalidCredentials(response)
+    }
+    if (!user.isAdmin) {
+      recordSetupLoginFailure(address)
+      return invalidCredentials(response)
+    }
+
+    const token = await User.accessTokens.create(user)
     return serialize({
       user: UserTransformer.transform(user),
       token: token.value!.release(),
@@ -191,4 +263,11 @@ export default class SetupController {
     const row = await User.query().where('role', 'admin').first()
     return row !== null
   }
+}
+
+function invalidCredentials(response: HttpContext['response']) {
+  return response.unauthorized({
+    error: 'invalid_credentials',
+    message: 'Wrong e-mail or password for the admin account created in step 1.',
+  })
 }

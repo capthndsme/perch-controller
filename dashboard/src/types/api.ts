@@ -724,8 +724,16 @@ export type ApAgentAsset = {
 /** `GET /api/v1/settings/ap-agent/install`: what the install commands point at. */
 export type ApAgentInstallInfo = {
   controllerUrl: string
+  /** Pinned to `apdVersion` (…/releases/download/v<version>) unless overridden. */
   releaseBaseUrl: string
   installScriptUrl: string
+  /** The perch-apd version these commands install, or "latest". */
+  apdVersion?: string
+  /**
+   * The controller URL's host name when it is a name (not an IP, not
+   * localhost): the AP's dnsmasq must allow it through rebind protection.
+   */
+  rebindDomain?: string | null
   assets: ApAgentAsset[]
 }
 

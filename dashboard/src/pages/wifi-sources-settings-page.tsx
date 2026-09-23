@@ -18,7 +18,7 @@ import { ApiError } from '@/lib/api'
 const INITIAL_FORM: UpsertWifiSourcePayload = {
   name: '',
   friendlyName: '',
-  metricsUrl: 'http://192.168.1.17:9100/metrics',
+  metricsUrl: '',
   pollIntervalSeconds: 15,
   enabled: true,
   enableTwoWayCommands: false,
@@ -153,6 +153,7 @@ export function WifiSourcesSettingsPage() {
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <Input
                     value={form.metricsUrl}
+                    placeholder="http://192.168.x.x:9100/metrics"
                     onChange={(event) =>
                       setForm((current) => ({ ...current, metricsUrl: event.target.value }))
                     }

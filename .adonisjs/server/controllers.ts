@@ -21,5 +21,6 @@ export const controllers = {
   Setup: () => import('#controllers/setup_controller'),
   Usage: () => import('#controllers/usage_controller'),
   Users: () => import('#controllers/users_controller'),
+  Version: () => import('#controllers/version_controller'),
   Wifi: () => import('#controllers/wifi_controller'),
 }

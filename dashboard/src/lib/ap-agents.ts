@@ -134,9 +134,23 @@ export type InstallCommands = {
   join: string
 }
 
+/**
+ * Lets `name` through the AP's dnsmasq rebind protection, which otherwise
+ * drops a private answer for it and the AP cannot resolve the controller.
+ * The `del_list` first keeps a re-run from adding the entry twice.
+ */
+export function rebindDomainPrefix(name: string): string {
+  const quoted = shellQuote(name)
+  return (
+    `uci -q del_list dhcp.@dnsmasq[0].rebind_domain=${quoted}; ` +
+    `uci add_list dhcp.@dnsmasq[0].rebind_domain=${quoted} && uci commit dhcp && ` +
+    '/etc/init.d/dnsmasq reload && '
+  )
+}
+
 /** The three commands from docs/ap-controller.md §4.2. */
 export function buildInstallCommands(
-  info: Pick<ApAgentInstallInfo, 'controllerUrl' | 'releaseBaseUrl' | 'installScriptUrl'>,
+  info: Pick<ApAgentInstallInfo, 'controllerUrl' | 'releaseBaseUrl' | 'installScriptUrl' | 'rebindDomain'>,
   token: string,
   asset: Pick<ApAgentAsset, 'file'> | undefined,
 ): InstallCommands {
@@ -145,10 +159,12 @@ export function buildInstallCommands(
   const flags = `--controller ${controller} --token ${quotedToken}`
   const base = info.releaseBaseUrl.replace(/\/+$/, '')
   const binaryUrl = shellQuote(`${base}/${asset?.file ?? 'perch-apd-linux-<arch>'}`)
+  const prefix = info.rebindDomain ? rebindDomainPrefix(info.rebindDomain) : ''
   return {
-    oneLiner: `wget -qO- ${shellQuote(info.installScriptUrl)} | sh -s -- ${flags}`,
-    manual: `wget -O /tmp/perch-apd ${binaryUrl} && chmod +x /tmp/perch-apd && /tmp/perch-apd --install ${flags}`,
-    join: `perch-apd join ${flags}`,
+    // PERCH_APD_BASE_URL: whatever install.sh runs fetches the pinned binaries.
+    oneLiner: `${prefix}wget -qO- ${shellQuote(info.installScriptUrl)} | PERCH_APD_BASE_URL=${shellQuote(base)} sh -s -- ${flags}`,
+    manual: `${prefix}wget -O /tmp/perch-apd ${binaryUrl} && chmod +x /tmp/perch-apd && /tmp/perch-apd --install ${flags}`,
+    join: `${prefix}perch-apd join ${flags}`,
   }
 }
 

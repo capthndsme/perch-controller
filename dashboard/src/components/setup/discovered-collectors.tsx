@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Broadcast, CaretDown, CaretRight, PlugsConnected, Prohibit, WarningCircle } from '@phosphor-icons/react'
 import { Fact } from '@/components/collectors/fact'
+import { LoopbackNotice } from '@/components/security/loopback-notice'
 import { PlainHttpNotice } from '@/components/security/plain-http'
 import { Field, FormError } from '@/components/setup/form-field'
 import type { CollectorStepResult } from '@/components/setup/collector-step-result'
@@ -11,6 +12,7 @@ import { CopyButton } from '@/components/ui/copy-button'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { fieldErrorsFromApi, useSetupAdoptCollector } from '@/hooks/use-setup'
+import { useVersion } from '@/hooks/use-version'
 import { API_URL, ApiError, apiErrorCode } from '@/lib/api'
 import {
   announcedAddressDiffers,
@@ -108,8 +110,8 @@ export function DiscoveredCollectors({
           </p>
           <ServerUrlInstructions />
           <p className="text-[11px] text-muted-foreground">
-            The collector bundled with the Docker stack registers itself, so this step only
-            appears when the controller runs without it.
+            No router to install on? <code className="font-mono">docker compose --profile collector up -d</code>{' '}
+            runs a collector on this host instead; it announces itself here the same way.
           </p>
         </div>
       ) : null}
@@ -121,13 +123,12 @@ export function DiscoveredCollectors({
 function ServerUrlInstructions() {
   const controllerUrl = API_URL || window.location.origin
   const commands = collectorServerUrlCommands(controllerUrl)
-  const loopback = isLoopbackUrl(controllerUrl)
 
   return (
     <div className="space-y-2">
+      <CollectorPackageInstall />
       <p className="text-xs text-muted-foreground">
-        To add an OpenWrt router, install the perch-collector package, then run this on the
-        router:
+        The package starts right away. Then point it at this controller, as root on the router:
       </p>
       {isPlainHttpUrl(controllerUrl) ? (
         <PlainHttpNotice>
@@ -140,12 +141,7 @@ function ServerUrlInstructions() {
       <pre className="overflow-x-auto rounded-md border bg-muted/40 p-3 font-mono text-[11px] leading-relaxed">
         {commands}
       </pre>
-      {loopback ? (
-        <p className="text-[11px] text-amber-600 dark:text-amber-400">
-          This page is open on {new URL(controllerUrl).hostname}, which a router cannot reach.
-          Replace it with this machine&apos;s LAN address or hostname.
-        </p>
-      ) : null}
+      <LoopbackNotice url={controllerUrl} device="a router" />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[11px] text-muted-foreground">
           It shows up here a few seconds after the restart.
@@ -156,14 +152,70 @@ function ServerUrlInstructions() {
   )
 }
 
-/** A controller URL a router could never reach: this browser's own machine. */
-function isLoopbackUrl(url: string): boolean {
-  try {
-    const host = new URL(url).hostname
-    return host === 'localhost' || host === '0.0.0.0' || host === '[::1]' || host.startsWith('127.')
-  } catch {
-    return false
+const COLLECTOR_OPENWRT_DOCS_URL = 'https://github.com/capthndsme/perch-collector/tree/main/openwrt'
+
+/**
+ * Step one on the router: the perch-collector package this controller pairs
+ * with. OpenWrt 24.10 uses opkg (.ipk), 25.12 apk (.apk); DISTRIB_ARCH picks
+ * the package architecture.
+ */
+function CollectorPackageInstall() {
+  const version = useVersion().data
+  if (!version) return null
+  const docsLink = (
+    <a
+      href={COLLECTOR_OPENWRT_DOCS_URL}
+      target="_blank"
+      rel="noreferrer"
+      className="underline underline-offset-2 hover:text-foreground"
+    >
+      other setups
+    </a>
+  )
+  if (version.collectorVersion === 'latest') {
+    return (
+      <p className="text-xs text-muted-foreground">
+        To add an OpenWrt router, install the perch-collector package from its{' '}
+        <a
+          href={version.collectorReleaseUrl.replace(/\/download\/?$/, '')}
+          target="_blank"
+          rel="noreferrer"
+          className="underline underline-offset-2 hover:text-foreground"
+        >
+          latest release
+        </a>{' '}
+        ({docsLink}).
+      </p>
+    )
   }
+  const base = version.collectorReleaseUrl.replace(/\/+$/, '')
+  const file = `perch-collector_${version.collectorVersion}-r1_\${DISTRIB_ARCH}`
+  const opkg = `opkg update && . /etc/openwrt_release && opkg install ${base}/${file}.ipk`
+  const apk =
+    `apk update && . /etc/openwrt_release && wget -O /tmp/perch-collector.apk ${base}/${file}.apk` +
+    ' && apk add --allow-untrusted /tmp/perch-collector.apk'
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        To add an OpenWrt router, install perch-collector {version.collectorVersion} on it as root
+        ({docsLink}):
+      </p>
+      {[
+        { label: 'OpenWrt 24.10 (opkg)', command: opkg },
+        { label: 'OpenWrt 25.12 (apk)', command: apk },
+      ].map(({ label, command }) => (
+        <div key={label} className="space-y-1">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[11px] font-medium">{label}</p>
+            <CopyButton value={command} ariaLabel={`Copy the ${label} install command`} />
+          </div>
+          <pre className="overflow-x-auto rounded-md border bg-muted/40 p-3 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap">
+            {command}
+          </pre>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 /** "connected for 12 min", "connected just now", "not connected". */

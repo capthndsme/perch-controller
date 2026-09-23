@@ -10,10 +10,13 @@ import {
 import { test } from '@japa/runner'
 
 test.group('ap_agent_credentials', () => {
-  test('join tokens are mlap_ + 32 base64url chars and never repeat', ({ assert }) => {
+  test('join tokens are mlap_ + 40 unambiguous base32 chars and never repeat', ({ assert }) => {
     const first = generateJoinToken()
     const second = generateJoinToken()
-    assert.match(first, /^mlap_[A-Za-z0-9_-]{32}$/)
+    assert.match(first, /^mlap_[0-9a-hjkmnp-tv-z]{40}$/)
+    // No look-alikes in the body: o/0, i/l/1 pairs are reduced to the digit.
+    const bodies = Array.from({ length: 200 }, () => generateJoinToken().slice(5)).join('')
+    assert.notMatch(bodies, /[ilouA-Z_-]/)
     assert.notEqual(first, second)
     assert.isTrue(first.startsWith(JOIN_TOKEN_PREFIX))
   })

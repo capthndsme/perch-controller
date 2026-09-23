@@ -3,8 +3,11 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 /**
  * Secrets of the ap-controller flow (docs/ap-controller.md section 1).
  *
- * - Join token: `mlap_` + 32 base64url chars (24 random bytes). Stored as a
- *   SHA-256 hex digest plus an APP_KEY-encrypted copy.
+ * - Join token: `mlap_` + 40 characters of lower-case Crockford base32
+ *   (200 random bits): no `0`/`o`, `1`/`l`/`i` or case to confuse when it is
+ *   typed from a screen. Stored as a SHA-256 hex digest plus an
+ *   APP_KEY-encrypted copy. Tokens from before 1.0.0-rc.2 (base64url) stay
+ *   valid: a join only compares digests.
  * - Agent credentials: a 32-hex-char id and a 43-char base64url secret
  *   (32 random bytes). Only the secret's SHA-256 is stored. The agent
  *   presents both as `Authorization: Bearer <agentId>.<agentSecret>`.
@@ -25,8 +28,16 @@ export function sha256Hex(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex')
 }
 
+/** Crockford's base32 alphabet, lower case: digits, then letters without i, l, o, u. */
+const JOIN_TOKEN_ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz'
+const JOIN_TOKEN_LENGTH = 40
+
 export function generateJoinToken(): string {
-  return JOIN_TOKEN_PREFIX + randomBytes(24).toString('base64url')
+  // 32 symbols: the low five bits of a byte pick one without bias.
+  const bytes = randomBytes(JOIN_TOKEN_LENGTH)
+  let body = ''
+  for (const byte of bytes) body += JOIN_TOKEN_ALPHABET[byte & 31]
+  return JOIN_TOKEN_PREFIX + body
 }
 
 export function joinTokenDisplayPrefix(token: string): string {

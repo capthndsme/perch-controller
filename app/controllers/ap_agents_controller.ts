@@ -4,6 +4,8 @@ import hub, { AgentOfflineError, AgentTimeoutError } from '#services/ap_agent_hu
 import { agentAuthBudget, recordAgentAuthFailure } from '#services/ap_agent_rate_limit'
 import { forgetAgent, joinAgent, type JoinResult } from '#services/ap_agent_registry'
 import { announceSourceAddress } from '#services/collector_announce'
+import { githubReleaseDownloadUrl, perchVersions } from '#services/perch_version'
+import { isIP } from 'node:net'
 import WifiAccessPointTransformer from '#transformers/wifi_access_point_transformer'
 import { apAgentJoinValidator } from '#validators/ap_agents'
 import type { HttpContext } from '@adonisjs/core/http'
@@ -16,8 +18,6 @@ import type { HttpContext } from '@adonisjs/core/http'
  * register itself. Everything else is mounted under `/api/v1/settings` and
  * is therefore `auth + requirePasswordChange + requireAdmin`.
  */
-
-const DEFAULT_RELEASE_URL = 'https://github.com/capthndsme/perch-apd/releases/latest/download'
 
 /** Fixed list, in this order (docs/ap-controller.md section 4.2). */
 const AGENT_ASSETS = [
@@ -117,14 +117,19 @@ export default class ApAgentsController {
    * GET /api/v1/settings/ap-agent/install
    */
   async installInfo({ request, serialize }: HttpContext) {
+    // The perch-apd release this controller pairs with, never releases/latest
+    // unless PERCH_APD_VERSION=latest asks for it; a mirror overrides both.
+    const { apdVersion } = perchVersions()
     const releaseBaseUrl = stripTrailingSlash(
-      env.get('AP_AGENT_RELEASE_URL') || DEFAULT_RELEASE_URL
+      env.get('AP_AGENT_RELEASE_URL') || githubReleaseDownloadUrl('perch-apd', apdVersion)
     )
     const controllerUrl = stripTrailingSlash(
       env.get('AP_AGENT_CONTROLLER_URL') || `${request.protocol()}://${request.host()}`
     )
     return serialize({
       controllerUrl,
+      apdVersion,
+      rebindDomain: rebindDomainFor(controllerUrl),
       releaseBaseUrl,
       installScriptUrl: `${releaseBaseUrl}/install.sh`,
       assets: AGENT_ASSETS.map((asset) => ({ ...asset })),
@@ -198,4 +203,30 @@ function agentNotFound(response: HttpContext['response'], id: number) {
 
 function stripTrailingSlash(url: string): string {
   return url.replace(/\/+$/, '')
+}
+
+/**
+ * The host name an AP must let through dnsmasq's rebind protection to reach
+ * the controller, or null when the URL holds an IP address (or localhost,
+ * which no AP would use). A stock OpenWrt AP drops a private answer for a
+ * name otherwise; the dashboard's install commands add it to
+ * `dhcp.@dnsmasq[0].rebind_domain` in plain sight (perch-apd never changes
+ * the AP's DNS settings by itself).
+ */
+export function rebindDomainFor(controllerUrl: string): string | null {
+  let host: string
+  try {
+    host = new URL(controllerUrl).hostname
+  } catch {
+    return null
+  }
+  host = host
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '')
+    .toLowerCase()
+  if (host === '' || isIP(host) !== 0) return null
+  if (host === 'localhost' || host.endsWith('.localhost')) return null
+  // Only names the uci line can carry as a bare word.
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(host)) return null
+  return host
 }
