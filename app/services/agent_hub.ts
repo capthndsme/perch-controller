@@ -112,6 +112,8 @@ export class AgentSession {
   closed = false
   /** Set when a newer session for the same row took over. */
   replaced = false
+  /** Agent → server requests being answered. */
+  inboundInFlight = 0
 
   constructor(init: AgentSessionInit) {
     this.id = init.id
@@ -148,9 +150,25 @@ type RpcMessage = {
  */
 export type NotificationHandler = (id: number, params: unknown) => void | Promise<void>
 
+/**
+ * Answers one request the agent sent (agent → server, e.g. `portal.redeem`).
+ * The resolved value is the JSON-RPC `result` (undefined reads as null).
+ * Throw an `AgentRpcError` to answer with that code, message and data; any
+ * other error answers -32603 and is logged.
+ */
+export type RequestHandler = (id: number, params: unknown) => unknown | Promise<unknown>
+
+/**
+ * At most this many agent requests of one session are answered at a time;
+ * more are refused with -32000 `{error: 'busy'}` (the agent retries or falls
+ * back). Bounds what a misbehaving agent can make the server hold.
+ */
+export const MAX_AGENT_REQUESTS_IN_FLIGHT = 32
+
 export class AgentHub {
   #sessions = new Map<number, AgentSession>()
   #notificationHandlers = new Map<string, NotificationHandler>()
+  #requestHandlers = new Map<string, RequestHandler>()
   /** Log prefix: `ap_agent_hub`, `collector_agent_hub`. */
   readonly #logName: string
 
@@ -161,6 +179,14 @@ export class AgentHub {
   /** Routes notifications named `method` to `handler` (one handler per method). */
   onNotification(method: string, handler: NotificationHandler): void {
     this.#notificationHandlers.set(method, handler)
+  }
+
+  /**
+   * Answers agent requests named `method` with `handler` (one handler per
+   * method). Requests without a handler get -32601.
+   */
+  onRequest(method: string, handler: RequestHandler): void {
+    this.#requestHandlers.set(method, handler)
   }
 
   /**
@@ -301,9 +327,9 @@ export class AgentHub {
 
   /**
    * One text frame from the agent. Responses settle pending requests;
-   * notifications go to their `onNotification` handler; requests are
-   * answered with -32601 (the server exposes no methods to agents yet);
-   * anything else is logged and dropped.
+   * notifications go to their `onNotification` handler; requests go to their
+   * `onRequest` handler (-32601 without one); anything else is logged and
+   * dropped.
    */
   handleFrame(session: AgentSession, raw: string): void {
     let message: RpcMessage
@@ -321,14 +347,7 @@ export class AgentHub {
     if (typeof message.method === 'string') {
       const hasId = message.id !== undefined && message.id !== null
       if (hasId) {
-        this.#send(session, {
-          jsonrpc: '2.0',
-          id: message.id,
-          error: {
-            code: RPC_ERRORS.METHOD_NOT_FOUND,
-            message: `method not found: ${message.method}`,
-          },
-        })
+        this.#answerRequest(session, message.id, message.method, message.params)
         return
       }
       const handler = this.#notificationHandlers.get(message.method)
@@ -381,6 +400,62 @@ export class AgentHub {
       return
     }
     pending.resolve(message.result ?? null)
+  }
+
+  #answerRequest(session: AgentSession, requestId: unknown, method: string, params: unknown) {
+    const handler = this.#requestHandlers.get(method)
+    if (!handler) {
+      this.#send(session, {
+        jsonrpc: '2.0',
+        id: requestId,
+        error: { code: RPC_ERRORS.METHOD_NOT_FOUND, message: `method not found: ${method}` },
+      })
+      return
+    }
+    if (session.inboundInFlight >= MAX_AGENT_REQUESTS_IN_FLIGHT) {
+      this.#send(session, {
+        jsonrpc: '2.0',
+        id: requestId,
+        error: {
+          code: RPC_ERRORS.COMMAND_FAILED,
+          message: 'too many requests in flight',
+          data: { error: 'busy' },
+        },
+      })
+      return
+    }
+    session.inboundInFlight += 1
+    const answer = (payload: Record<string, unknown>) => {
+      session.inboundInFlight -= 1
+      // The socket closed while the handler ran: nobody to answer.
+      if (session.closed) return
+      this.#send(session, { jsonrpc: '2.0', id: requestId, ...payload })
+    }
+    let pending: Promise<unknown>
+    try {
+      pending = Promise.resolve(handler(session.id, params))
+    } catch (error) {
+      pending = Promise.reject(error)
+    }
+    pending.then(
+      (result) => answer({ result: result === undefined ? null : result }),
+      (error: unknown) => {
+        if (error instanceof AgentRpcError) {
+          answer({
+            error:
+              error.data === undefined
+                ? { code: error.code, message: error.message }
+                : { code: error.code, message: error.message, data: error.data },
+          })
+          return
+        }
+        logger.error(
+          { id: session.id, method, err: error },
+          `${this.#logName}: request handler failed`
+        )
+        answer({ error: { code: RPC_ERRORS.INTERNAL_ERROR, message: 'internal error' } })
+      }
+    )
   }
 
   #send(session: AgentSession, payload: object) {

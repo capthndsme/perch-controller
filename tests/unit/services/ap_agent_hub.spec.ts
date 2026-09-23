@@ -3,6 +3,7 @@ import {
   AgentRpcError,
   AgentTimeoutError,
   AgentHub,
+  MAX_AGENT_REQUESTS_IN_FLIGHT,
   type AgentConnection,
 } from '#services/ap_agent_hub'
 import { test } from '@japa/runner'
@@ -157,5 +158,89 @@ test.group('AgentHub', () => {
     assert.equal(one.connection.closedWith?.code, 1001)
     assert.equal(two.connection.closedWith?.code, 1001)
     assert.deepEqual(hub.onlineIds(), [])
+  })
+})
+
+test.group('AgentHub | agent requests (onRequest)', () => {
+  const settle = () => new Promise((resolve) => setImmediate(resolve))
+
+  test('answers with the handler result; null for undefined', async ({ assert }) => {
+    const hub = new AgentHub('collector')
+    const { connection, session } = register(hub, 7)
+    const seen: Array<[number, unknown]> = []
+    hub.onRequest('portal.redeem', async (id, params) => {
+      seen.push([id, params])
+      return { grant: 1 }
+    })
+    hub.onRequest('portal.nothing', () => undefined)
+    hub.handleFrame(
+      session,
+      JSON.stringify({ jsonrpc: '2.0', id: 'a1', method: 'portal.redeem', params: { code: 'X' } })
+    )
+    hub.handleFrame(session, JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'portal.nothing' }))
+    await settle()
+    assert.deepEqual(seen, [[7, { code: 'X' }]])
+    assert.deepEqual(connection.sent, [
+      { jsonrpc: '2.0', id: 'a1', result: { grant: 1 } },
+      { jsonrpc: '2.0', id: 2, result: null },
+    ])
+  })
+
+  test('AgentRpcError answers its code and data; other errors -32603', async ({ assert }) => {
+    const hub = new AgentHub('collector')
+    const { connection, session } = register(hub)
+    hub.onRequest('refuse', () => {
+      throw new AgentRpcError(-32000, 'nope', { error: 'invalid_code' })
+    })
+    hub.onRequest('crash', async () => {
+      throw new Error('database down')
+    })
+    hub.handleFrame(session, JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'refuse' }))
+    hub.handleFrame(session, JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'crash' }))
+    await settle()
+    assert.deepEqual(connection.sent, [
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        error: { code: -32000, message: 'nope', data: { error: 'invalid_code' } },
+      },
+      { jsonrpc: '2.0', id: 2, error: { code: -32603, message: 'internal error' } },
+    ])
+  })
+
+  test('unknown methods are -32601; a closed session gets no answer', async ({ assert }) => {
+    const hub = new AgentHub('collector')
+    const { connection, session } = register(hub)
+    let release!: () => void
+    hub.onRequest('slow', () => new Promise<void>((resolve) => (release = resolve)))
+    hub.handleFrame(session, JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'missing' }))
+    hub.handleFrame(session, JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'slow' }))
+    hub.unregister(session)
+    release()
+    await settle()
+    assert.deepEqual(connection.sent, [
+      { jsonrpc: '2.0', id: 1, error: { code: -32601, message: 'method not found: missing' } },
+    ])
+  })
+
+  test('refuses more than MAX_AGENT_REQUESTS_IN_FLIGHT at once', async ({ assert }) => {
+    const hub = new AgentHub('collector')
+    const { connection, session } = register(hub)
+    const releases: Array<() => void> = []
+    hub.onRequest('slow', () => new Promise<void>((resolve) => releases.push(resolve)))
+    for (let i = 1; i <= MAX_AGENT_REQUESTS_IN_FLIGHT + 1; i++) {
+      hub.handleFrame(session, JSON.stringify({ jsonrpc: '2.0', id: i, method: 'slow' }))
+    }
+    assert.deepEqual(connection.sent, [
+      {
+        jsonrpc: '2.0',
+        id: MAX_AGENT_REQUESTS_IN_FLIGHT + 1,
+        error: { code: -32000, message: 'too many requests in flight', data: { error: 'busy' } },
+      },
+    ])
+    for (const release of releases) release()
+    await settle()
+    assert.equal(session.inboundInFlight, 0)
+    assert.lengthOf(connection.sent, MAX_AGENT_REQUESTS_IN_FLIGHT + 1)
   })
 })

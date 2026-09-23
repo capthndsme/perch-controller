@@ -178,7 +178,9 @@ export class FakeCollector {
     try {
       this.#reply({ id: call.id, result: await handler(call.params) })
     } catch (error) {
-      this.#reply({ id: call.id, error: { code: -32603, message: String(error) } })
+      // A handler may throw an error carrying the JSON-RPC error to answer.
+      const rpc = (error as { rpc?: Record<string, unknown> }).rpc
+      this.#reply({ id: call.id, error: rpc ?? { code: -32603, message: String(error) } })
     }
   }
 
