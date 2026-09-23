@@ -17,7 +17,12 @@ import { loadDeviceAttachments } from '#services/infra_topology'
 import { getPresenceSettings } from '#services/presence_settings'
 import { categoryFor, getProtocolCategoryMap } from '#services/protocol_categories'
 import { cacheKey, cachedQuery, windowCache } from '#services/query_cache'
-import { pickAggregateTier, windowSpanSeconds } from '#services/rollup_tiers'
+import {
+  HOURLY_ROLLUP_SECONDS,
+  coveredFrom,
+  pickAggregateTier,
+  windowSpanSeconds,
+} from '#services/rollup_tiers'
 import {
   bucketLabel,
   cacheResolutionFor,
@@ -1659,6 +1664,8 @@ type PeerHistoryEntry = {
 }
 
 type PeerHistoryResponse = {
+  /** Start of the hour rows read: the hour that holds the window start. */
+  coveredFrom: string
   totalBytes: number
   peers: PeerHistoryEntry[]
   asns: TopAsn[]
@@ -1691,7 +1698,10 @@ async function queryPeerHistory({
     ttlMs,
     async () => {
       const rows = await queryPeerHistoryUncached({ mac, scope, since, until, collectorId, limit })
-      return buildPeerHistoryResponse(rows, scope)
+      return {
+        coveredFrom: coveredFrom(since.toUTC(), HOURLY_ROLLUP_SECONDS).toISO()!,
+        ...(await buildPeerHistoryResponse(rows, scope)),
+      }
     }
   )
 }
@@ -1711,8 +1721,11 @@ async function queryPeerHistoryUncached({
   collectorId?: number
   limit: number
 }): Promise<PeerHistoryRow[]> {
-  const sinceSql = since.toFormat('yyyy-MM-dd HH:mm:ss')
-  const untilSql = until.toFormat('yyyy-MM-dd HH:mm:ss')
+  // Hourly rows only: from the hour that holds the window start
+  // (`coveredFrom`), so a short window is not cut to the minutes since the
+  // top of the hour.
+  const sinceSql = coveredFrom(since.toUTC(), HOURLY_ROLLUP_SECONDS).toFormat('yyyy-MM-dd HH:mm:ss')
+  const untilSql = until.toUTC().toFormat('yyyy-MM-dd HH:mm:ss')
   const where: string[] = ['p.scope = ?', 'p.hour_start >= ?', 'p.hour_start < ?']
   const bindings: Array<string | number> = [scope, sinceSql, untilSql]
   if (mac) {
@@ -1736,7 +1749,7 @@ async function queryPeerHistoryUncached({
     FROM device_peer_buckets_hourly p
     WHERE ${where.join(' AND ')}
     GROUP BY p.peer_ip
-    ORDER BY (SUM(p.bytes_in) + SUM(p.bytes_out)) DESC
+    ORDER BY (SUM(p.bytes_in) + SUM(p.bytes_out)) DESC, p.peer_ip ASC
     LIMIT ?
   `
   return rawRows<PeerHistoryRow>(await db.rawQuery(sql, bindings))
@@ -1745,7 +1758,7 @@ async function queryPeerHistoryUncached({
 async function buildPeerHistoryResponse(
   rows: PeerHistoryRow[],
   scope: 'wan' | 'lan'
-): Promise<PeerHistoryResponse> {
+): Promise<Omit<PeerHistoryResponse, 'coveredFrom'>> {
   const base = rows.map((row) => {
     const bytesIn = toNumber(row.bytesIn)
     const bytesOut = toNumber(row.bytesOut)

@@ -1,4 +1,4 @@
-import type { DateTime } from 'luxon'
+import { DateTime } from 'luxon'
 
 /**
  * Rollup tier definitions and read-side tier selection — shared by every
@@ -93,4 +93,19 @@ export function pickAggregateTier(since: DateTime, until: DateTime): RollupTier 
 /** Backwards-compatible boolean form of `pickAggregateTier`. */
 export function useHourlyForAggregate(since: DateTime, until: DateTime): boolean {
   return pickAggregateTier(since, until) !== null
+}
+
+/**
+ * Start of a window-total read on rows of `grainSeconds` (hour rows, 5-minute
+ * slots): the start of the row that contains `since`, so its partial period
+ * counts. `hour_start >= since` left it out: a "last hour" list read only
+ * the minutes since the top of the hour (nothing at all right after it).
+ * The list then covers up to one grain more than asked, never less; the
+ * responses name that start as `coveredFrom`.
+ */
+export function coveredFrom(since: DateTime, grainSeconds: number): DateTime {
+  const sec = Math.floor(since.toSeconds())
+  return DateTime.fromSeconds(sec - (((sec % grainSeconds) + grainSeconds) % grainSeconds), {
+    zone: 'utc',
+  })
 }

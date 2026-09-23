@@ -5,6 +5,7 @@ import type { ChartSettings } from '#services/chart_settings'
 import {
   FIVE_MIN_ROLLUP_SECONDS,
   HOURLY_ROLLUP_SECONDS,
+  coveredFrom,
   windowSpanSeconds,
 } from '#services/rollup_tiers'
 import {
@@ -16,6 +17,7 @@ import {
   planWindowSeries,
   pollIntervalSeconds,
   querySeriesSums,
+  tierCoverage,
   type SeriesSource,
   type SeriesTier,
 } from '#services/series_buckets'
@@ -77,6 +79,8 @@ export type ServerEntry = {
 }
 
 export type ServicesSummary = {
+  /** Start of the rows read (`coveredFrom`): the 5-minute slot or hour that holds `from`. */
+  coveredFrom: string
   totalBytesServed: number
   totalBytesReceived: number
   services: ServiceEntry[]
@@ -84,6 +88,7 @@ export type ServicesSummary = {
 }
 
 export type DeviceServicesSummary = {
+  coveredFrom: string
   totalBytesServed: number
   totalBytesReceived: number
   services: Array<Omit<ServiceEntry, 'servers'>>
@@ -154,6 +159,30 @@ function sql(ts: DateTime): string {
   return ts.toFormat('yyyy-MM-dd HH:mm:ss')
 }
 
+/** Windows up to this long list names from the 5-minute table (kept 14 days). */
+const LIST_FINE_MAX_SPAN_SECONDS = 2 * 86_400
+
+/**
+ * Which table a name list reads and from when: the 5-minute slots for a
+ * window of up to two days that they still cover, hour rows otherwise; from
+ * the slot or hour that holds the window start (`coveredFrom`), so a short
+ * window is never cut to the minutes since the top of the hour.
+ */
+async function listSource(since: DateTime, until: DateTime) {
+  const hourly = SERVICE_TIERS[2]
+  const fine = SERVICE_TIERS[1]
+  if (windowSpanSeconds(since, until) <= LIST_FINE_MAX_SPAN_SECONDS) {
+    const from = coveredFrom(since.toUTC(), fine.grainSeconds)
+    const [candidate] = await tierCoverage([fine, hourly], Math.floor(from.toSeconds()))
+    if (candidate.covers) return { table: fine.table, timeColumn: fine.timeColumn, from }
+  }
+  return {
+    table: hourly.table,
+    timeColumn: hourly.timeColumn,
+    from: coveredFrom(since.toUTC(), hourly.grainSeconds),
+  }
+}
+
 /** Whether any service history exists for this MAC (drives 404 semantics). */
 export async function serviceHistoryExistsForMac(mac: string): Promise<boolean> {
   const rows = await db
@@ -188,8 +217,9 @@ async function queryServicesSummaryUncached(opts: {
   collectorId?: number
   limit: number
 }): Promise<ServicesSummary> {
-  const where: string[] = ['s.hour_start >= ?', 's.hour_start < ?']
-  const bindings: Array<string | number> = [sql(opts.since), sql(opts.until)]
+  const source = await listSource(opts.since, opts.until)
+  const where: string[] = [`s.${source.timeColumn} >= ?`, `s.${source.timeColumn} < ?`]
+  const bindings: Array<string | number> = [sql(source.from), sql(opts.until)]
   if (opts.collectorId) {
     where.push('s.collector_id = ?')
     bindings.push(opts.collectorId)
@@ -204,7 +234,7 @@ async function queryServicesSummaryUncached(opts: {
         s.protocol            AS protocol,
         SUM(s.bytes_served)   AS bytesServed,
         SUM(s.bytes_received) AS bytesReceived
-      FROM device_service_buckets_hourly s
+      FROM ${source.table} s
       WHERE ${where.join(' AND ')}
       GROUP BY s.collector_id, s.mac, s.server_name, s.protocol
     `,
@@ -284,7 +314,13 @@ async function queryServicesSummaryUncached(opts: {
     .map(({ names, ...server }) => ({ ...server, serviceCount: names.size }))
     .sort((a, b) => b.bytesServed - a.bytesServed)
 
-  return { totalBytesServed, totalBytesReceived, services: serviceList, servers: serverList }
+  return {
+    coveredFrom: source.from.toISO()!,
+    totalBytesServed,
+    totalBytesReceived,
+    services: serviceList,
+    servers: serverList,
+  }
 }
 
 /** One device's served names over the window. */
@@ -300,8 +336,13 @@ export async function queryDeviceServices(opts: {
     cacheKey(['services:device', opts.mac, segment, opts.collectorId ?? '', opts.limit]),
     ttlMs,
     async () => {
-      const where: string[] = ['s.mac = ?', 's.hour_start >= ?', 's.hour_start < ?']
-      const bindings: Array<string | number> = [opts.mac, sql(opts.since), sql(opts.until)]
+      const source = await listSource(opts.since, opts.until)
+      const where: string[] = [
+        's.mac = ?',
+        `s.${source.timeColumn} >= ?`,
+        `s.${source.timeColumn} < ?`,
+      ]
+      const bindings: Array<string | number> = [opts.mac, sql(source.from), sql(opts.until)]
       if (opts.collectorId) {
         where.push('s.collector_id = ?')
         bindings.push(opts.collectorId)
@@ -314,7 +355,7 @@ export async function queryDeviceServices(opts: {
             s.protocol            AS protocol,
             SUM(s.bytes_served)   AS bytesServed,
             SUM(s.bytes_received) AS bytesReceived
-          FROM device_service_buckets_hourly s
+          FROM ${source.table} s
           WHERE ${where.join(' AND ')}
           GROUP BY s.server_name, s.protocol
           ORDER BY SUM(s.bytes_served) DESC, SUM(s.bytes_received) DESC
@@ -325,6 +366,7 @@ export async function queryDeviceServices(opts: {
       const totalBytesServed = rows.reduce((sum, r) => sum + n(r.bytesServed), 0)
       const totalBytesReceived = rows.reduce((sum, r) => sum + n(r.bytesReceived), 0)
       return {
+        coveredFrom: source.from.toISO()!,
         totalBytesServed,
         totalBytesReceived,
         services: rows.slice(0, opts.limit).map((r) => {
