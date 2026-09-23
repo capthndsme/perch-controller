@@ -157,7 +157,7 @@ test.group('collector settings API', (group) => {
       baseUrl: 'http://192.168.1.51:9800',
     })
     response.assertStatus(201)
-    const { collector, probe } = response.body().data
+    const { collector, probe } = response.body().data as any
     assert.isFalse(probe.ok)
     assert.match(probe.error as string, /fetch failed/)
 
@@ -187,7 +187,7 @@ test.group('collector settings API', (group) => {
     other.assertStatus(201)
 
     const collide = await client
-      .put(`${ENDPOINT}/${other.body().data.collector.id}`)
+      .put(`${ENDPOINT}/${(other.body().data as any).collector.id}`)
       .bearerToken(adminToken)
       .json({ baseUrl: seededCollector.baseUrl })
     collide.assertStatus(422)
@@ -203,7 +203,7 @@ test.group('collector settings API', (group) => {
       .bearerToken(adminToken)
       .json({ name: 'keyed', baseUrl: 'http://192.168.1.53:9800', apiKey: 'keep-me-please' })
     created.assertStatus(201)
-    const id = created.body().data.collector.id as number
+    const id = (created.body().data as any).collector.id as number
 
     const renamed = await client
       .put(`${ENDPOINT}/${id}`)

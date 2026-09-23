@@ -200,7 +200,7 @@ test.group('infra | port ingest from the Gateway agent', (group) => {
     const layout = await client.get('/api/v1/infra/layout').bearerToken(adminToken)
     layout.assertStatus(200)
     const body = layout.body().data
-    const node = body.nodes.find((n: any) => n.binding?.type === 'collector')
+    const node = body.nodes.find((n: any) => n.binding?.type === 'collector')!
     assert.equal(node.kind, 'gateway')
     assert.deepEqual(node.binding, {
       type: 'collector',
@@ -226,8 +226,8 @@ test.group('infra | port ingest from the Gateway agent', (group) => {
     const before = await db.from('infra_ports').where('node_id', nodeId).orderBy('id')
 
     const layout = await client.get('/api/v1/infra/layout').bearerToken(adminToken)
-    const node = layout.body().data.nodes.find((n: any) => n.id === nodeId)
-    assert.isTrue(node.binding.portsSupported)
+    const node = layout.body().data.nodes.find((n: any) => n.id === nodeId)!
+    assert.isTrue(node.binding!.portsSupported)
     assert.deepEqual(
       node.ports.map((port: any) => [port.key, port.role, port.medium, port.origin]),
       [
@@ -242,8 +242,8 @@ test.group('infra | port ingest from the Gateway agent', (group) => {
     await row.refresh()
     assert.isUndefined(row.lastStatus?.gateway?.portsReported)
     const again = await client.get('/api/v1/infra/layout').bearerToken(adminToken)
-    const stale = again.body().data.nodes.find((n: any) => n.id === nodeId)
-    assert.isNull(stale.binding.portsSupported)
+    const stale = again.body().data.nodes.find((n: any) => n.id === nodeId)!
+    assert.isNull(stale.binding!.portsSupported)
     assert.lengthOf(stale.ports, 2)
   })
 

@@ -515,7 +515,7 @@ test.group('setup wizard | resume with the step-1 credentials', (group) => {
       .json({ ...LOGIN, email: 'someone@example.com' })
     unknownEmail.assertStatus(401)
     assert.deepEqual(wrongPassword.body(), unknownEmail.body())
-    assert.equal(wrongPassword.body().error, 'invalid_credentials')
+    assert.equal((wrongPassword.body() as { error?: string }).error, 'invalid_credentials')
     assert.notProperty(wrongPassword.body(), 'token')
   })
 
@@ -575,7 +575,7 @@ test.group('setup wizard | resume with the step-1 credentials', (group) => {
     blocked.assertStatus(429)
     blocked.assertBodyContains({ error: 'rate_limited' })
     assert.isAbove(Number(blocked.header('retry-after')), 0)
-    assert.isAbove(blocked.body().retryAfterSeconds, 0)
+    assert.isAbove((blocked.body() as { retryAfterSeconds?: number }).retryAfterSeconds!, 0)
 
     _resetSetupLoginRateLimits()
     const ok = await client.post('/api/v1/setup/login').json(LOGIN)
@@ -585,7 +585,7 @@ test.group('setup wizard | resume with the step-1 credentials', (group) => {
   test('a malformed body counts as a failure', async ({ client }) => {
     await client.post('/api/v1/setup/admin').json(ADMIN_PAYLOAD)
     for (let i = 0; i < SETUP_LOGIN_FAILURE_LIMIT; i++) {
-      const r = await client.post('/api/v1/setup/login').json({ email: 'not-an-email' })
+      const r = await client.post('/api/v1/setup/login').json({ email: 'not-an-email' } as any)
       r.assertStatus(422)
     }
     const blocked = await client.post('/api/v1/setup/login').json(LOGIN)

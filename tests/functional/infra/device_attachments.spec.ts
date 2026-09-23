@@ -29,9 +29,12 @@ import { DateTime } from 'luxon'
 const NODES = '/api/v1/infra/nodes'
 
 async function created(client: ApiClient, token: string, body: Record<string, unknown>) {
-  const response = await client.post(NODES).bearerToken(token).json(body)
+  const response = await client
+    .post(NODES)
+    .bearerToken(token)
+    .json(body as any)
   response.assertStatus(201)
-  return response.body().data
+  return (response.body() as any).data
 }
 
 /** `/devices` rows keyed by MAC. */
@@ -56,7 +59,8 @@ async function attachmentOf(client: ApiClient, token: string, mac: string) {
 async function statePresence(client: ApiClient, token: string, nodeId: number) {
   const response = await client.get('/api/v1/infra/state').bearerToken(token)
   response.assertStatus(200)
-  return response.body().data.nodes.find((node: { id: number }) => node.id === nodeId).presence
+  return (response.body() as any).data.nodes.find((node: { id: number }) => node.id === nodeId)
+    .presence
 }
 
 /** Every SQL statement the default connection runs while `fn` does. */
@@ -180,7 +184,7 @@ test.group('infra | devices on the map', (group) => {
     // The AP goes silent: its port can no longer be believed.
     await setLastSeen('wifi_access_points', ap.apId, 600)
     const silent = await presenceOf(client, operatorToken, macs.camera)
-    assert.deepInclude(silent.attachment.uplink, {
+    assert.deepInclude(silent.attachment!.uplink, {
       live: false,
       up: null,
       speedMbps: null,
@@ -211,7 +215,7 @@ test.group('infra | devices on the map', (group) => {
     })
     let { attachment } = await presenceOf(client, operatorToken, mac)
     assert.deepInclude(attachment, { nodeId: box.node.id, nodeName: 'Media box' })
-    assert.deepInclude(attachment.uplink, {
+    assert.deepInclude(attachment!.uplink, {
       linkId: box.link.id,
       nodeName: 'Office switch',
       nodeKind: 'switch',
@@ -221,14 +225,14 @@ test.group('infra | devices on the map', (group) => {
     // A cable on eth0 (position 0) makes that the uplink.
     const first = await seedLink(box.node.ports[0].id, port('1'))
     attachment = await attachmentOf(client, operatorToken, mac)
-    assert.deepInclude(attachment.uplink, { linkId: first, portKey: '1' })
+    assert.deepInclude(attachment!.uplink, { linkId: first, portKey: '1' })
 
     // The operator's names win, on both ends.
     await client.patch(`${NODES}/${sw.node.id}`).bearerToken(adminToken).json({ name: 'Rack' })
     await client.patch(`${NODES}/${box.node.id}`).bearerToken(adminToken).json({ name: 'TV box' })
     attachment = await attachmentOf(client, operatorToken, mac)
-    assert.equal(attachment.nodeName, 'TV box')
-    assert.equal(attachment.uplink.nodeName, 'Rack')
+    assert.equal(attachment!.nodeName, 'TV box')
+    assert.equal(attachment!.uplink!.nodeName, 'Rack')
     const rows = await deviceRows(client, operatorToken)
     assert.deepEqual(rows.get(mac).attachment, attachment)
   })
@@ -273,7 +277,7 @@ test.group('infra | devices on the map', (group) => {
         const fromRow = rows.get(mac).presence
         const fromEndpoint = await presenceOf(client, operatorToken, mac)
         const fromState = await statePresence(client, operatorToken, nodes[name as 'quiet'])
-        for (const other of [fromEndpoint, fromState]) {
+        for (const other of [fromEndpoint, fromState] as any[]) {
           assert.equal(other.status, fromRow.status, name)
           assert.equal(other.via, fromRow.via, name)
           assert.isBelow(

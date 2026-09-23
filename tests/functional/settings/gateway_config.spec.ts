@@ -69,7 +69,7 @@ test.group('gateway settings API', (group) => {
     const token = await seed()
     const response = await client.get(ENDPOINT).bearerToken(token)
     response.assertStatus(200)
-    const data = response.body().data
+    const data = (response.body() as any).data
     assert.deepEqual(data.settings, { ...GATEWAY_CONFIG_DEFAULTS })
     assert.equal(data.settings.authoritativeRevertDelaySeconds, 90)
     assert.equal(data.settings.confirmTimeoutSeconds, 90)
@@ -95,11 +95,11 @@ test.group('gateway settings API', (group) => {
       allowInsecureTransport: true,
       localStatePath: '/mnt/usb/perch-state',
     }
-    assert.deepEqual(first.body().data.settings, expected)
+    assert.deepEqual((first.body() as any).data.settings, expected)
 
     const second = await client.patch(ENDPOINT).bearerToken(token).json({ keepRevisions: 1000 })
     second.assertStatus(200)
-    assert.deepEqual(second.body().data.settings, { ...expected, keepRevisions: 1000 })
+    assert.deepEqual((second.body() as any).data.settings, { ...expected, keepRevisions: 1000 })
     assert.deepEqual(await getGatewayConfigSettings(), { ...expected, keepRevisions: 1000 })
   })
 
@@ -141,7 +141,7 @@ test.group('gateway settings API', (group) => {
       localStatePath: '/../etc',
     })
     const response = await client.get(ENDPOINT).bearerToken(token)
-    assert.deepEqual(response.body().data.settings, {
+    assert.deepEqual((response.body() as any).data.settings, {
       ...GATEWAY_CONFIG_DEFAULTS,
       confirmTimeoutSeconds: 30,
       keepRevisions: 10000,

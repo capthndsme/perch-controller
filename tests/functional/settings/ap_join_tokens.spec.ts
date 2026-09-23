@@ -33,7 +33,7 @@ test.group('perch-apd settings: join tokens', (group) => {
     response.assertStatus(201)
     assert.equal(response.header('cache-control'), 'no-store')
 
-    const { token, joinToken } = response.body().data
+    const { token, joinToken } = response.body().data as any
     assert.match(token, /^mlap_[0-9a-hjkmnp-tv-z]{40}$/)
     assert.equal(joinToken.prefix, token.slice(0, 9))
     assert.equal(joinToken.label, 'upstairs')
@@ -57,7 +57,7 @@ test.group('perch-apd settings: join tokens', (group) => {
     const { adminToken } = await seedSetupComplete()
     const response = await client.post(ENDPOINT).bearerToken(adminToken).json({})
     response.assertStatus(201)
-    const { joinToken } = response.body().data
+    const { joinToken } = response.body().data as any
     assert.isNull(joinToken.label)
     assert.isNull(joinToken.expiresAt)
     assert.isNull(joinToken.maxUses)
@@ -140,7 +140,7 @@ test.group('perch-apd settings: join tokens', (group) => {
     assert.equal(row.revokedAt?.toISO(), revokedAt)
 
     const list = await client.get(ENDPOINT).bearerToken(adminToken)
-    assert.equal(list.body().data[0].status, 'revoked')
+    assert.equal((list.body().data as any)[0].status, 'revoked')
 
     const missing = await client.delete(`${ENDPOINT}/999`).bearerToken(adminToken)
     missing.assertStatus(404)
