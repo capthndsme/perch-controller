@@ -1,9 +1,21 @@
 import { UNKNOWN_ORG, enrichIp, type AsnInfo } from '#services/asn_enrichment'
 import { UNKNOWN_CATEGORY } from '#services/protocol_categories'
 import { cacheKey, cachedQuery, windowCache } from '#services/query_cache'
-import { windowSpanSeconds } from '#services/rollup_tiers'
+import type { ChartSettings } from '#services/chart_settings'
+import { HOURLY_ROLLUP_SECONDS, windowSpanSeconds } from '#services/rollup_tiers'
+import {
+  bucketLabel,
+  cacheResolutionFor,
+  denseBuckets,
+  estimateBucketSeconds,
+  mbps,
+  planSeries,
+  querySeriesSums,
+  type SeriesTier,
+} from '#services/series_buckets'
+import type { SeriesMeta } from '#services/service_history'
 import db from '@adonisjs/lucid/services/db'
-import { DateTime } from 'luxon'
+import { type DateTime } from 'luxon'
 
 /**
  * Read side of "where did the bytes go, by site / app"
@@ -86,11 +98,27 @@ export type DestinationsSummary = {
 }
 
 export type DestinationTrafficBucket = {
-  bucketStart: string | null
-  bucketEnd: string | null
+  bucketStart: string
+  bucketEnd: string
+  /** Seconds of the bucket inside the window and not in the future. */
+  seconds: number
   bytesIn: number
   bytesOut: number
+  mbpsIn: number
+  mbpsOut: number
 }
+
+export type DestinationTrafficSeries = SeriesMeta & { buckets: DestinationTrafficBucket[] }
+
+/** Destinations are stored per hour only; their charts never go finer. */
+const DESTINATION_TIERS: readonly SeriesTier[] = [
+  {
+    source: '1h',
+    grainSeconds: HOURLY_ROLLUP_SECONDS,
+    table: 'device_destination_buckets_hourly',
+    timeColumn: 'hour_start',
+  },
+]
 
 /** Members listed under each domain group. */
 const GROUP_NAMES_LIMIT = 10
@@ -109,13 +137,6 @@ function pct(part: number, total: number): number {
 
 function sql(ts: DateTime): string {
   return ts.toFormat('yyyy-MM-dd HH:mm:ss')
-}
-
-function toIso(value: Date | string | null | undefined): string | null {
-  if (!value) return null
-  if (value instanceof Date) return DateTime.fromJSDate(value, { zone: 'utc' }).toISO()
-  const parsed = DateTime.fromSQL(value, { zone: 'utc' })
-  return parsed.isValid ? parsed.toISO() : String(value)
 }
 
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/
@@ -393,85 +414,86 @@ async function queryDestinationsSummaryUncached(opts: {
   return { totalBytes, totalBytesIn, totalBytesOut, destinations, domains, categories }
 }
 
-/** Hourly (or daily) in/out series for one destination name. */
+/**
+ * Dense in/out series for one destination name: every bucket of the window,
+ * empty ones as zero (`series_buckets.ts`). Only hourly rows exist, so the
+ * width is at least an hour whatever the admin floor says.
+ */
 export async function queryDestinationTraffic(opts: {
   serverName: string
   since: DateTime
   until: DateTime
-  resolutionSeconds: 3600 | 86400
   collectorId?: number
-}): Promise<DestinationTrafficBucket[]> {
+  requestedSeconds?: number
+  settings: ChartSettings
+}): Promise<DestinationTrafficSeries> {
+  const { minBucketSeconds: floorSeconds, maxPoints } = opts.settings
+  const estimate = estimateBucketSeconds(
+    windowSpanSeconds(opts.since, opts.until),
+    Math.max(HOURLY_ROLLUP_SECONDS, opts.requestedSeconds ?? 0),
+    maxPoints
+  )
   const { ttlMs, segment } = windowCache(
-    opts.resolutionSeconds === 3600 ? '1h' : '1d',
+    cacheResolutionFor(estimate),
     opts.since,
     opts.until,
     Date.now()
   )
-  return cachedQuery(
+  const cached = await cachedQuery(
     cacheKey([
       'destinations:traffic',
       opts.serverName,
       segment,
-      opts.resolutionSeconds,
       opts.collectorId ?? '',
+      opts.requestedSeconds ?? '',
+      maxPoints,
     ]),
     ttlMs,
     async () => {
-      const daily = opts.resolutionSeconds === 86400
-      const bucketExpr = daily
-        ? 'DATE_SUB(d.hour_start, INTERVAL MOD(TO_SECONDS(d.hour_start), 86400) SECOND)'
-        : 'd.hour_start'
-      const where: string[] = ['d.server_name = ?', 'd.hour_start >= ?', 'd.hour_start < ?']
-      const bindings: Array<string | number> = [opts.serverName, sql(opts.since), sql(opts.until)]
+      const plan = planSeries({
+        sinceSec: Math.floor(opts.since.toSeconds()),
+        untilSec: Math.floor(opts.until.toSeconds()),
+        nowSec: Math.floor(Date.now() / 1000),
+        floorSeconds,
+        maxPoints,
+        requestedSeconds: opts.requestedSeconds,
+        tiers: DESTINATION_TIERS.map((t) => ({ ...t, covers: true })),
+      })
+      const where = ['t.server_name = ?']
+      const bindings: Array<string | number> = [opts.serverName]
       if (opts.collectorId) {
-        where.push('d.collector_id = ?')
+        where.push('t.collector_id = ?')
         bindings.push(opts.collectorId)
       }
-      const rows = rawRows<{
-        bucketStart: Date | string
-        bytesIn: bigint | number | string
-        bytesOut: bigint | number | string
-      }>(
-        await db.rawQuery(
-          `
-          SELECT
-            ${bucketExpr}    AS bucketStart,
-            SUM(d.bytes_in)  AS bytesIn,
-            SUM(d.bytes_out) AS bytesOut
-          FROM device_destination_buckets_hourly d
-          WHERE ${where.join(' AND ')}
-          GROUP BY bucketStart
-          ORDER BY bucketStart ASC
-        `,
-          bindings
-        )
-      )
-      return rows.map((r) => {
-        const start = toIso(r.bucketStart)
-        return {
-          bucketStart: start,
-          bucketEnd: start
-            ? DateTime.fromISO(start, { setZone: true })
-                .plus({ seconds: opts.resolutionSeconds })
-                .toISO()
-            : null,
-          bytesIn: n(r.bytesIn),
-          bytesOut: n(r.bytesOut),
-        }
+      const sums = await querySeriesSums({
+        plan,
+        sinceSql: sql(opts.since.toUTC()),
+        untilSql: sql(opts.until.toUTC()),
+        columns: ['bytes_in', 'bytes_out'],
+        where,
+        bindings,
       })
+      return { plan, sums: [...sums.entries()] }
     }
   )
-}
 
-/** Daily grain once hourly points would exceed ~2000 (same rule as services). */
-export function pickDestinationResolution(
-  requested: '1h' | '1d' | undefined,
-  since: DateTime,
-  until: DateTime
-): 3600 | 86400 {
-  if (requested === '1d') return 86400
-  if (requested === '1h') return 3600
-  return windowSpanSeconds(since, until) / 3600 > 2000 ? 86400 : 3600
+  const { plan } = cached
+  return {
+    bucketSeconds: plan.bucketSeconds,
+    resolution: bucketLabel(plan.bucketSeconds),
+    source: plan.tier.source,
+    floorSeconds,
+    maxPoints,
+    buckets: denseBuckets(plan, new Map(cached.sums)).map((b) => ({
+      bucketStart: b.bucketStart,
+      bucketEnd: b.bucketEnd,
+      seconds: b.seconds,
+      bytesIn: b.a,
+      bytesOut: b.b,
+      mbpsIn: mbps(b.a, b.seconds),
+      mbpsOut: mbps(b.b, b.seconds),
+    })),
+  }
 }
 
 function dominant(byCategory: Map<string, number>): string | null {

@@ -105,12 +105,14 @@ export function useDestinationTraffic(
   serverName: string | undefined,
   options: {
     window: TimeWindow
-    resolution: '1h' | '1d'
+    /** Finest bucket wanted; omitted = the server's automatic choice (hourly at best). */
+    resolution?: string
     collectorId?: number
     refreshInterval?: RefreshInterval
   },
 ) {
-  const params = new URLSearchParams({ resolution: options.resolution })
+  const params = new URLSearchParams()
+  if (options.resolution) params.set('resolution', options.resolution)
   applyWindowToParams(params, options.window)
   if (options.collectorId) params.set('collectorId', String(options.collectorId))
 
@@ -121,7 +123,7 @@ export function useDestinationTraffic(
       serverName ?? '',
       'traffic',
       windowKey(options.window),
-      options.resolution,
+      options.resolution ?? 'auto',
       options.collectorId ?? 'all',
     ] as const,
     queryFn: () =>
@@ -129,6 +131,7 @@ export function useDestinationTraffic(
         `/api/v1/destinations/${encodeURIComponent(serverName!)}/traffic?${params}`,
       ),
     enabled: Boolean(serverName),
+    // Hourly data: the open bucket moves at most once a minute.
     refetchInterval: effectiveRefreshInterval(options.window, options.refreshInterval, 60_000),
   })
 }

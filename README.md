@@ -344,7 +344,7 @@ Validated in `start/env.ts`; templates in `.env.example` and
 | `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_DATABASE` | MariaDB connection. Session time zone is forced to UTC. | |
 | `SCHEDULER_HTTP_SERVER` | Run the scheduler inside the HTTP process. | `true` |
 | `LOCK_STORE` | `memory` (single process). | `memory` |
-| `BUCKET_RETENTION_DAYS` | Native (~5 s) buckets. `0` disables the whole sweep. | `30` |
+| `BUCKET_RETENTION_DAYS` | Native (~5 s) buckets: traffic, protocols and bytes served per name (the finest buckets of a server's chart, Settings → Charts). `0` disables the whole sweep. | `30` |
 | `BUCKET_5M_RETENTION_DAYS`, `BUCKET_HOURLY_RETENTION_DAYS`, `BUCKET_DAILY_RETENTION_DAYS` | Rollup tiers. Each coarser tier lives at least as long as the finer one. | `730`, `730`, `1825` |
 | `WIFI_SNAPSHOT_RETENTION_DAYS`, `WIFI_EVENT_RETENTION_DAYS` | Raw Wi-Fi snapshots, roaming events. | `14`, `90` |
 | `PEER_HOURLY_RETENTION_DAYS` | Hourly peer (IP) history. | `90` |
@@ -362,7 +362,10 @@ so do the thresholds that decide when a device counts as connected (Settings →
 Presence: how long a wired device may stay quiet, how long an AP may stay
 silent, how recent a "now" rate must be). A device drawn on the network map
 with an Ethernet or fibre cable to a port an agent reports is also connected
-while that port has link, however quiet it is.
+while that port has link, however quiet it is. Settings → Charts holds the finest
+bucket a server's or destination's traffic chart may use (default 15 s, where
+per-poll rows exist) and the most points one chart returns (default 1500);
+those charts draw every bucket of the window, quiet ones as zero.
 
 ## Scheduler tasks (`app/tasks/`)
 

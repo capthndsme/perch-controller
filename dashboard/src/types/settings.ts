@@ -69,3 +69,20 @@ export type PresenceSettingsView = {
   /** Idle time after which a client its AP still lists stops counting. Fixed, not a setting. */
   wifiIdleSeconds: number
 }
+
+/** Settings → Charts: bucket floor and point cap of the per-name traffic series. */
+export type ChartSettings = {
+  minBucketSeconds: number
+  maxPoints: number
+}
+
+export type ChartLimits = Record<keyof ChartSettings, { min: number; max: number }>
+
+/** `GET` / `PATCH /api/v1/settings/charts`. */
+export type ChartSettingsView = {
+  settings: ChartSettings
+  defaults: ChartSettings
+  limits: ChartLimits
+  /** How long the per-poll rows the floor applies to are kept. */
+  nativeRetentionDays: number
+}

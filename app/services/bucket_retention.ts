@@ -10,7 +10,7 @@ import { DateTime } from 'luxon'
  * multi-month / multi-year charts survive after the fine rows are gone.
  *
  *   tier             time column    default retention
- *   native buckets   bucket_start   30 d   (BUCKET_RETENTION_DAYS)
+ *   native buckets   bucket_start   30 d   (BUCKET_RETENTION_DAYS; traffic, protocol, service)
  *   wifi snapshots   recorded_at    14 d   (WIFI_SNAPSHOT_RETENTION_DAYS)
  *   wifi events      detected_at    90 d   (WIFI_EVENT_RETENTION_DAYS)
  *   peer hourly      hour_start     90 d   (PEER_HOURLY_RETENTION_DAYS)
@@ -29,6 +29,7 @@ import { DateTime } from 'luxon'
 const NATIVE_TABLES = [
   'device_traffic_buckets',
   'device_protocol_buckets',
+  'device_service_buckets',
   'wifi_interface_buckets',
 ] as const
 const FIVE_MIN_TABLES = [

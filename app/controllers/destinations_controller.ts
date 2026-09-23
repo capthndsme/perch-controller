@@ -1,9 +1,10 @@
+import { getChartSettings } from '#services/chart_settings'
 import {
   destinationHistoryExistsForMac,
-  pickDestinationResolution,
   queryDestinationTraffic,
   queryDestinationsSummary,
 } from '#services/destination_history'
+import { parseBucketLabel } from '#services/series_buckets'
 import { resolveTimeWindow } from '#services/time_window'
 import { destinationTrafficQueryValidator, destinationsQueryValidator } from '#validators/devices'
 import type { HttpContext } from '@adonisjs/core/http'
@@ -77,20 +78,24 @@ export default class DestinationsController {
   }
 
   /**
-   * GET /api/v1/destinations/:serverName/traffic?range=…&resolution?=1h|1d
+   * GET /api/v1/destinations/:serverName/traffic?range=…|from&to&resolution?&collectorId?
+   *
+   * Dense in/out series for one destination name (same contract as the
+   * services series; destinations are stored per hour, so buckets are an
+   * hour or wider).
    */
   async traffic({ request, params, response, serialize }: HttpContext) {
     const qs = await destinationTrafficQueryValidator.validate(request.qs())
     const window = resolveTimeWindow(qs, '7d')
     if (window.error) return response.badRequest(window.error)
-    const resolutionSeconds = pickDestinationResolution(qs.resolution, window.since, window.until)
 
-    const buckets = await queryDestinationTraffic({
+    const series = await queryDestinationTraffic({
       serverName: params.serverName,
       since: window.since,
       until: window.until,
-      resolutionSeconds,
       collectorId: qs.collectorId,
+      requestedSeconds: qs.resolution ? parseBucketLabel(qs.resolution) : undefined,
+      settings: await getChartSettings(),
     })
 
     return serialize({
@@ -98,9 +103,13 @@ export default class DestinationsController {
       range: window.range,
       from: window.since.toISO(),
       to: window.until.toISO(),
-      resolution: resolutionSeconds === 86400 ? '1d' : '1h',
-      resolutionSeconds,
-      buckets,
+      resolution: series.resolution,
+      resolutionSeconds: series.bucketSeconds,
+      bucketSeconds: series.bucketSeconds,
+      source: series.source,
+      floorSeconds: series.floorSeconds,
+      maxPoints: series.maxPoints,
+      buckets: series.buckets,
     })
   }
 }

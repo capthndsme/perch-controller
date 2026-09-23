@@ -66,6 +66,7 @@ export const router = createBrowserRouter([
           { path: 'settings/users', ...page('settingsUsers') },
           { path: 'settings/hostname-enrichment', ...page('settingsHostnameEnrichment') },
           { path: 'settings/presence', ...page('settingsPresence') },
+          { path: 'settings/charts', ...page('settingsCharts') },
           { path: 'settings/wifi-sources', ...page('settingsWifiSources') },
           { path: '*', ...page('notFound') },
         ],

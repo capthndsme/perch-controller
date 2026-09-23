@@ -402,6 +402,31 @@ export class DeviceProtocolBucketsHourlySchema extends BaseModel {
   declare updatedAt: DateTime
 }
 
+export class DeviceServiceBucketSchema extends BaseModel {
+  static $columns = ['bucketStart', 'bytesReceived', 'bytesServed', 'collectorId', 'mac', 'packetsReceived', 'packetsServed', 'protocol', 'serverName', 'updatedAt'] as const
+  $columns = DeviceServiceBucketSchema.$columns
+  @column.dateTime()
+  declare bucketStart: DateTime
+  @column()
+  declare bytesReceived: bigint | number
+  @column()
+  declare bytesServed: bigint | number
+  @column({ isPrimary: true })
+  declare collectorId: number
+  @column()
+  declare mac: string
+  @column()
+  declare packetsReceived: bigint | number
+  @column()
+  declare packetsServed: bigint | number
+  @column()
+  declare protocol: string
+  @column()
+  declare serverName: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime
+}
+
 export class DeviceServiceBuckets5MSchema extends BaseModel {
   static $columns = ['bytesReceived', 'bytesServed', 'collectorId', 'mac', 'packetsReceived', 'packetsServed', 'protocol', 'serverName', 'slotStart', 'updatedAt'] as const
   $columns = DeviceServiceBuckets5MSchema.$columns

@@ -21,6 +21,7 @@ const CHILD_TABLES = [
   'device_protocol_buckets_daily',
   'device_traffic_buckets_daily',
   'device_peer_buckets_hourly',
+  'device_service_buckets',
   'device_service_buckets_5m',
   'device_service_buckets_hourly',
   'device_destination_buckets_hourly',

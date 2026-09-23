@@ -1,5 +1,6 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ApiError, apiFetch } from '@/lib/api'
+import { nameSeriesRefreshMs } from '@/lib/services'
 import {
   applyWindowToParams,
   shouldAutoRefresh,
@@ -11,7 +12,6 @@ import type {
   DeviceServicesResponse,
   ServicesResponse,
   ServiceTrafficResponse,
-  TrafficResolution,
 } from '@/types/api'
 
 /**
@@ -87,9 +87,15 @@ export function useDeviceServices(
 
 export function useServiceTraffic(
   serverName: string | undefined,
-  options: { window: TimeWindow; resolution: TrafficResolution; refreshInterval?: RefreshInterval },
+  options: {
+    window: TimeWindow
+    /** Finest bucket wanted; omitted = the server's automatic choice (admin floor, point cap). */
+    resolution?: string
+    refreshInterval?: RefreshInterval
+  },
 ) {
-  const params = new URLSearchParams({ resolution: options.resolution })
+  const params = new URLSearchParams()
+  if (options.resolution) params.set('resolution', options.resolution)
   applyWindowToParams(params, options.window)
 
   return useQuery({
@@ -99,13 +105,17 @@ export function useServiceTraffic(
       serverName ?? '',
       'traffic',
       windowKey(options.window),
-      options.resolution,
+      options.resolution ?? 'auto',
     ] as const,
     queryFn: () =>
       fetchOrNull<ServiceTrafficResponse>(
         `/api/v1/services/${encodeURIComponent(serverName!)}/traffic?${params}`,
       ),
     enabled: Boolean(serverName),
-    refetchInterval: effectiveRefreshInterval(options.window, options.refreshInterval, 60_000),
+    refetchInterval: effectiveRefreshInterval(
+      options.window,
+      options.refreshInterval,
+      nameSeriesRefreshMs(options.window),
+    ),
   })
 }

@@ -70,7 +70,7 @@ export function SettingsPage() {
           <CardTitle className="text-lg">Admin configuration</CardTitle>
           <CardDescription>
             Manage collectors, user accounts, hostname enrichment, OpenWrt WiFi source
-            registration, and presence thresholds.
+            registration, presence thresholds, and chart detail.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 pt-6">
@@ -135,6 +135,17 @@ export function SettingsPage() {
                 </div>
                 <Button asChild variant="outline" size="sm">
                   <Link to="/settings/presence">Open</Link>
+                </Button>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Charts</p>
+                  <p className="text-xs text-muted-foreground">
+                    Finest bucket and point cap of the server and destination traffic charts.
+                  </p>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/settings/charts">Open</Link>
                 </Button>
               </div>
             </>

@@ -1125,20 +1125,43 @@ export type DeviceServicesResponse = {
   }>
 }
 
-export type ServiceTrafficBucket = {
-  bucketStart: string
-  bucketEnd: string
-  bytesServed: number
-  bytesReceived: number
-}
+/** Stored tier a name's traffic series was read from (per-poll rows, 5-minute or hourly). */
+export type SeriesSource = 'native' | '5m' | '1h'
 
-export type ServiceTrafficResponse = {
+/**
+ * Fields shared by the dense per-name series (`/services/:name/traffic`,
+ * `/destinations/:name/traffic`): one bucket per `bucketSeconds` across the
+ * whole window, empty buckets included with zero bytes.
+ */
+export type NameSeriesMeta = {
   serverName: string
   range: string | null
   from: string
   to: string
-  resolution: TrafficResolution
+  /** Label of `bucketSeconds`: '15s', '1m', '5m', '1h', '1d', … */
+  resolution: string
+  /** Same as `bucketSeconds` (kept for older clients). */
   resolutionSeconds: number
+  bucketSeconds: number
+  source: SeriesSource
+  /** Admin floor in force (Settings → Charts). */
+  floorSeconds: number
+  /** Point cap in force (Settings → Charts). */
+  maxPoints: number
+}
+
+export type ServiceTrafficBucket = {
+  bucketStart: string
+  bucketEnd: string
+  /** Seconds of the bucket inside the window and not in the future (partial edges are shorter). */
+  seconds: number
+  bytesServed: number
+  bytesReceived: number
+  mbpsServed: number
+  mbpsReceived: number
+}
+
+export type ServiceTrafficResponse = NameSeriesMeta & {
   buckets: ServiceTrafficBucket[]
 }
 
@@ -1239,17 +1262,16 @@ export type DeviceDestinationsResponse = DestinationsResponse & { mac: string }
 export type DestinationTrafficBucket = {
   bucketStart: string | null
   bucketEnd: string | null
+  /** Seconds of the bucket inside the window and not in the future (partial edges are shorter). */
+  seconds: number
   bytesIn: number
   bytesOut: number
+  mbpsIn: number
+  mbpsOut: number
 }
 
-export type DestinationTrafficResponse = {
-  serverName: string
-  range: string | null
-  from: string
-  to: string
-  resolution: '1h' | '1d'
-  resolutionSeconds: number
+/** Destinations are stored hourly only: `bucketSeconds` ≥ 3600, `source` '1h'. */
+export type DestinationTrafficResponse = NameSeriesMeta & {
   buckets: DestinationTrafficBucket[]
 }
 

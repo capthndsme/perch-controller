@@ -1,6 +1,5 @@
 import type { ChartConfig } from '@/components/ui/chart'
-import type { ServiceTrafficPoint } from '@/lib/services'
-import { windowSpanSeconds, type TimeWindow } from '@/lib/time-window'
+import { bucketSecondsOf, type ServiceTrafficPoint } from '@/lib/services'
 import { formatProtocolLabel } from '@/lib/protocols'
 import type { DestinationDomainGroup, DestinationName, DestinationTrafficBucket } from '@/types/api'
 
@@ -14,12 +13,7 @@ export const DESTINATION_SERIES_CONFIG = {
   received: { label: 'Downloaded', color: 'var(--chart-download)' },
 } satisfies ChartConfig
 
-/** Hourly up to two weeks, daily beyond — the two grains the API stores. */
-export function destinationResolutionFor(window: TimeWindow): '1h' | '1d' {
-  return windowSpanSeconds(window) > 14 * 86400 ? '1d' : '1h'
-}
-
-/** Destination buckets onto the service chart's two keys (see above). */
+/** Destination buckets onto the service chart's two keys (see above); dense, zeros kept. */
 export function destinationBucketsToPoints(
   buckets: DestinationTrafficBucket[],
   fallbackSeconds = 3600,
@@ -29,9 +23,12 @@ export function destinationBucketsToPoints(
       if (!bucket.bucketStart) return null
       const ts = Date.parse(bucket.bucketStart)
       if (Number.isNaN(ts)) return null
-      const end = bucket.bucketEnd ? Date.parse(bucket.bucketEnd) : Number.NaN
-      const seconds = Number.isNaN(end) || end <= ts ? fallbackSeconds : (end - ts) / 1000
-      return { ts, served: bucket.bytesOut, received: bucket.bytesIn, seconds }
+      return {
+        ts,
+        served: bucket.bytesOut,
+        received: bucket.bytesIn,
+        seconds: bucketSecondsOf(bucket, fallbackSeconds),
+      }
     })
     .filter((point): point is ServiceTrafficPoint => point !== null)
     .sort((a, b) => a.ts - b.ts)

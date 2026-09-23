@@ -739,7 +739,12 @@ async function ingest(
         protocolDeltas
       )
       peerBucketsWritten = await writePeerBuckets(collector.id, now, peerDeltas)
-      serviceBucketsWritten = await writeServiceBuckets(collector.id, now, serviceDeltas)
+      serviceBucketsWritten = await writeServiceBuckets(
+        collector.id,
+        now,
+        serviceDeltas,
+        collector.pollIntervalSeconds
+      )
       destinationBucketsWritten = await writeDestinationBuckets(
         collector.id,
         now,

@@ -410,14 +410,17 @@ export async function writePeerBuckets(
 }
 
 /**
- * Batched UPSERT of per-server-name deltas into the hourly service history.
- * Keyed on (collector_id, mac, server_name, protocol, hour_start); deltas SUM
- * into the hour. Zero and implausible deltas are dropped like every stream.
+ * Batched UPSERT of per-server-name deltas into the service history: the
+ * native table (one row per poll, `bucket_start` aligned to the poll
+ * interval), the 5-minute slot and the hour. Keyed on (collector_id, mac,
+ * server_name, protocol, <time>); deltas SUM into each grain. Zero and
+ * implausible deltas are dropped like every stream.
  */
 export async function writeServiceBuckets(
   collectorId: number,
   pollAt: DateTime,
-  deltas: ServiceBucketDelta[]
+  deltas: ServiceBucketDelta[],
+  intervalSec: number = 5
 ): Promise<number> {
   const sane = deltas.filter((d) => {
     if (!d.serverName) return false
@@ -443,6 +446,9 @@ export async function writeServiceBuckets(
   const slotStartSql = alignToBucket(pollAt, SERVICE_5M_GRAIN_SECONDS)
     .toUTC()
     .toFormat('yyyy-MM-dd HH:mm:ss')
+  const bucketStartSql = alignToBucket(pollAt, Math.max(1, Math.floor(intervalSec)))
+    .toUTC()
+    .toFormat('yyyy-MM-dd HH:mm:ss')
   const nowSql = DateTime.utc().toFormat('yyyy-MM-dd HH:mm:ss')
 
   const counters = (d: ServiceBucketDelta) => ({
@@ -463,8 +469,18 @@ export async function writeServiceBuckets(
     'packets_received',
   ])
 
-  // Same deltas into both grains: the hour for totals, the 5-minute slot so
-  // the per-name chart can show when a server actually spiked.
+  // Same deltas into three grains: the hour for totals, the 5-minute slot and
+  // the poll itself so the per-name chart can show when a server spiked, down
+  // to the admin's bucket floor (`chart_settings.ts`).
+  const native = sane.map((d) => ({ ...counters(d), bucket_start: bucketStartSql }))
+  for (const part of chunk(native)) {
+    await db
+      .insertQuery()
+      .table('device_service_buckets')
+      .multiInsert(part)
+      .onConflict(['collector_id', 'mac', 'server_name', 'protocol', 'bucket_start'])
+      .merge(merge)
+  }
   const hourly = sane.map((d) => ({ ...counters(d), hour_start: hourStartSql }))
   for (const part of chunk(hourly)) {
     await db

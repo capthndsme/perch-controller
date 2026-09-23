@@ -89,7 +89,7 @@ type CounterTable = {
    */
   extras?: readonly string[]
   /**
-   * native      one row per poll (`device_traffic_buckets`, as wide as the
+   * native      one row per poll (`device_traffic_buckets`, `device_service_buckets`, as wide as the
    *             poll interval): a collision is two measurements of the same
    *             seconds.
    * rollup      rebuilt from the tier below by the rollup maintainer; the
@@ -211,6 +211,13 @@ export function mergeTables(): MergeTable[] {
       table: 'device_peer_buckets_hourly',
       keys: ['mac', 'scope', 'peer_ip', 'hour_start'],
       sums: ['bytes_in', 'bytes_out'],
+    },
+    {
+      kind: 'counter',
+      role: 'native',
+      table: 'device_service_buckets',
+      keys: ['mac', 'server_name', 'protocol', 'bucket_start'],
+      sums: SERVICE_SUMS,
     },
     {
       kind: 'counter',

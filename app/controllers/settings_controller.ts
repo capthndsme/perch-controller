@@ -1,3 +1,4 @@
+import { chartSettingsView, getChartSettings, updateChartSettings } from '#services/chart_settings'
 import collectorHub from '#services/collector_agent_hub'
 import { listDhcpAgentSources } from '#services/gateway_dhcp'
 import { hostnameSourceStatus } from '#services/hostname_enrichment'
@@ -21,6 +22,7 @@ import {
 } from '#services/wifi_source_registry'
 import { probeWifiAccessPoint } from '#services/wifi_access_point_probe'
 import WifiAccessPointTransformer from '#transformers/wifi_access_point_transformer'
+import { updateChartSettingsValidator } from '#validators/chart_settings'
 import { updateHostnameEnrichmentSettingsValidator } from '#validators/hostname_enrichment_settings'
 import { updatePresenceSettingsValidator } from '#validators/presence_settings'
 import {
@@ -95,6 +97,27 @@ export default class SettingsController {
   async updatePresence({ request, serialize }: HttpContext) {
     const payload = await request.validateUsing(updatePresenceSettingsValidator)
     return serialize(presenceSettingsView(await updatePresenceSettings(payload)))
+  }
+
+  /**
+   * GET /api/v1/settings/charts
+   *
+   * The finest bucket and the point cap of the server and destination traffic
+   * charts (`series_buckets.ts`), with their defaults and accepted ranges.
+   */
+  async charts({ serialize }: HttpContext) {
+    return serialize(chartSettingsView(await getChartSettings()))
+  }
+
+  /**
+   * PATCH /api/v1/settings/charts
+   *
+   * Any subset of the settings; the others keep their value. Applies from the
+   * next chart request.
+   */
+  async updateCharts({ request, serialize }: HttpContext) {
+    const payload = await request.validateUsing(updateChartSettingsValidator)
+    return serialize(chartSettingsView(await updateChartSettings(payload)))
   }
 
   /**

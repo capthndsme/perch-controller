@@ -1,40 +1,61 @@
 import { windowSpanSeconds, type TimeWindow } from '@/lib/time-window'
-import type { ServiceTrafficBucket, TrafficResolution } from '@/types/api'
+import type { SeriesSource, ServiceTrafficBucket } from '@/types/api'
 
 export type ServiceTrafficPoint = {
   ts: number
   served: number
   received: number
-  /** Bucket length; drives the rate overlay (bytes × 8 / seconds). */
+  /**
+   * Seconds of the bucket that lie inside the window (shorter for the partial
+   * first and last bucket); drives the rate overlay (bytes × 8 / seconds).
+   */
   seconds: number
 }
 
-/** The grains the service history API stores: 5-minute (recent), hourly, daily. */
-export type ServiceResolution = '5m' | '1h' | '1d'
+/**
+ * Refresh cadence of a live per-name series: the server's finest buckets
+ * (15 s by default) only appear on short windows, so those poll every 15 s;
+ * wider windows every minute.
+ */
+export function nameSeriesRefreshMs(window: TimeWindow): number {
+  return windowSpanSeconds(window) <= 6 * 3600 ? 15_000 : 60_000
+}
 
-/** How long the 5-minute service tier is kept on the server. */
-export const SERVICE_5M_RETENTION_DAYS = 14
+/** `15 s` · `1 min` · `5 min` · `1 h` · `1 day` for a bucket length in seconds. */
+export function formatBucketSeconds(seconds: number | undefined): string {
+  if (!seconds || !Number.isFinite(seconds) || seconds <= 0) return 'bucket'
+  if (seconds % 86400 === 0) {
+    const days = seconds / 86400
+    return days === 1 ? '1 day' : `${days} days`
+  }
+  if (seconds % 3600 === 0) return `${seconds / 3600} h`
+  if (seconds % 60 === 0) return `${seconds / 60} min`
+  return `${seconds} s`
+}
+
+/** How the stored tier behind a series reads in a caption. */
+export function seriesSourceNote(source: SeriesSource | undefined): string | null {
+  if (source === 'native') return 'from per-poll data'
+  if (source === '5m') return 'from 5-minute data'
+  if (source === '1h') return 'from hourly data'
+  return null
+}
+
+/** Length of one bucket: the server's `seconds`, else end − start, else the fallback. */
+export function bucketSecondsOf(
+  bucket: { bucketStart: string | null; bucketEnd: string | null; seconds?: number },
+  fallbackSeconds: number,
+): number {
+  if (typeof bucket.seconds === 'number' && bucket.seconds > 0) return bucket.seconds
+  const ts = bucket.bucketStart ? Date.parse(bucket.bucketStart) : Number.NaN
+  const end = bucket.bucketEnd ? Date.parse(bucket.bucketEnd) : Number.NaN
+  return Number.isNaN(ts) || Number.isNaN(end) || end <= ts ? fallbackSeconds : (end - ts) / 1000
+}
 
 /**
- * Resolution to *ask* for: 5-minute detail up to two days, hourly up to two
- * weeks, daily beyond. The API may still answer hourly for a short window
- * that is older than the 5-minute retention — read `data.resolution`.
+ * The server answers a dense series (every bucket of the window, empty ones
+ * as zero), so nothing is dropped here: a zero bucket is a real zero.
  */
-export function serviceResolutionFor(window: TimeWindow): ServiceResolution {
-  const span = windowSpanSeconds(window)
-  if (span <= 2 * 86400) return '5m'
-  if (span <= 14 * 86400) return '1h'
-  return '1d'
-}
-
-/** `5 min` · `hour` · `day` for captions. */
-export function resolutionNoun(resolution: TrafficResolution | string | undefined): string {
-  if (resolution === '5m') return '5 min'
-  if (resolution === '1d') return 'day'
-  if (resolution === '1h') return 'hour'
-  return resolution ? String(resolution) : 'bucket'
-}
-
 export function serviceBucketsToPoints(
   buckets: ServiceTrafficBucket[],
   fallbackSeconds = 3600,
@@ -43,10 +64,18 @@ export function serviceBucketsToPoints(
     .map((bucket) => {
       const ts = Date.parse(bucket.bucketStart)
       if (Number.isNaN(ts)) return null
-      const end = Date.parse(bucket.bucketEnd)
-      const seconds = Number.isNaN(end) || end <= ts ? fallbackSeconds : (end - ts) / 1000
-      return { ts, served: bucket.bytesServed, received: bucket.bytesReceived, seconds }
+      return {
+        ts,
+        served: bucket.bytesServed,
+        received: bucket.bytesReceived,
+        seconds: bucketSecondsOf(bucket, fallbackSeconds),
+      }
     })
     .filter((point): point is ServiceTrafficPoint => point !== null)
     .sort((a, b) => a.ts - b.ts)
+}
+
+/** True when a series has no bytes at all (the dense series is never empty). */
+export function seriesIsSilent(points: ServiceTrafficPoint[]): boolean {
+  return points.every((p) => p.served === 0 && p.received === 0)
 }

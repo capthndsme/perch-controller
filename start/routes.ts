@@ -160,6 +160,8 @@ router
         router.get('hostname-enrichment/sources', [SettingsController, 'hostnameEnrichmentSources'])
         router.get('presence', [SettingsController, 'presence']).as('presence')
         router.patch('presence', [SettingsController, 'updatePresence']).as('updatePresence')
+        router.get('charts', [SettingsController, 'charts']).as('charts')
+        router.patch('charts', [SettingsController, 'updateCharts']).as('updateCharts')
         router.get('wifi-sources', [SettingsController, 'wifiSources'])
         router.post('wifi-sources/probe', [SettingsController, 'probeWifiSourceDraft'])
         router.post('wifi-sources', [SettingsController, 'createWifiSource'])

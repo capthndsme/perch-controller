@@ -41,7 +41,11 @@ function mbps(bytes: number, seconds: number): number {
  * The optional rate overlay draws each series' average rate over its bucket
  * (bytes × 8 / bucket seconds) as a thin dashed line on a right-hand Mbps
  * axis, so a burst inside a short bucket reads as a peak even when the
- * byte bars look flat.
+ * byte bars look flat. `seconds` is each bucket's length inside the window,
+ * so the partial first and last buckets read at their true rate.
+ *
+ * The series is dense (the API zero-fills empty buckets), and drawn linear so
+ * a run of zeros stays flat and a burst is not smoothed across its neighbours.
  */
 export function ServiceTrafficChart({
   data,
@@ -166,7 +170,7 @@ export function ServiceTrafficChart({
             yAxisId="bytes"
             isAnimationActive={false}
             dataKey="served"
-            type="monotone"
+            type="linear"
             fill="var(--color-served)"
             fillOpacity={0.2}
             stroke="var(--color-served)"
@@ -176,7 +180,7 @@ export function ServiceTrafficChart({
             yAxisId="bytes"
             isAnimationActive={false}
             dataKey="received"
-            type="monotone"
+            type="linear"
             fill="var(--color-received)"
             fillOpacity={0.15}
             stroke="var(--color-received)"
@@ -187,7 +191,7 @@ export function ServiceTrafficChart({
               yAxisId="rate"
               isAnimationActive={false}
               dataKey="servedMbps"
-              type="monotone"
+              type="linear"
               stroke="var(--color-servedMbps)"
               strokeWidth={1.25}
               strokeDasharray="3 3"
@@ -200,7 +204,7 @@ export function ServiceTrafficChart({
               yAxisId="rate"
               isAnimationActive={false}
               dataKey="receivedMbps"
-              type="monotone"
+              type="linear"
               stroke="var(--color-receivedMbps)"
               strokeWidth={1.25}
               strokeDasharray="3 3"

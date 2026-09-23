@@ -4,10 +4,10 @@ import { CaretDown, CaretRight, HardDrives } from '@phosphor-icons/react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ServiceTrafficChart } from '@/components/charts/service-traffic-chart'
 import {
-  resolutionNoun,
-  SERVICE_5M_RETENTION_DAYS,
+  formatBucketSeconds,
   serviceBucketsToPoints,
-  serviceResolutionFor,
+  seriesIsSilent,
+  seriesSourceNote,
 } from '@/lib/services'
 import { TimePicker } from '@/components/dashboard/time-picker'
 import { PageHeader } from '@/components/layout/page-header'
@@ -27,33 +27,30 @@ import type { ServiceSummary } from '@/types/api'
 const DEFAULT_SERVERS_WINDOW: TimeWindow = { kind: 'relative', range: '7d' }
 
 function ServiceTimeSeries({ serverName, window }: { serverName: string; window: TimeWindow }) {
-  const requested = serviceResolutionFor(window)
-  const traffic = useServiceTraffic(serverName, { window, resolution: requested })
+  const traffic = useServiceTraffic(serverName, { window })
   const points = useMemo(
-    () => serviceBucketsToPoints(traffic.data?.buckets ?? [], traffic.data?.resolutionSeconds),
+    () => serviceBucketsToPoints(traffic.data?.buckets ?? [], traffic.data?.bucketSeconds),
     [traffic.data],
   )
 
   if (traffic.isPending) return <p className="text-xs text-muted-foreground">Loading history…</p>
   if (traffic.error) return <p className="text-xs text-destructive">{traffic.error.message}</p>
   if (!traffic.data || points.length === 0) {
-    return (
-      <p className="text-xs text-muted-foreground">No per-{resolutionNoun(requested)} history for this name yet.</p>
-    )
+    return <p className="text-xs text-muted-foreground">No history for this name yet.</p>
   }
-  // The API answers hourly for a short window older than the 5-minute tier.
-  const served = traffic.data.resolution
-  const downgraded = requested === '5m' && served !== '5m'
+  const bucket = formatBucketSeconds(traffic.data.bucketSeconds)
+  const source = seriesSourceNote(traffic.data.source)
   return (
     <div className="space-y-1">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-        <p className="section-label">Served / received per {resolutionNoun(served)}</p>
+        <p className="section-label">Served / received per {bucket}</p>
         <p className="text-[11px] text-muted-foreground">
-          Detail: {resolutionNoun(served)}
-          {downgraded ? ` · 5-minute detail is kept for ${SERVICE_5M_RETENTION_DAYS} days` : ''}
-          {served === '5m' ? ' · the dashed lines are the average rate of each slot' : ''}
+          Detail: {bucket} buckets{source ? ` ${source}` : ''} · the dashed lines are each bucket's average rate
         </p>
       </div>
+      {seriesIsSilent(points) ? (
+        <p className="text-[11px] text-muted-foreground">No traffic for this name in this window.</p>
+      ) : null}
       <ServiceTrafficChart data={points} rateOverlay="on" className="h-[236px] w-full" />
     </div>
   )

@@ -1,10 +1,26 @@
 import { getDeviceLabels } from '#services/device_labels'
 import { getHostnameMatches } from '#services/hostname_enrichment'
-import env from '#start/env'
 import { cacheKey, cachedQuery, windowCache } from '#services/query_cache'
-import { windowSpanSeconds } from '#services/rollup_tiers'
+import type { ChartSettings } from '#services/chart_settings'
+import {
+  FIVE_MIN_ROLLUP_SECONDS,
+  HOURLY_ROLLUP_SECONDS,
+  windowSpanSeconds,
+} from '#services/rollup_tiers'
+import {
+  bucketLabel,
+  cacheResolutionFor,
+  denseBuckets,
+  estimateBucketSeconds,
+  mbps,
+  planSeries,
+  querySeriesSums,
+  tierCoverage,
+  type SeriesSource,
+  type SeriesTier,
+} from '#services/series_buckets'
 import db from '@adonisjs/lucid/services/db'
-import { DateTime } from 'luxon'
+import { type DateTime } from 'luxon'
 
 /**
  * Read side of the "bytes served per server name" history
@@ -73,19 +89,52 @@ export type DeviceServicesSummary = {
   services: Array<Omit<ServiceEntry, 'servers'>>
 }
 
-export type ServiceResolutionSeconds = 300 | 3600 | 86400
-
-/** Longest window the 5-minute tier serves (864 points). */
-export const SERVICE_5M_MAX_SPAN_SECONDS = 3 * 86400
-/** Windows up to this long pick 5 m automatically. */
-const SERVICE_5M_AUTO_SPAN_SECONDS = 2 * 86400
+/** Where a name's chart reads from, finest first (see `series_buckets.ts`). */
+const SERVICE_TIERS: readonly SeriesTier[] = [
+  // Per-poll rows: grainSeconds is replaced per request by the poll interval.
+  {
+    source: 'native',
+    grainSeconds: 5,
+    table: 'device_service_buckets',
+    timeColumn: 'bucket_start',
+    maxBucketSeconds: FIVE_MIN_ROLLUP_SECONDS - 1,
+  },
+  {
+    source: '5m',
+    grainSeconds: FIVE_MIN_ROLLUP_SECONDS,
+    table: 'device_service_buckets_5m',
+    timeColumn: 'slot_start',
+  },
+  {
+    source: '1h',
+    grainSeconds: HOURLY_ROLLUP_SECONDS,
+    table: 'device_service_buckets_hourly',
+    timeColumn: 'hour_start',
+  },
+]
 
 export type ServiceTrafficBucket = {
-  bucketStart: string | null
-  bucketEnd: string | null
+  bucketStart: string
+  bucketEnd: string
+  /** Seconds of the bucket inside the window and not in the future. */
+  seconds: number
   bytesServed: number
   bytesReceived: number
+  mbpsServed: number
+  mbpsReceived: number
 }
+
+/** Bucket metadata of a dense series (both name charts). */
+export type SeriesMeta = {
+  bucketSeconds: number
+  /** `bucketLabel(bucketSeconds)`: `15s`, `1m`, `5m`, `1h`, `1d`… */
+  resolution: string
+  source: SeriesSource
+  floorSeconds: number
+  maxPoints: number
+}
+
+export type ServiceTrafficSeries = SeriesMeta & { buckets: ServiceTrafficBucket[] }
 
 function n(value: bigint | number | string | null | undefined): number {
   if (value === null || value === undefined) return 0
@@ -99,13 +148,6 @@ function pct(part: number, total: number): number {
 
 function sql(ts: DateTime): string {
   return ts.toFormat('yyyy-MM-dd HH:mm:ss')
-}
-
-function toIso(value: Date | string | null | undefined): string | null {
-  if (!value) return null
-  if (value instanceof Date) return DateTime.fromJSDate(value, { zone: 'utc' }).toISO()
-  const parsed = DateTime.fromSQL(value, { zone: 'utc' })
-  return parsed.isValid ? parsed.toISO() : String(value)
 }
 
 /** Whether any service history exists for this MAC (drives 404 semantics). */
@@ -298,105 +340,106 @@ export async function queryDeviceServices(opts: {
   )
 }
 
-/** 5-minute, hourly or daily served/received series for one server name. */
+/**
+ * Dense served/received series for one server name: every bucket of the
+ * window, empty ones as zero, width from the admin floor and point cap
+ * (`series_buckets.ts`), read from the per-poll, 5-minute or hourly table.
+ */
 export async function queryServiceTraffic(opts: {
   serverName: string
   since: DateTime
   until: DateTime
-  resolutionSeconds: ServiceResolutionSeconds
   collectorId?: number
-}): Promise<ServiceTrafficBucket[]> {
+  /** The caller's finest acceptable bucket (`resolution=`), seconds. */
+  requestedSeconds?: number
+  settings: ChartSettings
+}): Promise<ServiceTrafficSeries> {
+  const { minBucketSeconds: floorSeconds, maxPoints } = opts.settings
+  const estimate = estimateBucketSeconds(
+    windowSpanSeconds(opts.since, opts.until),
+    Math.max(floorSeconds, opts.requestedSeconds ?? 0),
+    maxPoints
+  )
   const { ttlMs, segment } = windowCache(
-    resolutionLabel(opts.resolutionSeconds),
+    cacheResolutionFor(estimate),
     opts.since,
     opts.until,
     Date.now()
   )
-  return cachedQuery(
+  const cached = await cachedQuery(
     cacheKey([
       'services:traffic',
       opts.serverName,
       segment,
-      opts.resolutionSeconds,
       opts.collectorId ?? '',
+      opts.requestedSeconds ?? '',
+      floorSeconds,
+      maxPoints,
     ]),
     ttlMs,
     async () => {
-      const fiveMin = opts.resolutionSeconds === 300
-      const daily = opts.resolutionSeconds === 86400
-      const table = fiveMin ? 'device_service_buckets_5m' : 'device_service_buckets_hourly'
-      const timeCol = fiveMin ? 's.slot_start' : 's.hour_start'
-      const bucketExpr = daily
-        ? 'DATE_SUB(s.hour_start, INTERVAL MOD(TO_SECONDS(s.hour_start), 86400) SECOND)'
-        : timeCol
-      const where: string[] = ['s.server_name = ?', `${timeCol} >= ?`, `${timeCol} < ?`]
-      const bindings: Array<string | number> = [opts.serverName, sql(opts.since), sql(opts.until)]
+      const sinceSec = Math.floor(opts.since.toSeconds())
+      const nativeGrain = await nativeGrainSeconds(opts.collectorId)
+      const tiers = SERVICE_TIERS.map((t) =>
+        t.source === 'native' ? { ...t, grainSeconds: nativeGrain } : t
+      )
+      const plan = planSeries({
+        sinceSec,
+        untilSec: Math.floor(opts.until.toSeconds()),
+        nowSec: Math.floor(Date.now() / 1000),
+        floorSeconds,
+        maxPoints,
+        requestedSeconds: opts.requestedSeconds,
+        tiers: await tierCoverage(tiers, sinceSec),
+      })
+      const where = ['t.server_name = ?']
+      const bindings: Array<string | number> = [opts.serverName]
       if (opts.collectorId) {
-        where.push('s.collector_id = ?')
+        where.push('t.collector_id = ?')
         bindings.push(opts.collectorId)
       }
-      const rows = rawRows<{
-        bucketStart: Date | string
-        bytesServed: bigint | number | string
-        bytesReceived: bigint | number | string
-      }>(
-        await db.rawQuery(
-          `
-          SELECT
-            ${bucketExpr}         AS bucketStart,
-            SUM(s.bytes_served)   AS bytesServed,
-            SUM(s.bytes_received) AS bytesReceived
-          FROM ${table} s
-          WHERE ${where.join(' AND ')}
-          GROUP BY bucketStart
-          ORDER BY bucketStart ASC
-        `,
-          bindings
-        )
-      )
-      return rows.map((r) => {
-        const start = toIso(r.bucketStart)
-        return {
-          bucketStart: start,
-          bucketEnd: start
-            ? DateTime.fromISO(start, { setZone: true })
-                .plus({ seconds: opts.resolutionSeconds })
-                .toISO()
-            : null,
-          bytesServed: n(r.bytesServed),
-          bytesReceived: n(r.bytesReceived),
-        }
+      const sums = await querySeriesSums({
+        plan,
+        sinceSql: sql(opts.since.toUTC()),
+        untilSql: sql(opts.until.toUTC()),
+        columns: ['bytes_served', 'bytes_received'],
+        where,
+        bindings,
       })
+      return { plan, sums: [...sums.entries()] }
     }
   )
+
+  const { plan } = cached
+  return {
+    bucketSeconds: plan.bucketSeconds,
+    resolution: bucketLabel(plan.bucketSeconds),
+    source: plan.tier.source,
+    floorSeconds,
+    maxPoints,
+    buckets: denseBuckets(plan, new Map(cached.sums)).map((b) => ({
+      bucketStart: b.bucketStart,
+      bucketEnd: b.bucketEnd,
+      seconds: b.seconds,
+      bytesServed: b.a,
+      bytesReceived: b.b,
+      mbpsServed: mbps(b.a, b.seconds),
+      mbpsReceived: mbps(b.b, b.seconds),
+    })),
+  }
 }
 
 /**
- * Resolution for a name's traffic chart. `5m` is served only while the
- * window fits the 5-minute tier (≤ 3 days, and not older than its
- * retention); a request for it outside that falls back to hourly. Auto:
- * 5 m up to two days, hourly up to ~2000 points, daily beyond.
+ * Grain of the per-poll service rows: the poll interval of the collector
+ * asked about, or the longest of all of them (a bucket must hold whole polls
+ * of every collector it sums).
  */
-export function pickServiceResolution(
-  requested: '5m' | '1h' | '1d' | undefined,
-  since: DateTime,
-  until: DateTime,
-  now: DateTime = DateTime.utc()
-): ServiceResolutionSeconds {
-  const span = windowSpanSeconds(since, until)
-  const retentionDays = env.get('SERVICE_5M_RETENTION_DAYS', 14)
-  const fiveMinAvailable =
-    span <= SERVICE_5M_MAX_SPAN_SECONDS && since >= now.minus({ days: retentionDays })
-  if (requested === '5m') return fiveMinAvailable ? 300 : 3600
-  if (requested === '1d') return 86400
-  if (requested === '1h') return 3600
-  if (fiveMinAvailable && span <= SERVICE_5M_AUTO_SPAN_SECONDS) return 300
-  return span / 3600 > 2000 ? 86400 : 3600
-}
-
-export function resolutionLabel(seconds: ServiceResolutionSeconds): '5m' | '1h' | '1d' {
-  if (seconds === 300) return '5m'
-  return seconds === 86400 ? '1d' : '1h'
+async function nativeGrainSeconds(collectorId?: number): Promise<number> {
+  const query = db.from('collectors').max('poll_interval_seconds as grain')
+  if (collectorId) query.where('id', collectorId)
+  const rows = (await query) as Array<{ grain: number | string | null }>
+  const grain = Number(rows[0]?.grain ?? 0)
+  return Number.isFinite(grain) && grain >= 1 ? Math.floor(grain) : 5
 }
 
 type ServerIdentity = {

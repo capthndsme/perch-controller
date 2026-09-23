@@ -433,10 +433,25 @@ test.group('destinations read API', (group) => {
       .get(`/api/v1/destinations/${name}/traffic?range=24h`)
       .bearerToken(token)
     hourly.assertStatus(200)
-    assert.equal(hourly.body().data.resolution, '1h')
-    assert.equal(hourly.body().data.buckets.length, 2)
-    assert.equal(hourly.body().data.buckets[0].bytesIn, 4_000_000)
-    assert.equal(hourly.body().data.buckets[1].bytesIn, 1_000_000)
+    const body = hourly.body().data
+    assert.equal(body.resolution, '1h', 'hourly rows only: never finer than the floor allows')
+    assert.equal(body.bucketSeconds, 3600)
+    assert.equal(body.source, '1h')
+    // Dense: every hour of the window, the quiet ones as zero.
+    assert.includeMembers([24, 25], [body.buckets.length])
+    const h0 = DateTime.utc().startOf('hour').minus({ hours: 3 })
+    const busy = body.buckets.filter((b: { bytesIn: number }) => b.bytesIn > 0)
+    assert.deepEqual(
+      busy.map((b: { bucketStart: string; bytesIn: number }) => [
+        Date.parse(b.bucketStart),
+        b.bytesIn,
+      ]),
+      [
+        [h0.toMillis(), 4_000_000],
+        [h0.plus({ hours: 1 }).toMillis(), 1_000_000],
+      ]
+    )
+    assert.closeTo(busy[0].mbpsIn, (4_000_000 * 8) / 3600 / 1e6, 1e-9)
 
     const daily = await client
       .get(`/api/v1/destinations/${name}/traffic?range=7d&resolution=1d`)

@@ -1,9 +1,9 @@
+import { getChartSettings } from '#services/chart_settings'
+import { parseBucketLabel } from '#services/series_buckets'
 import {
-  pickServiceResolution,
   queryDeviceServices,
   queryServiceTraffic,
   queryServicesSummary,
-  resolutionLabel,
   serviceHistoryExistsForMac,
 } from '#services/service_history'
 import { resolveTimeWindow } from '#services/time_window'
@@ -81,24 +81,27 @@ export default class ServicesController {
   }
 
   /**
-   * GET /api/v1/services/:serverName/traffic?range=…&resolution?=1h|1d
+   * GET /api/v1/services/:serverName/traffic?range=…|from&to&resolution?&collectorId?
    *
-   * Served / received history for one name. 5-minute for recent short
-   * windows, hourly otherwise, daily when hourly points would exceed the
-   * chart budget (see `pickServiceResolution`).
+   * Served / received history for one name as a dense series: every bucket
+   * of the window, empty ones as zero, with the seconds each covers and its
+   * rate. The bucket width comes from the admin floor (Settings → Charts,
+   * default 15 s) and point cap; `resolution` asks for a coarser one. Fine
+   * buckets need the per-poll table (30 days), older windows use the 5-minute
+   * or hourly detail (see `series_buckets.ts`).
    */
   async traffic({ request, params, response, serialize }: HttpContext) {
     const qs = await serviceTrafficQueryValidator.validate(request.qs())
     const window = resolveTimeWindow(qs, '7d')
     if (window.error) return response.badRequest(window.error)
-    const resolutionSeconds = pickServiceResolution(qs.resolution, window.since, window.until)
 
-    const buckets = await queryServiceTraffic({
+    const series = await queryServiceTraffic({
       serverName: params.serverName,
       since: window.since,
       until: window.until,
-      resolutionSeconds,
       collectorId: qs.collectorId,
+      requestedSeconds: qs.resolution ? parseBucketLabel(qs.resolution) : undefined,
+      settings: await getChartSettings(),
     })
 
     return serialize({
@@ -106,9 +109,13 @@ export default class ServicesController {
       range: window.range,
       from: window.since.toISO(),
       to: window.until.toISO(),
-      resolution: resolutionLabel(resolutionSeconds),
-      resolutionSeconds,
-      buckets,
+      resolution: series.resolution,
+      resolutionSeconds: series.bucketSeconds,
+      bucketSeconds: series.bucketSeconds,
+      source: series.source,
+      floorSeconds: series.floorSeconds,
+      maxPoints: series.maxPoints,
+      buckets: series.buckets,
     })
   }
 }

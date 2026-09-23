@@ -31,6 +31,7 @@ export const pages = {
     import('@/pages/hostname-enrichment-settings-page').then((m) => m.HostnameEnrichmentSettingsPage),
   ),
   settingsPresence: lazyPage(() => import('@/pages/presence-settings-page').then((m) => m.PresenceSettingsPage)),
+  settingsCharts: lazyPage(() => import('@/pages/chart-settings-page').then((m) => m.ChartSettingsPage)),
   settingsWifiSources: lazyPage(() =>
     import('@/pages/wifi-sources-settings-page').then((m) => m.WifiSourcesSettingsPage),
   ),

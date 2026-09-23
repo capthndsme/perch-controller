@@ -179,18 +179,34 @@ export const servicesQueryValidator = vine.compile(
 )
 
 /**
- * `GET /api/v1/services/:serverName/traffic` — `5m` (recent windows only),
- * `1h` or `1d`; omitted = auto.
+ * `GET /api/v1/services/:serverName/traffic` and
+ * `/api/v1/destinations/:serverName/traffic`: the finest bucket the caller
+ * wants. Omitted = auto (the admin floor, `chart_settings.ts`). The server
+ * may answer coarser: the point cap and the stored detail win
+ * (`series_buckets.ts`). The old values `5m` / `1h` / `1d` keep working.
  */
-const SERVICE_RESOLUTION_VALUES = ['5m', '1h', '1d'] as const
-export type ServiceResolution = (typeof SERVICE_RESOLUTION_VALUES)[number]
-/** Destinations have no 5-minute tier. */
-const DESTINATION_RESOLUTION_VALUES = ['1h', '1d'] as const
+export const SERIES_RESOLUTION_VALUES = [
+  '15s',
+  '30s',
+  '1m',
+  '2m',
+  '5m',
+  '10m',
+  '15m',
+  '30m',
+  '1h',
+  '2h',
+  '3h',
+  '6h',
+  '12h',
+  '1d',
+] as const
+export type SeriesResolution = (typeof SERIES_RESOLUTION_VALUES)[number]
 
 export const serviceTrafficQueryValidator = vine.compile(
   vine.object({
     ...TIME_WINDOW_FIELDS,
-    resolution: vine.enum(SERVICE_RESOLUTION_VALUES).optional(),
+    resolution: vine.enum(SERIES_RESOLUTION_VALUES).optional(),
     collectorId: vine.number().positive().optional(),
   })
 )
@@ -241,7 +257,7 @@ export const routerQueryValidator = vine.compile(
 export const destinationTrafficQueryValidator = vine.compile(
   vine.object({
     ...TIME_WINDOW_FIELDS,
-    resolution: vine.enum(DESTINATION_RESOLUTION_VALUES).optional(),
+    resolution: vine.enum(SERIES_RESOLUTION_VALUES).optional(),
     collectorId: vine.number().positive().optional(),
   })
 )
