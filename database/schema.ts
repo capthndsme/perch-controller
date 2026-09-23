@@ -285,6 +285,19 @@ export class DeviceLabelSchema extends BaseModel {
   declare updatedByUserId: number | null
 }
 
+export class DeviceNetworkLatestSchema extends BaseModel {
+  static $columns = ['gatewayId', 'mac', 'network', 'seenAt'] as const
+  $columns = DeviceNetworkLatestSchema.$columns
+  @column({ isPrimary: true })
+  declare gatewayId: number
+  @column()
+  declare mac: string
+  @column()
+  declare network: string
+  @column.dateTime()
+  declare seenAt: DateTime
+}
+
 export class DevicePeerBucketsHourlySchema extends BaseModel {
   static $columns = ['bytesIn', 'bytesOut', 'collectorId', 'hourStart', 'mac', 'peerIp', 'scope', 'updatedAt'] as const
   $columns = DevicePeerBucketsHourlySchema.$columns
@@ -650,6 +663,107 @@ export class DeviceTrafficBucketsHourlySchema extends BaseModel {
   declare updatedAt: DateTime
 }
 
+export class GatewaySchema extends BaseModel {
+  static $columns = ['agentAccess', 'authoritative', 'authoritativeByUserId', 'authoritativeSince', 'capabilitiesAt', 'collectorId', 'createdAt', 'enforcement', 'enforcementChangedAt', 'headRevision', 'id', 'localStateFlushSeconds', 'localStatePath', 'mode', 'observedAt', 'syncState', 'updatedAt'] as const
+  $columns = GatewaySchema.$columns
+  @column()
+  declare agentAccess: string | null
+  @column()
+  declare authoritative: boolean
+  @column()
+  declare authoritativeByUserId: number | null
+  @column.dateTime()
+  declare authoritativeSince: DateTime | null
+  @column.dateTime()
+  declare capabilitiesAt: DateTime | null
+  @column()
+  declare collectorId: number | null
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare enforcement: string
+  @column.dateTime()
+  declare enforcementChangedAt: DateTime | null
+  @column()
+  declare headRevision: number
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare localStateFlushSeconds: number | null
+  @column()
+  declare localStatePath: string | null
+  @column()
+  declare mode: string
+  @column.dateTime()
+  declare observedAt: DateTime | null
+  @column()
+  declare syncState: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class GatewayApplySchema extends BaseModel {
+  static $columns = ['adminConfirmedAt', 'adminConfirmedBy', 'agentReconnectedAt', 'applyKey', 'confirmMode', 'confirmTimeoutSeconds', 'deadlineAt', 'finishedAt', 'gatewayId', 'id', 'kind', 'note', 'protected', 'queueExpiresAt', 'requestedAt', 'requestedByUserId', 'revisionNumber', 'sentAt', 'state'] as const
+  $columns = GatewayApplySchema.$columns
+  @column.dateTime()
+  declare adminConfirmedAt: DateTime | null
+  @column()
+  declare adminConfirmedBy: number | null
+  @column.dateTime()
+  declare agentReconnectedAt: DateTime | null
+  @column()
+  declare applyKey: string
+  @column()
+  declare confirmMode: string
+  @column()
+  declare confirmTimeoutSeconds: number
+  @column.dateTime()
+  declare deadlineAt: DateTime | null
+  @column.dateTime()
+  declare finishedAt: DateTime | null
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare kind: string
+  @column()
+  declare note: string | null
+  @column()
+  declare protected: boolean
+  @column.dateTime()
+  declare queueExpiresAt: DateTime | null
+  @column.dateTime()
+  declare requestedAt: DateTime
+  @column()
+  declare requestedByUserId: number | null
+  @column()
+  declare revisionNumber: number | null
+  @column.dateTime()
+  declare sentAt: DateTime | null
+  @column()
+  declare state: string
+}
+
+export class GatewayConfigEventSchema extends BaseModel {
+  static $columns = ['applyId', 'createdAt', 'event', 'gatewayId', 'id', 'revisionNumber', 'userId'] as const
+  $columns = GatewayConfigEventSchema.$columns
+  @column()
+  declare applyId: bigint | number | null
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare event: string
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare revisionNumber: number | null
+  @column()
+  declare userId: number | null
+}
+
 export class GatewayHostSchema extends BaseModel {
   static $columns = ['collectorId', 'firstSeenAt', 'hostname', 'id', 'ipv4', 'ipv6', 'leaseExpiresAt', 'leaseInfinite', 'mac', 'staticName', 'updatedAt'] as const
   $columns = GatewayHostSchema.$columns
@@ -677,6 +791,46 @@ export class GatewayHostSchema extends BaseModel {
   declare updatedAt: DateTime
 }
 
+export class GatewayNetworkSchema extends BaseModel {
+  static $columns = ['capture', 'createdAt', 'gatewayId', 'id', 'interfacePerchId', 'label', 'purpose', 'updatedAt'] as const
+  $columns = GatewayNetworkSchema.$columns
+  @column()
+  declare capture: boolean
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare interfacePerchId: string
+  @column()
+  declare label: string
+  @column()
+  declare purpose: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class GatewayNetworkSampleSchema extends BaseModel {
+  static $columns = ['gatewayId', 'network', 'recordedAt', 'rxBps', 'rxBytes', 'txBps', 'txBytes'] as const
+  $columns = GatewayNetworkSampleSchema.$columns
+  @column({ isPrimary: true })
+  declare gatewayId: number
+  @column()
+  declare network: string
+  @column.dateTime()
+  declare recordedAt: DateTime
+  @column()
+  declare rxBps: bigint | number | null
+  @column()
+  declare rxBytes: bigint | number
+  @column()
+  declare txBps: bigint | number | null
+  @column()
+  declare txBytes: bigint | number
+}
+
 export class GatewayObservationSchema extends BaseModel {
   static $columns = ['changedAt', 'collectorId', 'fingerprint', 'kind', 'observedAt', 'payload'] as const
   $columns = GatewayObservationSchema.$columns
@@ -692,6 +846,89 @@ export class GatewayObservationSchema extends BaseModel {
   declare observedAt: DateTime
   @column()
   declare payload: string | null
+}
+
+export class GatewayRevisionSchema extends BaseModel {
+  static $columns = ['applyId', 'authorUserId', 'confirmedAt', 'createdAt', 'gatewayId', 'id', 'note', 'number', 'source', 'summary'] as const
+  $columns = GatewayRevisionSchema.$columns
+  @column()
+  declare applyId: bigint | number | null
+  @column()
+  declare authorUserId: number | null
+  @column.dateTime()
+  declare confirmedAt: DateTime | null
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare note: string | null
+  @column()
+  declare number: number
+  @column()
+  declare source: string
+  @column()
+  declare summary: string
+}
+
+export class GatewaySecretSchema extends BaseModel {
+  static $columns = ['createdAt', 'fingerprint', 'gatewayId', 'id', 'ref', 'updatedAt'] as const
+  $columns = GatewaySecretSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare fingerprint: string
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare ref: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class GatewaySectionSchema extends BaseModel {
+  static $columns = ['anonymous', 'baseRevision', 'config', 'createdAt', 'domain', 'driftSince', 'gatewayId', 'id', 'issue', 'perchId', 'position', 'routerChangedAt', 'scope', 'sectionName', 'sectionType', 'status', 'updatedAt', 'updatedByUserId'] as const
+  $columns = GatewaySectionSchema.$columns
+  @column()
+  declare anonymous: boolean
+  @column()
+  declare baseRevision: number | null
+  @column()
+  declare config: string
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare domain: string | null
+  @column.dateTime()
+  declare driftSince: DateTime | null
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare issue: string | null
+  @column()
+  declare perchId: string
+  @column()
+  declare position: number | null
+  @column.dateTime()
+  declare routerChangedAt: DateTime | null
+  @column()
+  declare scope: string
+  @column()
+  declare sectionName: string
+  @column()
+  declare sectionType: string
+  @column()
+  declare status: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+  @column()
+  declare updatedByUserId: number | null
 }
 
 export class InfraLinkSchema extends BaseModel {

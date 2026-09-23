@@ -3,6 +3,8 @@ import {
   pruneOldBuckets,
   retentionOptionsFromEnv,
 } from '#services/bucket_retention'
+import { pruneGatewayConfigHistory } from '#services/gateway_config/config_retention'
+import { getGatewayConfigSettings } from '#services/gateway_config/gateway_config_settings'
 import logger from '@adonisjs/core/services/logger'
 import { Task, type TaskOptions } from '@outloud/adonis-scheduler'
 
@@ -17,6 +19,8 @@ export default class PruneBucketsTask extends Task {
   }
 
   async run(): Promise<void> {
+    await this.pruneGatewayConfig()
+
     const retentionDays = nativeRetentionDaysFromEnv()
     if (!retentionDays || retentionDays < 1) {
       logger.info(
@@ -38,6 +42,22 @@ export default class PruneBucketsTask extends Task {
       }
     } catch (err) {
       logger.error({ err, retentionDays }, 'prune_buckets: retention sweep failed')
+    }
+  }
+
+  /**
+   * The managed gateway's audit log and revisions (settings `auditRetentionDays`,
+   * `keepRevisions`). Independent of BUCKET_RETENTION_DAYS: it runs even when
+   * the bucket ladder is switched off.
+   */
+  private async pruneGatewayConfig(): Promise<void> {
+    try {
+      const result = await pruneGatewayConfigHistory(await getGatewayConfigSettings())
+      if (result.events > 0 || result.revisions > 0) {
+        logger.info(result, 'prune_buckets: pruned gateway config history')
+      }
+    } catch (err) {
+      logger.error({ err }, 'prune_buckets: gateway config history sweep failed')
     }
   }
 }

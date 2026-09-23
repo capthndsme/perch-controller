@@ -19,5 +19,33 @@ export default {
       // (app/models/system_setting.ts) with typed get/set helpers.
       skipColumns: ['value'],
     },
+    // Managed gateway (docs/gateway/config-plane.md section 9): JSON text
+    // columns parsed by their models (app/models/gateway*.ts), and the
+    // APP_KEY-encrypted secret value.
+    gateways: {
+      skipColumns: ['pinned_hashes', 'capabilities', 'observed_hashes', 'management_path'],
+    },
+    gateway_sections: {
+      skipColumns: [
+        'ownership',
+        'base_content',
+        'router_content',
+        'router_author',
+        'desired_content',
+        'conflict',
+      ],
+    },
+    gateway_secrets: {
+      skipColumns: ['value'],
+    },
+    gateway_applies: {
+      skipColumns: ['ops', 'base_hashes', 'perch_ids', 'outcome', 'replaced_router_content'],
+    },
+    gateway_revisions: {
+      skipColumns: ['router_author', 'snapshot', 'diff', 'hashes'],
+    },
+    gateway_config_events: {
+      skipColumns: ['detail'],
+    },
   },
 } satisfies SchemaRules

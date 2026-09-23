@@ -34,6 +34,7 @@ const DevicesController = () => import('#controllers/devices_controller')
  * Inline import for the same generated-registry reason as above.
  */
 const SettingsController = () => import('#controllers/settings_controller')
+const GatewaySettingsController = () => import('#controllers/gateway_settings_controller')
 const WifiController = () => import('#controllers/wifi_controller')
 const UsersController = () => import('#controllers/users_controller')
 const ServicesController = () => import('#controllers/services_controller')
@@ -160,6 +161,8 @@ router
         router.get('hostname-enrichment/sources', [SettingsController, 'hostnameEnrichmentSources'])
         router.get('presence', [SettingsController, 'presence']).as('presence')
         router.patch('presence', [SettingsController, 'updatePresence']).as('updatePresence')
+        router.get('gateway', [GatewaySettingsController, 'show']).as('gateway')
+        router.patch('gateway', [GatewaySettingsController, 'update']).as('updateGateway')
         router.get('charts', [SettingsController, 'charts']).as('charts')
         router.patch('charts', [SettingsController, 'updateCharts']).as('updateCharts')
         router.get('wifi-sources', [SettingsController, 'wifiSources'])

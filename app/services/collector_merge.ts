@@ -127,9 +127,16 @@ const META_COLUMNS = new Set(['id', 'created_at', 'updated_at'])
  * `infra_nodes`: the Gateway agent's node on the infrastructure view
  * (`repointInfraNode`). `gateway_hosts`, `gateway_observations`: the Gateway
  * agent's DHCP mirror, runtime state that follows `into`, the collector that
- * keeps running (`repointGatewayObservations`).
+ * keeps running (`repointGatewayObservations`). `gateways`: the managed
+ * gateway (docs/gateway/config-plane.md section 6), whose config history
+ * hangs off it rather than off the collector (`repointGateway`).
  */
-export const NON_HISTORY_TABLES = new Set(['infra_nodes', 'gateway_hosts', 'gateway_observations'])
+export const NON_HISTORY_TABLES = new Set([
+  'infra_nodes',
+  'gateway_hosts',
+  'gateway_observations',
+  'gateways',
+])
 const IDENTITY_COLUMNS = ['primary_ip', 'ips', 'first_seen_at', 'last_seen_at']
 const SERVICE_SUMS = ['bytes_served', 'bytes_received', 'packets_served', 'packets_received']
 const BYTE_PACKET_SUMS = ['bytes_in', 'bytes_out', 'packets_in', 'packets_out']
@@ -720,6 +727,146 @@ export async function repointGatewayObservations(
   }
 }
 
+// ── managed gateways ─────────────────────────────────────────────────────
+
+/**
+ * The managed gateway row (`gateways.collector_id`, docs/gateway/config-plane.md
+ * section 6) holds no traffic history; its config history (sections,
+ * revisions, applies, events) hangs off the gateway row, so it moves by
+ * re-pointing one column. Afterwards the merged collector has at most one:
+ *   - only the removed row has one: it moves to the survivor;
+ *   - both have one: the one with more revisions keeps the binding (on a
+ *     tie, the one of `into`, the collector still running), the other is
+ *     detached (`collector_id = NULL`) with its history, like a gateway
+ *     whose collector was deleted;
+ *   - otherwise nothing moves.
+ */
+export type GatewayMove = {
+  /** The gateway bound to the merged collector afterwards, if any. */
+  boundGatewayId: number | null
+  /** The gateway that stays bound but changes rows (it was the removed collector's). */
+  movedGatewayId: number | null
+  /** The gateway that loses its binding. */
+  detachedGatewayId: number | null
+  /** Revisions of each collector's gateway, for the plan output. */
+  revisions: Record<number, number>
+}
+
+async function collectorGateways(
+  client: Client,
+  collectorIds: number[]
+): Promise<{ id: number; collectorId: number; revisions: number }[]> {
+  return resultRows<{ id: number; collectorId: number; revisions: number | string }>(
+    await client.rawQuery(
+      `SELECT g.id AS id, g.collector_id AS collectorId,
+              (SELECT COUNT(*) FROM gateway_revisions r WHERE r.gateway_id = g.id) AS revisions
+         FROM gateways g
+        WHERE g.collector_id IN (${placeholders(collectorIds)})`,
+      collectorIds
+    )
+  ).map((row) => ({
+    id: Number(row.id),
+    collectorId: Number(row.collectorId),
+    revisions: Number(row.revisions),
+  }))
+}
+
+export async function planGatewayMove(
+  client: Client,
+  sides: { survivorId: number; removedId: number; intoId: number }
+): Promise<GatewayMove> {
+  const gateways = await collectorGateways(client, [sides.survivorId, sides.removedId])
+  const survivor = gateways.find((g) => g.collectorId === sides.survivorId) ?? null
+  const removed = gateways.find((g) => g.collectorId === sides.removedId) ?? null
+  const revisions = Object.fromEntries(gateways.map((g) => [g.id, g.revisions]))
+  if (!removed) {
+    return {
+      boundGatewayId: survivor?.id ?? null,
+      movedGatewayId: null,
+      detachedGatewayId: null,
+      revisions,
+    }
+  }
+  if (!survivor) {
+    return {
+      boundGatewayId: removed.id,
+      movedGatewayId: removed.id,
+      detachedGatewayId: null,
+      revisions,
+    }
+  }
+  const intoGateway = sides.intoId === sides.removedId ? removed : survivor
+  const keep =
+    survivor.revisions > removed.revisions
+      ? survivor
+      : removed.revisions > survivor.revisions
+        ? removed
+        : intoGateway
+  const detach = keep === survivor ? removed : survivor
+  return {
+    boundGatewayId: keep.id,
+    movedGatewayId: keep === removed ? removed.id : null,
+    detachedGatewayId: detach.id,
+    revisions,
+  }
+}
+
+/**
+ * Carries out `planGatewayMove` inside the merge transaction, before the
+ * removed collector row is deleted. The detach goes first: `collector_id`
+ * is unique.
+ */
+export async function repointGateway(
+  trx: Client,
+  sides: { survivorId: number; removedId: number; intoId: number }
+): Promise<GatewayMove> {
+  const move = await planGatewayMove(trx, sides)
+  const now = DateTime.utc().toFormat('yyyy-MM-dd HH:mm:ss')
+  if (move.detachedGatewayId !== null) {
+    await trx.rawQuery('UPDATE gateways SET collector_id = NULL, updated_at = ? WHERE id = ?', [
+      now,
+      move.detachedGatewayId,
+    ])
+  }
+  if (move.movedGatewayId !== null) {
+    await trx.rawQuery('UPDATE gateways SET collector_id = ?, updated_at = ? WHERE id = ?', [
+      sides.survivorId,
+      now,
+      move.movedGatewayId,
+    ])
+  }
+  return move
+}
+
+/** One line for the plan and result output, or null when no gateway is involved. */
+export function describeGatewayMove(
+  move: GatewayMove,
+  sides: { survivorId: number; removedId: number }
+): string | null {
+  const revs = (id: number) => {
+    const n = move.revisions[id] ?? 0
+    return `${n} revision${n === 1 ? '' : 's'}`
+  }
+  if (move.detachedGatewayId !== null && move.boundGatewayId !== null) {
+    return (
+      `Managed gateway: both collectors have one. Gateway #${move.boundGatewayId} ` +
+      `(${revs(move.boundGatewayId)}) stays bound to #${sides.survivorId}; gateway ` +
+      `#${move.detachedGatewayId} (${revs(move.detachedGatewayId)}) is detached and keeps its ` +
+      'config history.'
+    )
+  }
+  if (move.movedGatewayId !== null) {
+    return (
+      `Managed gateway: #${move.movedGatewayId} moves from #${sides.removedId} to ` +
+      `#${sides.survivorId}.`
+    )
+  }
+  if (move.boundGatewayId !== null) {
+    return `Managed gateway: #${move.boundGatewayId} stays bound to #${sides.survivorId}.`
+  }
+  return null
+}
+
 // ── the plan ─────────────────────────────────────────────────────────────
 
 export type MergeSide = {
@@ -763,6 +910,8 @@ export type CollectorMergePlan = {
   rebuilds: MergeRebuild[]
   /** What happens to the collectors' nodes on the infrastructure view. */
   infraNodes: InfraNodeMove
+  /** What happens to the collectors' managed gateways. */
+  gateways: GatewayMove
   warnings: string[]
 }
 
@@ -913,6 +1062,7 @@ export async function planCollectorMerge(options: PlanOptions): Promise<Collecto
   }
 
   const infraNodes = await planInfraNodeMove(client, { survivorId, removedId, intoId })
+  const gateways = await planGatewayMove(client, { survivorId, removedId, intoId })
 
   const warnings: string[] = []
   if (!into.enabled) {
@@ -953,6 +1103,7 @@ export async function planCollectorMerge(options: PlanOptions): Promise<Collecto
     tables: tablePlans,
     rebuilds: policy ? rebuildWindows(overlap) : [],
     infraNodes,
+    gateways,
     warnings,
   }
 }
@@ -974,6 +1125,7 @@ export type CollectorMergeResult = {
   tables: MergeTableResult[]
   rebuilds: RollupRunResult[]
   infraNodes: InfraNodeMove
+  gateways: GatewayMove
   collector: Collector
 }
 
@@ -1151,6 +1303,9 @@ export async function executeCollectorMerge(
     intoId: plan.into.id,
   })
 
+  // Config history hangs off the gateway row: it follows the merged collector.
+  const gateways = await repointGateway(trx, { survivorId, removedId, intoId: plan.into.id })
+
   const intoRow = intoIsRemoved ? removed : survivor
   const identity: Record<string, unknown> = {}
   for (const attribute of Collector.$columnsDefinitions.keys()) {
@@ -1171,5 +1326,5 @@ export async function executeCollectorMerge(
   survivor.createdAt = createdAt
   await survivor.save()
 
-  return { survivorId, removedId, tables, rebuilds, infraNodes, collector: survivor }
+  return { survivorId, removedId, tables, rebuilds, infraNodes, gateways, collector: survivor }
 }

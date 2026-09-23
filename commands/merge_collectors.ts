@@ -3,6 +3,7 @@ import {
   AUTO_REPLACE_MAX_OVERLAP_SECONDS,
   CollectorMergeError,
   describeDuration,
+  describeGatewayMove,
   describeInfraNodeMove,
   executeCollectorMerge,
   MERGE_OVERLAP_POLICIES,
@@ -235,6 +236,8 @@ export default class MergeCollectors extends BaseCommand {
     }
     const infra = describeInfraNodeMove(plan.infraNodes, plan)
     if (infra) this.logger.info(`  ${infra}`)
+    const gateway = describeGatewayMove(plan.gateways, plan)
+    if (gateway) this.logger.info(`  ${gateway}`)
     for (const warning of plan.warnings) this.logger.warning(warning)
   }
 
@@ -292,6 +295,8 @@ export default class MergeCollectors extends BaseCommand {
     }
     const infra = describeInfraNodeMove(result.infraNodes, result)
     if (infra) this.logger.info(infra)
+    const gateway = describeGatewayMove(result.gateways, result)
+    if (gateway) this.logger.info(gateway)
     const c = result.collector
     this.logger.success(
       `Merged. Collector #${c.id} "${c.name}" (${c.baseUrl}) now holds the history of both ` +

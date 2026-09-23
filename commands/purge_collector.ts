@@ -122,6 +122,9 @@ export default class PurgeCollector extends BaseCommand {
     // Its node on the infrastructure view is layout, not history: the FK
     // (ON DELETE SET NULL) detaches it, with its ports, cables and position.
     const node = await db.from('infra_nodes').where('collector_id', collector.id).first()
+    // Same for its managed gateway: the config history hangs off the gateway
+    // row, which the FK (ON DELETE SET NULL) detaches.
+    const gateway = await db.from('gateways').where('collector_id', collector.id).first()
 
     if (!dryRun) {
       await collector.delete()
@@ -134,6 +137,12 @@ export default class PurgeCollector extends BaseCommand {
         `Infrastructure view: node #${node.id} ${dryRun ? 'would be' : 'is'} detached, not ` +
           'deleted: it keeps its ports, cables and position (delete or re-bind it on the ' +
           'Infrastructure page).'
+      )
+    }
+    if (gateway) {
+      this.logger.info(
+        `Managed gateway #${gateway.id} ${dryRun ? 'would be' : 'is'} detached, not deleted: ` +
+          'it keeps its config history.'
       )
     }
 
