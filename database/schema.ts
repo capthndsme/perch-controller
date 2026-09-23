@@ -1330,6 +1330,222 @@ export class GatewaySectionSchema extends BaseModel {
   declare updatedByUserId: number | null
 }
 
+export class HotspotCheckoutSchema extends BaseModel {
+  static $columns = [
+    'amount',
+    'checkoutRef',
+    'coinCount',
+    'createdAt',
+    'currency',
+    'decimals',
+    'downKbps',
+    'durationMode',
+    'durationSeconds',
+    'eventKey',
+    'finalizedAt',
+    'gatewayId',
+    'hostname',
+    'id',
+    'ip',
+    'keyEpoch',
+    'kind',
+    'mac',
+    'note',
+    'openedAt',
+    'portalId',
+    'priceRevision',
+    'priceTableId',
+    'quotaBytes',
+    'reason',
+    'refundAmount',
+    'resolvedAt',
+    'resolvedByUserId',
+    'routerSig',
+    'state',
+    'terminalId',
+    'terminalName',
+    'unusedAmount',
+    'upKbps',
+    'updatedAt',
+    'voucherId',
+  ] as const
+  $columns = HotspotCheckoutSchema.$columns
+  @column()
+  declare amount: bigint | number
+  @column()
+  declare checkoutRef: string | null
+  @column()
+  declare coinCount: number
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare currency: string | null
+  @column()
+  declare decimals: number | null
+  @column()
+  declare downKbps: number | null
+  @column()
+  declare durationMode: string | null
+  @column()
+  declare durationSeconds: number | null
+  @column()
+  declare eventKey: string
+  @column.dateTime()
+  declare finalizedAt: DateTime | null
+  @column()
+  declare gatewayId: number
+  @column()
+  declare hostname: string | null
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare ip: string | null
+  @column()
+  declare keyEpoch: number | null
+  @column()
+  declare kind: string
+  @column()
+  declare mac: string | null
+  @column()
+  declare note: string | null
+  @column.dateTime()
+  declare openedAt: DateTime | null
+  @column()
+  declare portalId: number | null
+  @column()
+  declare priceRevision: number | null
+  @column()
+  declare priceTableId: number | null
+  @column()
+  declare quotaBytes: bigint | number | null
+  @column()
+  declare reason: string | null
+  @column()
+  declare refundAmount: bigint | number | null
+  @column.dateTime()
+  declare resolvedAt: DateTime | null
+  @column()
+  declare resolvedByUserId: number | null
+  @column()
+  declare routerSig: string | null
+  @column()
+  declare state: string
+  @column()
+  declare terminalId: number | null
+  @column()
+  declare terminalName: string | null
+  @column()
+  declare unusedAmount: bigint | number
+  @column()
+  declare upKbps: number | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+  @column()
+  declare voucherId: number | null
+}
+
+export class HotspotPriceRevisionSchema extends BaseModel {
+  static $columns = [
+    'createdAt',
+    'currency',
+    'decimals',
+    'durationMode',
+    'id',
+    'name',
+    'priceTableId',
+    'revision',
+  ] as const
+  $columns = HotspotPriceRevisionSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare currency: string
+  @column()
+  declare decimals: number
+  @column()
+  declare durationMode: string
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare name: string
+  @column()
+  declare priceTableId: number
+  @column()
+  declare revision: number
+}
+
+export class HotspotPriceTableSchema extends BaseModel {
+  static $columns = [
+    'createdAt',
+    'createdByUserId',
+    'currency',
+    'decimals',
+    'durationMode',
+    'id',
+    'name',
+    'revision',
+    'updatedAt',
+  ] as const
+  $columns = HotspotPriceTableSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdByUserId: number | null
+  @column()
+  declare currency: string
+  @column()
+  declare decimals: number
+  @column()
+  declare durationMode: string
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare name: string
+  @column()
+  declare revision: number
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class HotspotTerminalSchema extends BaseModel {
+  static $columns = [
+    'createdAt',
+    'createdByUserId',
+    'enabled',
+    'id',
+    'lastSeenAt',
+    'mac',
+    'name',
+    'portalId',
+    'priceTableId',
+    'tokenPrefix',
+    'updatedAt',
+  ] as const
+  $columns = HotspotTerminalSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdByUserId: number | null
+  @column()
+  declare enabled: boolean
+  @column({ isPrimary: true })
+  declare id: number
+  @column.dateTime()
+  declare lastSeenAt: DateTime | null
+  @column()
+  declare mac: string | null
+  @column()
+  declare name: string
+  @column()
+  declare portalId: number
+  @column()
+  declare priceTableId: number | null
+  @column()
+  declare tokenPrefix: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
 export class InfraLinkSchema extends BaseModel {
   static $columns = [
     'aPortId',
@@ -2129,6 +2345,7 @@ export class VoucherBatchSchema extends BaseModel {
     'durationMinutes',
     'durationMode',
     'id',
+    'kind',
     'maxDevices',
     'name',
     'note',
@@ -2157,6 +2374,8 @@ export class VoucherBatchSchema extends BaseModel {
   declare durationMode: string
   @column({ isPrimary: true })
   declare id: number
+  @column()
+  declare kind: string
   @column()
   declare maxDevices: number
   @column()
