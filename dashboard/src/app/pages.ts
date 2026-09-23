@@ -21,6 +21,7 @@ export const pages = {
   wifiSsid: lazyPage(() => import('@/pages/wifi-ssid-page').then((m) => m.WifiSsidPage)),
   wifiClient: lazyPage(() => import('@/pages/wifi-client-page').then((m) => m.WifiClientPage)),
   wifiAp: lazyPage(() => import('@/pages/wifi-ap-page').then((m) => m.WifiApPage)),
+  gateway: lazyPage(() => import('@/pages/gateway-page').then((m) => m.GatewayPage)),
   infrastructure: lazyPage(() => import('@/pages/infrastructure-page').then((m) => m.InfrastructurePage)),
   settings: lazyPage(() => import('@/pages/settings-page').then((m) => m.SettingsPage)),
   settingsCollectors: lazyPage(() =>
@@ -31,6 +32,9 @@ export const pages = {
     import('@/pages/hostname-enrichment-settings-page').then((m) => m.HostnameEnrichmentSettingsPage),
   ),
   settingsPresence: lazyPage(() => import('@/pages/presence-settings-page').then((m) => m.PresenceSettingsPage)),
+  settingsGatewayObservation: lazyPage(() =>
+    import('@/pages/gateway-observation-settings-page').then((m) => m.GatewayObservationSettingsPage),
+  ),
   settingsCharts: lazyPage(() => import('@/pages/chart-settings-page').then((m) => m.ChartSettingsPage)),
   settingsWifiSources: lazyPage(() =>
     import('@/pages/wifi-sources-settings-page').then((m) => m.WifiSourcesSettingsPage),
