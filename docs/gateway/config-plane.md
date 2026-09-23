@@ -5,7 +5,8 @@ wiring on the collector socket, the per-gateway serial queue, the apply lifecycl
 Mode's enforcement, pairing for plain HTTP, and the REST API with the first domains (DHCP
 reservations, DNS names). M7 added the firewall domain and the persisted order of ordered types
 (docs/gateway/firewall.md). Networks (section 8, S5: the `networks` and `dhcp_pools` domains, the
-networks REST, per-network accounting) are `networks.md`.
+networks REST, per-network accounting) are `networks.md`. M11 (plan 2 phase 4: `system`, `routes`,
+`dns_settings`, `dhcp_tags`, DHCP options, per-feature "in sync" checks) is `native-sync.md`.
 
 The collector on an OpenWrt router becomes a managed gateway: controller edits apply to the
 router's native UCI config, and router edits (LuCI, `uci`, ssh) flow back. This document is the
@@ -31,7 +32,8 @@ Section numbers follow plan 1 of the design (and the code comments cite them): 2
 | `sync_engine.ts` | three-way merge, conflicts, drift, reconciling a read, statuses, the "in sync" predicate, state machines |
 | `apply_plan.ts` | ops of an apply job, management-path split, ledger, `editSections` core |
 | `revisions.ts` | snapshots, diffs, rejoin offer, pruning selection, restore |
-| `domains/` | the registry's domains: `dhcp_hosts.ts` (the sample), `dns_records.ts`, `dhcp_pools.ts`, `networks.ts` |
+| `domains/` | the registry's domains: `dhcp_hosts.ts` (the sample), `dns_records.ts`, `dhcp_pools.ts`, `networks.ts`, `firewall.ts`, and M11's `system.ts`, `routes.ts`, `dns_settings.ts`, `dhcp_tags.ts` (native-sync.md) |
+| `observed_facts.ts` | the observation parts the per-feature checks read (DB) |
 | `network_model.ts`, `networks_service.ts` | networks from sections, network edits, the networks REST (`networks.md`) |
 | `gateway_config_settings.ts` | Settings → Gateway (DB) |
 | `config_retention.ts` | pruning of events and revisions (DB) |
@@ -333,7 +335,9 @@ enforcement: drift stays visible, nothing is reverted until the admin resumes.
 from a fresh read merged into the rows. Blockers: `offline`, `mode_not_managed`,
 `apply_in_flight`, `enforcement_suspended`, and per section `conflict`, `controller_ahead` (C ≠ B),
 `router_ahead` (R ≠ C), `unimported_section` (a new router section in drift, or a synced section
-missing from the ledger), each with a `ConfigDiffEntry`. A pending LuCI apply makes `inSync` false
+missing from the ledger), each with a `ConfigDiffEntry`; and per feature `feature` {feature,
+objectId, code, message}: an ambiguous or duplicate section of a domain, or the domain's own
+`inSync` check on observed facts (plan 2 section 4.6; native-sync.md section 6). A pending LuCI apply makes `inSync` false
 without a blocker entry; excluded and unmodeled sections never block. `checkEnableAuthoritative`
 answers the PATCH: `sync_changed` when the head revision moved since the admin looked, else
 `not_in_sync`, else ok. The whole sequence runs inside the gateway's serial queue (S3), so a
@@ -542,8 +546,11 @@ type SectionEdit =
 
 **Invariant**, tested for every domain with `checkRoundTrip(domain, sections)`: applying
 `render(parse(x))` to x changes nothing, compared strictly (not normalised). The engine checks it
-per section on import. Register domains in `domains/index.ts` (claim order = array order: `dhcp_hosts`,
-`dns_records`, `dhcp_pools`, `networks`).
+per section on import. Register domains in `domains/index.ts` (claim order = array order, which follows the apply
+order: `system`, `networks`, `routes`, `dhcp_pools`, `dhcp_hosts`, `dns_records`, `dns_settings`,
+`dhcp_tags`, `firewall`, `sqm`). A domain may add `inSync(sections, observed)`: its "in sync" check
+on the agent's observed facts (native-sync.md section 6). A mirror a newly registered domain claims
+is promoted to synced on the next read (native-sync.md section 1).
 Perch-only metadata (labels, purposes) lives in each domain's own table keyed by `perch_id`, never
 in UCI.
 
