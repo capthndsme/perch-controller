@@ -268,7 +268,9 @@ export async function redeemVoucherOnline(
   const code = str(raw.code, 64)
   if (!code) throw guestRefusal('invalid_code')
   const portal = await guestPortal(gatewayId, client.portalId)
-  if (!portal.methods?.voucher) throw guestRefusal('disabled')
+  // A payment's reference code is a voucher code: codes are taken while
+  // either method is on (section 14.6).
+  if (!portal.methods?.voucher && !portal.methods?.payment) throw guestRefusal('disabled')
 
   const settings = await getPortalSettings()
   const deviceKey = `d:${portal.id}|${client.mac}`

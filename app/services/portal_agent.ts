@@ -2,7 +2,7 @@ import ApiClient from '#models/portal_api_client'
 import Collector from '#models/collector'
 import Gateway from '#models/gateway'
 import GatewaySection from '#models/gateway_section'
-import Portal, { type PortalStatus } from '#models/portal'
+import Portal, { type PortalStatus, portalMethods } from '#models/portal'
 import type PortalGatewayState from '#models/portal_gateway_state'
 import PortalGrant from '#models/portal_grant'
 import PortalTemplate from '#models/portal_template'
@@ -26,6 +26,8 @@ import { grantPushList, num, utc } from '#services/portal_grants'
 import { guestRefusal, loginPortalUser, redeemVoucherOnline } from '#services/portal_guest'
 import { portalGatewayKeys } from '#services/portal_keys'
 import { runInPortalQueue } from '#services/portal_queue'
+import { type PaymentWire, paymentWireFor, recordTerminalReport } from '#services/portal_hotspot'
+import { materializeHotspotEvents } from '#services/portal_hotspot_ingest'
 import { handlePortalRelay } from '#services/portal_relay'
 import { getPortalSettings } from '#services/portal_settings'
 import { bestEffortShaping, shapingEntries, shapingSourceRef } from '#services/portal_shaping'
@@ -54,6 +56,7 @@ import {
   type RouterPortalReport,
   reconcile,
 } from '#services/portal/reconcile'
+import { type ClickThroughSettings, normalizeClickThroughSettings } from '#services/portal/hotspot'
 import { EMPTY_SET_SHA256 } from '#services/portal/templates'
 import { isLiveState } from '#services/portal/types'
 import logger from '@adonisjs/core/services/logger'
@@ -280,7 +283,11 @@ export type PortalConfigureParams = {
     name: string
     network: string
     enabled: boolean
-    methods: { voucher: boolean; password: boolean }
+    methods: { voucher: boolean; password: boolean; payment: boolean; clickThrough: boolean }
+    /** Present when `methods.payment` (section 14.3). */
+    payment?: PaymentWire
+    /** Present when `methods.clickThrough` (section 14.7). */
+    clickThrough?: ClickThroughSettings
     templateSha256: string
     cspConnectSrc: string[]
     privacyNotice: string
@@ -317,6 +324,7 @@ export async function buildConfigureParams(
     : []
   const clients = await ApiClient.query().whereNull('revoked_at')
   const relayPortals = new Set(clients.flatMap((c) => c.portalIds ?? []))
+  const payments = await paymentWireFor(portals)
 
   const revisions = new Map<number, number>()
   const skipped: number[] = []
@@ -330,12 +338,18 @@ export async function buildConfigureParams(
     }
     const template = templates.find((t) => t.id === p.templateId)
     revisions.set(p.id, p.revision)
+    const methods = portalMethods(p.methods)
+    const payment = methods.payment ? payments.get(p.id) : undefined
     out.push({
       portalId: p.id,
       name: p.name,
       network: section.sectionName,
       enabled: true,
-      methods: { voucher: Boolean(p.methods?.voucher), password: Boolean(p.methods?.password) },
+      methods,
+      ...(payment ? { payment } : {}),
+      ...(methods.clickThrough
+        ? { clickThrough: normalizeClickThroughSettings(p.clickThrough) }
+        : {}),
       templateSha256: template && !template.builtin ? template.sha256 : EMPTY_SET_SHA256,
       cspConnectSrc: p.cspConnectSrc ?? [],
       privacyNotice: p.privacyNotice ?? '',
@@ -652,7 +666,7 @@ export function parseRouterReport(raw: unknown): RouterPortalReport {
  */
 async function fullSync(gatewayId: number): Promise<void> {
   const state = await gatewayState(gatewayId)
-  const report = parseRouterReport(
+  const raw = parseRouterReport(
     await call(
       gatewayId,
       'portal.sync',
@@ -661,6 +675,13 @@ async function fullSync(gatewayId: number): Promise<void> {
     )
   )
   const now = Date.now()
+  // Paid checkouts become payment vouchers redeemed offline; click-through
+  // grants and unclaimed coins are written (section 14.5).
+  const report = await materializeHotspotEvents(gatewayId, raw, {
+    ackedEventSeq: num(state.ackedEventSeq),
+    keyEpoch: state.keyEpoch,
+    now,
+  })
   const server = await loadServerPortalState(gatewayId, { now, report })
   const gateway = await Gateway.find(gatewayId)
   const { dbChanges, desired } = reconcile(server, report, Boolean(gateway?.authoritative))
@@ -1227,6 +1248,10 @@ export function attachPortalAgent(target: AgentHub = collectorHub): void {
     if (gatewayId !== null) schedulePortalSync(gatewayId)
   })
   target.onNotification('portal.sessions', onSessions)
+  target.onNotification('portal.terminals', async (collectorId, params) => {
+    const gatewayId = await gatewayOf(collectorId)
+    if (gatewayId !== null) await recordTerminalReport(gatewayId, params)
+  })
   setPortalAgentSender(new SocketPortalAgentSender())
 }
 

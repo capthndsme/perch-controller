@@ -1,11 +1,23 @@
-import Portal from '#models/portal'
+import HotspotPriceTable from '#models/hotspot_price_table'
+import HotspotTerminal from '#models/hotspot_terminal'
+import Portal, { portalMethods } from '#models/portal'
 import PortalTemplate from '#models/portal_template'
 import PortalTemplateFile from '#models/portal_template_file'
 import { type PortalDelivery, sendPortalPushes } from '#services/portal_agent_sender'
 import { PortalError, templateNotFound } from '#services/portal_errors'
 import { findPortal } from '#services/portal_portals'
 import { runInPortalQueue } from '#services/portal_queue'
-import { BUILTIN_TEMPLATE_FILES, PORTAL_MESSAGES } from '#services/portal/builtin_template'
+import {
+  type HotspotSnippetView,
+  BUILTIN_TEMPLATE_FILES,
+  PORTAL_MESSAGES,
+} from '#services/portal/builtin_template'
+import {
+  type PriceEntry,
+  normalizeClickThroughSettings,
+  normalizePaymentSettings,
+  rateText,
+} from '#services/portal/hotspot'
 import {
   type CheckedTemplateFile,
   LOGIN_PAGE,
@@ -300,6 +312,70 @@ export async function deleteTemplate(id: number): Promise<void> {
   await template.delete()
 }
 
+const SAMPLE_RATES: PriceEntry[] = [
+  { amount: 1, minutes: 10, quotaBytes: null, downKbps: null, upKbps: null },
+  { amount: 5, minutes: 60, quotaBytes: null, downKbps: 5000, upKbps: 2000 },
+  { amount: 20, minutes: 300, quotaBytes: null, downKbps: 10000, upKbps: 5000 },
+]
+
+/**
+ * Sample Paid Hotspot and click-through content for a preview: the portal's
+ * terminals and rates when given, else samples. `checkout_started` shows an
+ * open checkout; the status page (or `paid`) a receipt.
+ */
+async function previewHotspot(
+  portal: Portal | null,
+  page: PreviewPage,
+  code: string
+): Promise<HotspotSnippetView> {
+  let terminals: HotspotSnippetView['terminals'] = [
+    { terminalId: 1, name: 'Lobby', state: 'free' },
+    { terminalId: 2, name: 'Cafe', state: 'busy' },
+  ]
+  let rates = SAMPLE_RATES.map((e) => rateText(e, 'PHP', 0))
+  if (portal) {
+    const rows = await HotspotTerminal.query()
+      .where('portal_id', portal.id)
+      .orderBy('name')
+      .orderBy('id')
+    terminals = rows.map((t) => ({ terminalId: t.id, name: t.name, state: 'free' as const }))
+    const tableId = normalizePaymentSettings(portal.payment).priceTableId
+    const table = tableId !== null ? await HotspotPriceTable.find(tableId) : null
+    rates = table
+      ? (table.entries ?? []).map((e) => rateText(e, table.currency, table.decimals))
+      : []
+  }
+  const click = normalizeClickThroughSettings(portal?.clickThrough ?? null)
+  return {
+    terminals,
+    rates,
+    checkout:
+      code === 'checkout_started'
+        ? {
+            ref: 'ck-preview',
+            terminalName: terminals[0]?.name ?? 'Lobby',
+            amountText: 'PHP 5',
+            previewText: '1 h · 5 Mbit/s down',
+            idleSecondsLeft: 45,
+            terminalOnline: true,
+          }
+        : null,
+    receipt:
+      page === 'status' || code === 'paid'
+        ? {
+            code: 'GE6RH-9AQ1S',
+            detail: 'PHP 7 · 1 h 20 min · 5 Mbit/s down · 2026-09-23 12:00 UTC',
+          }
+        : null,
+    clickThrough: {
+      available: true,
+      minutes: click.minutes,
+      terms: click.terms,
+      retrySeconds: 0,
+    },
+  }
+}
+
 /**
  * `GET /portal/templates/:id/preview`: one page, self-contained, with sample
  * values (or a portal's name, methods and privacy notice with `portalId`).
@@ -314,8 +390,8 @@ export async function previewTemplate(
   const portal = portalId === null ? null : await findPortal(portalId)
   const code = messageCode && PORTAL_MESSAGES[messageCode] !== undefined ? messageCode : ''
   const methods = portal
-    ? { voucher: Boolean(portal.methods?.voucher), password: Boolean(portal.methods?.password) }
-    : { voucher: true, password: true }
+    ? portalMethods(portal.methods)
+    : { voucher: true, password: true, payment: true, clickThrough: true }
   const expires = new Date(Date.now() + 90 * 60_000).toISOString()
   const html = renderPreview(
     await filesOf(template),
@@ -331,10 +407,12 @@ export async function previewTemplate(
       remaining_data: page === 'status' ? '1.5 GB' : '',
       expires_at: page === 'status' ? expires : '',
       privacy_notice: portal?.privacyNotice ?? '',
+      // As the router renders it: comma-separated, lower case.
       methods: Object.entries(methods)
         .filter(([, on]) => on)
-        .map(([m]) => m)
-        .join(' '),
+        .map(([m]) => m.toLowerCase())
+        .join(','),
+      reference_code: page === 'status' ? 'GE6RH-9AQ1S' : '',
       status_json: {
         state: page === 'status' ? 'authorized' : 'preauth',
         mac: '02:00:00:00:00:01',
@@ -345,7 +423,8 @@ export async function previewTemplate(
             : null,
       },
     },
-    methods
+    methods,
+    await previewHotspot(portal, page, code)
   )
   return { html, page, messageCode: code || null }
 }

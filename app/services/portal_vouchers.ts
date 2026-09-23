@@ -283,7 +283,12 @@ export async function createBatch(
 }
 
 export async function listBatches(filter: { portalId?: number }): Promise<BatchView[]> {
-  const query = VoucherBatch.query().orderBy('created_at', 'desc').orderBy('id', 'desc')
+  // Payment batches (one voucher per paid checkout) live in the payment
+  // ledger, not in the printed batches (section 14.5).
+  const query = VoucherBatch.query()
+    .where('kind', 'batch')
+    .orderBy('created_at', 'desc')
+    .orderBy('id', 'desc')
   if (filter.portalId) query.where('portal_id', filter.portalId)
   return batchViews(await query, Date.now())
 }

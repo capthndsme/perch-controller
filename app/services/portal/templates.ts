@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import {
+  type HotspotSnippetView,
   BUILTIN_TEMPLATE_FILES,
   PORTAL_MESSAGES,
   portalSnippets,
@@ -71,11 +72,23 @@ export const TEMPLATE_VARIABLES = [
   'voucher_form',
   'login_form',
   'logout_form',
+  // Paid Hotspot and click-through (section 14.8)
+  'checkout_form',
+  'clickthrough_form',
+  'receipt',
+  'reference_code',
 ] as const
 export type TemplateVariable = (typeof TEMPLATE_VARIABLES)[number]
 
 const VARIABLE_SET = new Set<string>(TEMPLATE_VARIABLES)
-const RAW_VARIABLES = new Set<string>(['voucher_form', 'login_form', 'logout_form'])
+const RAW_VARIABLES = new Set<string>([
+  'voucher_form',
+  'login_form',
+  'logout_form',
+  'checkout_form',
+  'clickthrough_form',
+  'receipt',
+])
 const VARIABLE_PATTERN = /\{\{\s*([^{}]*?)\s*\}\}/g
 
 export type TemplateFileInput = { name: string; data: Buffer }
@@ -346,15 +359,18 @@ export type TemplateValues = {
   privacy_notice: string
   methods: string
   status_json: unknown
+  /** The guest's latest reference code (display form), '' when none. */
+  reference_code?: string
 }
 
 /** Substitutes the variables of one HTML page. Unknown names render empty. */
 export function renderTemplateHtml(
   html: string,
   values: TemplateValues,
-  methods: { voucher: boolean; password: boolean }
+  methods: { voucher: boolean; password: boolean; payment?: boolean; clickThrough?: boolean },
+  hotspot: HotspotSnippetView | null = null
 ): string {
-  const snippets = portalSnippets(methods)
+  const snippets = portalSnippets(methods, hotspot)
   return html.replace(VARIABLE_PATTERN, (_whole, name: string) => {
     if (RAW_VARIABLES.has(name)) return snippets[name as keyof typeof snippets]
     if (name === 'status_json') return scriptSafeJson(values.status_json)
@@ -381,7 +397,8 @@ export function renderPreview(
   files: ReadonlyArray<{ name: string; contentType: string; data: Buffer }>,
   page: PreviewPage,
   sample: Omit<TemplateValues, 'assets' | 'message'> & { message_code: string },
-  methods: { voucher: boolean; password: boolean }
+  methods: { voucher: boolean; password: boolean; payment?: boolean; clickThrough?: boolean },
+  hotspot: HotspotSnippetView | null = null
 ): string {
   const byName = new Map(files.map((f) => [f.name, f]))
   const builtin = new Map(BUILTIN_TEMPLATE_FILES.map((f) => [f.name, f]))
@@ -394,7 +411,8 @@ export function renderPreview(
   let html = renderTemplateHtml(
     file.data.toString('utf8'),
     { ...sample, message, assets: marker },
-    methods
+    methods,
+    hotspot
   )
   html = html.replace(new RegExp(`${marker}/([a-z0-9][a-z0-9._-]{0,63})`, 'g'), (_whole, name) => {
     const asset = source.get(name)

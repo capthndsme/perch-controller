@@ -35,7 +35,7 @@ test.group('portal | templates', (group) => {
     })
     assert.deepEqual(
       builtin.files.map((f: any) => f.name),
-      ['login.html', 'status.html', 'style.css']
+      ['login.html', 'status.html', 'style.css', 'checkout.js']
     )
     assert.includeMembers(builtin.variables, ['voucher_form', 'login_form', 'logout_form'])
 
@@ -259,7 +259,7 @@ test.group('portal | templates', (group) => {
     const copy = bodyOf(dup).data
     assert.deepInclude(copy, { name: 'My pages', builtin: false })
     assert.notEqual(copy.sha256, EMPTY_SET_SHA256)
-    assert.lengthOf(copy.files, 3)
+    assert.lengthOf(copy.files, 4)
 
     const portal = await seedPortal(world.gatewayId, undefined, {
       name: 'Café <Guests>',

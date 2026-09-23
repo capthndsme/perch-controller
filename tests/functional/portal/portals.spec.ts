@@ -44,7 +44,7 @@ test.group('portal | portals', (group) => {
       templateId: world.builtinTemplateId,
       cspConnectSrc: ['http://192.168.20.5:8080', 'ws://coinbox.example.com'],
       privacyNotice: 'We keep your MAC address for 30 days.',
-      methods: { voucher: true, password: true },
+      methods: { voucher: true, password: true, payment: false, clickThrough: false },
     })
     assert.deepEqual(portal.network, {
       perchId: GUEST_NET,
@@ -201,7 +201,7 @@ test.group('portal | portals', (group) => {
     r.assertStatus(200)
     assert.deepInclude(bodyOf(r).data.portal, {
       name: 'Renamed',
-      methods: { voucher: true, password: true },
+      methods: { voucher: true, password: true, payment: false, clickThrough: false },
     })
     assert.equal(bodyOf(r).data.portal.status.revision, 2)
     assert.equal(bodyOf(r).data.delivery, 'pending')

@@ -55,6 +55,7 @@ const PortalUsersController = () => import('#controllers/portal_users_controller
 const PortalApiClientsController = () => import('#controllers/portal_api_clients_controller')
 const PortalGrantsController = () => import('#controllers/portal_grants_controller')
 const PortalAuthorizationsController = () => import('#controllers/portal_authorizations_controller')
+const PortalHotspotController = () => import('#controllers/portal_hotspot_controller')
 
 /**
  * Setup wizard endpoints. INTENTIONALLY outside the requireSetupComplete
@@ -441,6 +442,18 @@ router
         router.get('portals/:id', [PortalPortalsController, 'show']).as('portals.show')
         router.get('grants', [PortalGrantsController, 'index']).as('grants.index')
         router.get('sessions', [PortalGrantsController, 'sessions']).as('sessions.index')
+        // Paid Hotspot reads (section 14.9): no secrets in them.
+        router.get('price-tables', [PortalHotspotController, 'priceTables']).as('priceTables.index')
+        router
+          .get('price-tables/:id', [PortalHotspotController, 'priceTable'])
+          .as('priceTables.show')
+        router
+          .post('price-tables/:id/quote', [PortalHotspotController, 'quote'])
+          .as('priceTables.quote')
+        router.get('terminals', [PortalHotspotController, 'terminals']).as('terminals.index')
+        router.get('terminals/:id', [PortalHotspotController, 'terminal']).as('terminals.show')
+        router.get('checkouts', [PortalHotspotController, 'checkouts']).as('checkouts.index')
+        router.get('checkouts/:id', [PortalHotspotController, 'checkout']).as('checkouts.show')
         router
           .group(() => {
             router.post('portals', [PortalPortalsController, 'store']).as('portals.store')
@@ -524,6 +537,37 @@ router
             router
               .delete('api-clients/:id', [PortalApiClientsController, 'destroy'])
               .as('apiClients.destroy')
+
+            router
+              .post('price-tables', [PortalHotspotController, 'storePriceTable'])
+              .as('priceTables.store')
+            router
+              .patch('price-tables/:id', [PortalHotspotController, 'updatePriceTable'])
+              .as('priceTables.update')
+            router
+              .delete('price-tables/:id', [PortalHotspotController, 'destroyPriceTable'])
+              .as('priceTables.destroy')
+            router
+              .post('terminals', [PortalHotspotController, 'storeTerminal'])
+              .as('terminals.store')
+            router
+              .patch('terminals/:id', [PortalHotspotController, 'updateTerminal'])
+              .as('terminals.update')
+            router
+              .post('terminals/:id/rotate', [PortalHotspotController, 'rotateTerminal'])
+              .as('terminals.rotate')
+            router
+              .delete('terminals/:id', [PortalHotspotController, 'destroyTerminal'])
+              .as('terminals.destroy')
+            router
+              .post('checkouts/:id/void', [PortalHotspotController, 'void'])
+              .as('checkouts.void')
+            router
+              .post('checkouts/:id/credit', [PortalHotspotController, 'credit'])
+              .as('checkouts.credit')
+            router
+              .post('checkouts/:id/dismiss', [PortalHotspotController, 'dismiss'])
+              .as('checkouts.dismiss')
           })
           .use(middleware.requireAdmin())
       })

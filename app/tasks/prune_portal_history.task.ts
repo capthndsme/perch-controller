@@ -17,7 +17,14 @@ export default class PrunePortalHistoryTask extends Task {
     try {
       const { sessionRetentionDays } = await getPortalSettings()
       const result = await prunePortalHistory(sessionRetentionDays)
-      if (result.sessions + result.grants + result.events + result.authorizations > 0) {
+      if (
+        result.sessions +
+          result.grants +
+          result.events +
+          result.authorizations +
+          result.checkoutsAnonymized >
+        0
+      ) {
         logger.info(
           { sessionRetentionDays, ...result },
           'prune_portal_history: pruned guest history'

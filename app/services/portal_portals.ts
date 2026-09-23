@@ -2,7 +2,14 @@ import Collector from '#models/collector'
 import Gateway from '#models/gateway'
 import GatewayNetwork from '#models/gateway_network'
 import GatewaySection from '#models/gateway_section'
-import Portal, { type PortalMethods } from '#models/portal'
+import HotspotPriceTable from '#models/hotspot_price_table'
+import Portal, { type PortalMethods, portalMethods } from '#models/portal'
+import {
+  type ClickThroughSettings,
+  type PaymentSettings,
+  normalizeClickThroughSettings,
+  normalizePaymentSettings,
+} from '#services/portal/hotspot'
 import PortalGatewayState from '#models/portal_gateway_state'
 import PortalGrant from '#models/portal_grant'
 import PortalTemplate from '#models/portal_template'
@@ -43,10 +50,52 @@ export type PortalInput = {
   name?: string
   networkPerchId?: string
   methods?: Partial<PortalMethods>
+  /** The payment method's settings (section 14.3); merged into the stored ones. */
+  payment?: Partial<PaymentSettings>
+  /** The click-through method's limits (section 14.7); merged into the stored ones. */
+  clickThrough?: Partial<ClickThroughSettings>
   templateId?: number | null
   cspConnectSrc?: string[]
   privacyNotice?: string | null
   force?: boolean
+}
+
+/**
+ * The stored payment and click-through settings after an input: merged,
+ * normalized; the payment method needs an existing price table
+ * (422 `price_table_required`, 404 `price_table_not_found`).
+ */
+async function methodSettings(
+  methods: ReturnType<typeof portalMethods>,
+  current: { payment: unknown; clickThrough: unknown },
+  input: PortalInput
+): Promise<{ payment: PaymentSettings; clickThrough: ClickThroughSettings }> {
+  const payment = normalizePaymentSettings({
+    ...normalizePaymentSettings(current.payment),
+    ...(input.payment ?? {}),
+  })
+  const clickThrough = normalizeClickThroughSettings({
+    ...normalizeClickThroughSettings(current.clickThrough),
+    ...(input.clickThrough ?? {}),
+  })
+  if (payment.priceTableId !== null) {
+    const table = await HotspotPriceTable.find(payment.priceTableId)
+    if (!table) {
+      throw new PortalError(
+        404,
+        'price_table_not_found',
+        `There is no price table ${payment.priceTableId}.`
+      )
+    }
+  }
+  if (methods.payment && payment.priceTableId === null) {
+    throw new PortalError(
+      422,
+      'price_table_required',
+      'The payment method needs a price table (`payment.priceTableId`).'
+    )
+  }
+  return { payment, clickThrough }
 }
 
 export async function builtinTemplateId(): Promise<number | null> {
@@ -250,6 +299,14 @@ export async function createPortal(
   await checkTemplate(input.templateId)
   const templateId = input.templateId === undefined ? await builtinTemplateId() : input.templateId
 
+  const methods = {
+    voucher: input.methods?.voucher ?? true,
+    password: input.methods?.password ?? false,
+    payment: input.methods?.payment ?? false,
+    clickThrough: input.methods?.clickThrough ?? false,
+  }
+  const settings = await methodSettings(methods, { payment: null, clickThrough: null }, input)
+
   return runInPortalQueue(gateway.id, async () => {
     await checkNetwork(gateway, input.networkPerchId, Boolean(input.force), null)
     let portal: Portal
@@ -258,10 +315,9 @@ export async function createPortal(
         gatewayId: gateway.id,
         name: input.name,
         networkPerchId: input.networkPerchId,
-        methods: {
-          voucher: input.methods?.voucher ?? true,
-          password: input.methods?.password ?? false,
-        },
+        methods,
+        payment: settings.payment,
+        clickThrough: settings.clickThrough,
         templateId,
         cspConnectSrc: input.cspConnectSrc ?? [],
         privacyNotice: input.privacyNotice ?? null,
@@ -304,13 +360,35 @@ export async function updatePortal(id: number, input: PortalInput): Promise<Port
       portal.name = input.name
       changed = true
     }
-    if (input.methods !== undefined) {
-      const methods = {
-        voucher: input.methods.voucher ?? Boolean(portal.methods?.voucher),
-        password: input.methods.password ?? Boolean(portal.methods?.password),
+    const stored = portalMethods(portal.methods)
+    const methods = {
+      voucher: input.methods?.voucher ?? stored.voucher,
+      password: input.methods?.password ?? stored.password,
+      payment: input.methods?.payment ?? stored.payment,
+      clickThrough: input.methods?.clickThrough ?? stored.clickThrough,
+    }
+    if (input.methods !== undefined && JSON.stringify(methods) !== JSON.stringify(stored)) {
+      portal.methods = methods
+      changed = true
+    }
+    if (
+      input.methods !== undefined ||
+      input.payment !== undefined ||
+      input.clickThrough !== undefined
+    ) {
+      const settings = await methodSettings(methods, portal, input)
+      if (
+        JSON.stringify(settings.payment) !==
+        JSON.stringify(normalizePaymentSettings(portal.payment))
+      ) {
+        portal.payment = settings.payment
+        changed = true
       }
-      if (JSON.stringify(methods) !== JSON.stringify(portal.methods)) {
-        portal.methods = methods
+      if (
+        JSON.stringify(settings.clickThrough) !==
+        JSON.stringify(normalizeClickThroughSettings(portal.clickThrough))
+      ) {
+        portal.clickThrough = settings.clickThrough
         changed = true
       }
     }

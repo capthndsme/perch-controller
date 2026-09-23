@@ -29,12 +29,38 @@ export const EXTERNAL_REF_REGEX = /^[A-Za-z0-9._:-]{1,64}$/
 const NETWORK_PERCH_ID_REGEX = /^[A-Za-z0-9._:-]{1,24}$/
 
 const methods = () =>
-  vine.object({ voucher: vine.boolean().optional(), password: vine.boolean().optional() })
+  vine.object({
+    voucher: vine.boolean().optional(),
+    password: vine.boolean().optional(),
+    payment: vine.boolean().optional(),
+    clickThrough: vine.boolean().optional(),
+  })
+
+/** The payment method's settings (section 14.3). */
+const paymentSettings = () =>
+  vine.object({
+    priceTableId: id().nullable().optional(),
+    idleTimeoutSeconds: vine.number().withoutDecimals().min(15).max(600).optional(),
+  })
+
+/** The click-through method's limits (section 14.7, decision 32). */
+const clickThroughSettings = () =>
+  vine.object({
+    minutes: vine.number().withoutDecimals().min(1).max(1440).optional(),
+    quotaBytes: vine.number().withoutDecimals().min(1_000_000).max(1e13).nullable().optional(),
+    downKbps: kbps().nullable().optional(),
+    upKbps: kbps().nullable().optional(),
+    windowHours: vine.number().withoutDecimals().min(1).max(720).optional(),
+    perWindow: vine.number().withoutDecimals().min(1).max(24).optional(),
+    terms: vine.string().trim().maxLength(4000).optional(),
+  })
 
 const portalFields = {
   name: vine.string().trim().minLength(1).maxLength(80),
   networkPerchId: vine.string().trim().regex(NETWORK_PERCH_ID_REGEX),
   methods: methods().optional(),
+  payment: paymentSettings().optional(),
+  clickThrough: clickThroughSettings().optional(),
   templateId: id().nullable().optional(),
   cspConnectSrc: vine
     .array(vine.string().trim().toLowerCase().maxLength(255).regex(CSP_ORIGIN_REGEX))
@@ -247,3 +273,94 @@ export const updatePortalSettingsValidator = vine.compile(
     offlineVoucherLimit: setting('offlineVoucherLimit'),
   })
 )
+
+// --- Paid Hotspot (section 14.9) ---------------------------------------------
+
+const priceEntry = () =>
+  vine.object({
+    amount: vine.number().withoutDecimals().min(1).max(1_000_000),
+    minutes: vine.number().withoutDecimals().min(1).max(525_600),
+    quotaBytes: vine.number().withoutDecimals().min(1_000_000).max(1e13).nullable().optional(),
+    downKbps: kbps().nullable().optional(),
+    upKbps: kbps().nullable().optional(),
+  })
+
+const priceTableFields = {
+  name: vine.string().trim().minLength(1).maxLength(80),
+  currency: vine
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{3}$/),
+  decimals: vine.number().withoutDecimals().min(0).max(3).optional(),
+  durationMode: vine.enum(DURATION_MODES).optional(),
+  entries: vine.array(priceEntry()).minLength(1).maxLength(32),
+}
+
+export const createPriceTableValidator = vine.compile(vine.object(priceTableFields))
+
+export const updatePriceTableValidator = vine.compile(
+  vine.object({
+    ...priceTableFields,
+    name: priceTableFields.name.optional(),
+    currency: priceTableFields.currency.optional(),
+    entries: priceTableFields.entries.optional(),
+  })
+)
+
+export const quoteValidator = vine.compile(
+  vine.object({ amount: vine.number().withoutDecimals().min(0).max(10_000_000) })
+)
+
+const terminalFields = {
+  portalId: id(),
+  name: vine.string().trim().minLength(1).maxLength(80),
+  mac: vine.string().trim().regex(MAC_REGEX).nullable().optional(),
+  enabled: vine.boolean().optional(),
+  priceTableId: id().nullable().optional(),
+}
+
+export const createTerminalValidator = vine.compile(vine.object(terminalFields))
+
+export const updateTerminalValidator = vine.compile(
+  vine.object({
+    ...terminalFields,
+    portalId: terminalFields.portalId.optional(),
+    name: terminalFields.name.optional(),
+  })
+)
+
+export const terminalListQueryValidator = vine.compile(vine.object({ portalId: id().optional() }))
+
+export const checkoutListQueryValidator = vine.compile(
+  vine.object({
+    portalId: id().optional(),
+    gatewayId: id().optional(),
+    terminalId: id().optional(),
+    kind: vine.enum(['payment', 'unclaimed'] as const).optional(),
+    state: vine.enum(['paid', 'voided', 'unclaimed', 'credited', 'dismissed'] as const).optional(),
+    mac: vine.string().trim().maxLength(32).optional(),
+    from: vine.string().trim().maxLength(40).optional(),
+    to: vine.string().trim().maxLength(40).optional(),
+    limit: limit(),
+    offset: offset(),
+  })
+)
+
+const note = () => vine.string().trim().maxLength(200).nullable().optional()
+
+export const voidCheckoutValidator = vine.compile(
+  vine.object({
+    note: note(),
+    refundAmount: vine.number().withoutDecimals().min(0).max(10_000_000).nullable().optional(),
+  })
+)
+
+export const creditCheckoutValidator = vine.compile(
+  vine.object({
+    minutes: vine.number().withoutDecimals().min(1).max(525_600).nullable().optional(),
+    note: note(),
+  })
+)
+
+export const dismissCheckoutValidator = vine.compile(vine.object({ note: note() }))
