@@ -2551,3 +2551,58 @@ null, not a 0 drop; the live QoS chart keys and colours by queue and breaks at r
   The card always uses scope `all`.
 - **Tests.** 568/568, lint, typecheck, dashboard lint and build. Controller version 1.0.0-rc.3, pinned
   collector 1.0.0-rc.3 (perch-apd stays 1.0.0-rc.2).
+
+## 2026-09-24 — Device groups, portal fixes, local release 1.1.0-pre.1
+
+Branch `gw/integration` in all four repositories, merged into local `main` and tagged
+`v1.1.0-pre.1` there (perch-agentkit `v0.3.0-pre.1`). Nothing pushed; the daemons still pin kit
+v0.2.0 and build through `go.work` until the kit tag is published.
+
+### Portal fixes
+- **Counting under shaping** (collector 24332af): traffic an ifb re-injects (sqm's download, perch-qos'
+  upload) skips the netdev hooks, so the portal's netdev counters missed it and quotas never cut.
+  Counting moved to `inet perch_portal_acct` (upload per MAC on prerouting, download per address on
+  postrouting, addresses learned into timed sets, address quota maps) plus `netdev perch_portal_fast`
+  for the flowtable's download. Namespace test with sqm-like, perch-qos-like and both.
+- **Portal devices stay in their network's bucket** (`within` in the QoS planner, cap = per-direction
+  minimum); the management confirm window starts at 300 s.
+- **Portal quotas are the router's alone** (bab0dbf): the shaper's copy counted link-layer bytes, ran
+  out first and blocked a device the portal still showed active. Portal assignments carry rate and
+  expiry only; older ones lose their quota at the next update.
+
+### Device groups (decisions 30/31; contract `docs/gateway/device-groups.md`)
+Groups per gateway with bound members (manual / portal), an optional network (VLAN), Wi-Fi keys
+(PPSK), QoS as an assignment (`source: 'group'`), internet block (firewall sections `perch_g<id>*`),
+portal bypass; QoS groups folded in (migration 123). A portal user with `deviceGroupId` binds the
+device on sign-in: to a group with a network it is moved (no grant; the AP gets a MAC binding and
+kicks the device), otherwise it gets its grant plus the group's rules. perch-apd `groups.apply /
+confirm / state` writes Perch-owned `wireless` / `network` sections with a confirm window and
+rollback (opt-in `wifi_groups '1'`). Dashboard `/groups`, `/groups/:id`, Settings → Device groups.
+
+### Lab, end to end (mac80211_hwsim)
+A lab AP (OpenWrt 24.10 container, hwsim phy0, trunk `lan0` tagged 130-132), a lab client (Alpine,
+phy1, wpa_supplicant), the lab gateway managed (paired), networks `unit1` 130, `unit2` 131, `onboard` 132
+(portal "Onboarding"), sqm 50/50 on `wan2`.
+
+| Check | Result |
+|---|---|
+| Building key | lease on Onboarding (132) |
+| Unit 1 key | lease on Unit 1 (130), 18.9 / 4.7 Mbit/s under its 20/5 group limit |
+| Portal sign-in of a Unit 2 user | bound, AP binding, kick; that MAC rejoins with the building key into Unit 2 (131); another MAC stays on Onboarding |
+| Unit 1 internet off / on | `perch_g1_wan` REJECT, applied and removed; internet back |
+| Portal voucher 12/4 Mbit, 40 MB | device class inside the Onboarding bucket; 10.5 Mbit/s down; counted 16 332 252 B for 15 728 640 B payload (+3.8 % headers); cut at exactly 40 000 000 B, device back to the sign-in page |
+
+Found in the lab and fixed:
+- **perch-apd bindings matched every client** (cdaa339): OpenWrt 24.10 reads a station's `mac` as a
+  string and dropped the `list mac`, so the binding became `00:00:00:00:00:00 <building key>` and would
+  have moved everyone into that unit. One `wifi-station` per MAC with `option mac` (25.12 splits it);
+  `groups.confirm` reads hostapd's PSK files back and rolls back with `unsafe_binding`.
+- **Controller re-sends after a daemon upgrade** (d3b3689): the AP fingerprint includes the daemon
+  version; an `unsafe_binding` refusal is not retried until something changes.
+- **perch-qos shaped VLAN clients twice** (edc2510): a MAC filter sits on every LAN device, the port
+  (`lan`) and its VLANs (`lan.132`) alike, so tagged frames matched again on the port: half the cap
+  (5.7 of 12 Mbit/s) and quotas counted double. 802.1Q / 802.1ad frames now pass at priorities 1/2
+  (the others moved up by two; an upgrade clears the old slots). Namespace test with real traffic.
+- Lab-only: wpad's ujail and `country` do not work in an unprivileged container (jail off, no
+  country on the lab AP); a disabled `sqm` init script ignores Perch's reload (re-enabled on the lab
+  gateway).
