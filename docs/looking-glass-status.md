@@ -2377,3 +2377,37 @@ tagged yet.
 - **Rollbacks** outside the repos, in `~/metricslite-rollback/2026-09-23-rc2/`: the three APs'
   0.2.0-pre.1 binaries and configs (mode 600), the gateway's rc.2-pre.1 binary, and the downloaded
   rc.2 artifacts.
+
+## 2026-09-23 — perch-collector 1.0.0-rc.3: post-quantum ClientHellos keep their SNI (live)
+
+- **Symptom.** Since 09-18 most HTTPS traffic had no host name: 74–97% of the gateway's https
+  bytes per day were unnamed (09-18 81%, 09-19 77%, 09-20 87%, 09-21 95%, 09-22 74%, 09-23 96% up to
+  the fix; 115 of 129 GB in the 48 h before it), so the destination views fell back to networks.
+- **Root cause.** Browsers and curl now offer X25519MLKEM768, which makes the TLS ClientHello
+  1.5–2 KB; GSO/GRO on the gateway merges it into one packet above the MTU. nDPI mode captured with
+  `snap_len 1500` (the OpenWrt package default), so the hello was cut at 1486 IP bytes, nDPI's TLS
+  reassembly skipped the rest as out of sequence and the flow stayed `https` with no server name.
+- **Fix (go-collector 60fe87e, branch `fix/sni-pq`).** nDPI mode always opens the capture with 65535
+  bytes whatever `snap_len` says (logged: `capture: snap_len 1500 raised to 65535: nDPI inspects
+  whole packets`); the IP packet goes to the classifier as a slice of the capture buffer; nDPI gets
+  at most a 16-bit length. Regression tests on two sanitized captures (curl, Chromium; placeholder
+  addresses, `www.example.com`). `snap_len` only matters in port mode now.
+- **Release.** 5cccb8f "1.0.0-rc.3" on `stable` (Makefile `PERCH_VERSION`, build-static default,
+  install docs; `go.mod` gained `golang.org/x/net` as indirect: the new tests import
+  `gopacket/pcapgo`, which the local `go.work` hid and a `GOWORK=off` CI build needs). `main`
+  fast-forwarded to it. Annotated tag `v1.0.0-rc.3`, GitHub pre-release with short notes; ci,
+  Release (10 OpenWrt cells + static) and Docker (main + tag) green first time. `releases/latest`
+  still v0.2.0; GHCR got `1.0.0-rc.3`, `rc`, `sha-5cccb8f`, `latest` untouched. Tests: `go test`
+  on go 1.26 and 1.22.12, `-race`, nDPI 5.0 tests incl. the new ones pass; the old
+  `TestNDPISweeperFreesUnfinalisedFlows` flakes about 1 in 4 runs on rc.2 too (not a regression).
+  Leak scan of the diff, history and the pcap bytes: clean.
+- **Live (lab verification skipped by the owner's choice).** Gateway swapped at 13:44:39 UTC
+  (release static binary, checksum verified; stop, cp, chmod, start). The snap_len line logged,
+  adopted again on row #1 (agent, version 1.0.0-rc.3) within a second, gateway stats and
+  `observe.dhcp` (95 leases + 7 static) flowing, RSS 49 MB.
+- **Effect** (`device_destination_buckets_hourly`, protocol https, collector 1). Before: 1.4–15.6%
+  of https bytes named per hour (08:00–12:00 UTC), 17.8% for 13:00–13:45. After, 13:45:53–13:59:43
+  from two snapshots of the live hour: 505 of 530 MB named (**95.4%**), distinct names in the hour
+  171 → 251. Flows open across the restart stay unnamed until they end.
+- **Rollback.** `/root/perch-collector-1.0.0-rc.2.bak` in the gateway container, and the rc.2 binary,
+  its UCI config and the downloaded rc.3 files in `~/metricslite-rollback/2026-09-23-rc3/`.
