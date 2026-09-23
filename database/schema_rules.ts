@@ -47,5 +47,10 @@ export default {
     gateway_config_events: {
       skipColumns: ['detail'],
     },
+    // QoS (docs/gateway/qos.md section 4): the queue's full UCI option map,
+    // parsed by app/models/qos_wan_queue.ts.
+    qos_wan_queues: {
+      skipColumns: ['options'],
+    },
   },
 } satisfies SchemaRules

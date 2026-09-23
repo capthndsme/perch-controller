@@ -1059,6 +1059,200 @@ export class ProtocolCategorySchema extends BaseModel {
   declare updatedAt: DateTime
 }
 
+export class QosAssignmentSchema extends BaseModel {
+  static $columns = ['createdAt', 'createdByUserId', 'downKbit', 'exhaustedAt', 'expiresAt', 'gatewayId', 'groupId', 'id', 'mac', 'network', 'policyId', 'quotaBytes', 'quotaOnExhausted', 'quotaUsedBytes', 'source', 'sourceRef', 'targetType', 'throttleDownKbit', 'throttleUpKbit', 'upKbit', 'updatedAt'] as const
+  $columns = QosAssignmentSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdByUserId: number | null
+  @column()
+  declare downKbit: number | null
+  @column.dateTime()
+  declare exhaustedAt: DateTime | null
+  @column.dateTime()
+  declare expiresAt: DateTime | null
+  @column()
+  declare gatewayId: number
+  @column()
+  declare groupId: number | null
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare mac: string | null
+  @column()
+  declare network: string | null
+  @column()
+  declare policyId: number | null
+  @column()
+  declare quotaBytes: bigint | number | null
+  @column()
+  declare quotaOnExhausted: string | null
+  @column()
+  declare quotaUsedBytes: bigint | number
+  @column()
+  declare source: string
+  @column()
+  declare sourceRef: string | null
+  @column()
+  declare targetType: string
+  @column()
+  declare throttleDownKbit: number | null
+  @column()
+  declare throttleUpKbit: number | null
+  @column()
+  declare upKbit: number | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class QosGroupSchema extends BaseModel {
+  static $columns = ['createdAt', 'gatewayId', 'id', 'name', 'notes', 'updatedAt'] as const
+  $columns = QosGroupSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare name: string
+  @column()
+  declare notes: string | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class QosGroupMemberSchema extends BaseModel {
+  static $columns = ['createdAt', 'gatewayId', 'groupId', 'id', 'mac'] as const
+  $columns = QosGroupMemberSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare gatewayId: number
+  @column()
+  declare groupId: number
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare mac: string
+}
+
+export class QosPolicySchema extends BaseModel {
+  static $columns = ['classMinor', 'createdAt', 'createdByUserId', 'eachDownKbit', 'eachUpKbit', 'enabled', 'fairness', 'gatewayId', 'id', 'includeLan', 'name', 'notes', 'parentPolicyId', 'sharedDownKbit', 'sharedUpKbit', 'source', 'sourceRef', 'updatedAt'] as const
+  $columns = QosPolicySchema.$columns
+  @column()
+  declare classMinor: number
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdByUserId: number | null
+  @column()
+  declare eachDownKbit: number | null
+  @column()
+  declare eachUpKbit: number | null
+  @column()
+  declare enabled: boolean
+  @column()
+  declare fairness: string
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare includeLan: boolean
+  @column()
+  declare name: string
+  @column()
+  declare notes: string | null
+  @column()
+  declare parentPolicyId: number | null
+  @column()
+  declare sharedDownKbit: number | null
+  @column()
+  declare sharedUpKbit: number | null
+  @column()
+  declare source: string
+  @column()
+  declare sourceRef: string | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class QosScheduleSchema extends BaseModel {
+  static $columns = ['action', 'assignmentId', 'createdAt', 'createdByUserId', 'days', 'eachDownKbit', 'eachUpKbit', 'enabled', 'endMinute', 'gatewayId', 'id', 'name', 'policyId', 'rateDownKbit', 'rateUpKbit', 'sharedDownKbit', 'sharedUpKbit', 'startMinute', 'targetType', 'updatedAt', 'usePolicyId'] as const
+  $columns = QosScheduleSchema.$columns
+  @column()
+  declare action: string
+  @column()
+  declare assignmentId: number | null
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdByUserId: number | null
+  @column()
+  declare days: number
+  @column()
+  declare eachDownKbit: number | null
+  @column()
+  declare eachUpKbit: number | null
+  @column()
+  declare enabled: boolean
+  @column()
+  declare endMinute: number
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare name: string
+  @column()
+  declare policyId: number | null
+  @column()
+  declare rateDownKbit: number | null
+  @column()
+  declare rateUpKbit: number | null
+  @column()
+  declare sharedDownKbit: number | null
+  @column()
+  declare sharedUpKbit: number | null
+  @column()
+  declare startMinute: number
+  @column()
+  declare targetType: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+  @column()
+  declare usePolicyId: number | null
+}
+
+export class QosWanQueueSchema extends BaseModel {
+  static $columns = ['createdAt', 'device', 'enabled', 'gatewayId', 'id', 'origin', 'perchId', 'routerPausedAt', 'routerUpdatedAt', 'uciSection', 'updatedAt'] as const
+  $columns = QosWanQueueSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare device: string
+  @column()
+  declare enabled: boolean
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare origin: string
+  @column()
+  declare perchId: string | null
+  @column.dateTime()
+  declare routerPausedAt: DateTime | null
+  @column.dateTime()
+  declare routerUpdatedAt: DateTime | null
+  @column()
+  declare uciSection: string | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
 export class RouterSampleSchema extends BaseModel {
   static $columns = ['conntrackEntries', 'conntrackLimit', 'load1', 'memAvailable', 'memTotal', 'recordedAt', 'scrapeMs', 'tcpEstablished', 'wanRxBps', 'wanRxBytes', 'wanTxBps', 'wanTxBytes'] as const
   $columns = RouterSampleSchema.$columns
