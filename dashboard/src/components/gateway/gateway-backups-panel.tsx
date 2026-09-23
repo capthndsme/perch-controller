@@ -184,11 +184,14 @@ export function GatewayBackupsPanel({ gatewayId, canBackup, online }: GatewayBac
                         </Badge>
                       )}
                     </td>
-                    <td className="max-w-[12rem] truncate" title={backup.release ?? undefined}>
-                      {backup.release ?? '—'}
+                    {/* A table cell ignores max-width under auto layout: the limits sit on inner blocks. */}
+                    <td title={backup.release ?? undefined}>
+                      <div className="line-clamp-2 max-w-[10rem] break-words">{backup.release ?? '—'}</div>
                     </td>
-                    <td className="max-w-[14rem] truncate" title={backup.note ?? undefined}>
-                      {backup.note ?? <span className="text-muted-foreground">—</span>}
+                    <td title={backup.note ?? undefined}>
+                      <div className="line-clamp-2 min-w-[6rem] max-w-[12rem] break-words">
+                        {backup.note ?? <span className="text-muted-foreground">—</span>}
+                      </div>
                     </td>
                     <td className="text-right">
                       <Button
