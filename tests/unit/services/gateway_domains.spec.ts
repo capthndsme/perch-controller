@@ -92,10 +92,10 @@ test.group('config domains | registry', () => {
     assert.deepEqual(reg.configs(), ['dhcp'])
   })
 
-  test('the default registry holds the sample domain', ({ assert }) => {
+  test('the default registry holds the registered domains', ({ assert }) => {
     assert.deepEqual(
       DOMAINS.map((d) => d.key),
-      ['dhcp_hosts']
+      ['dhcp_hosts', 'sqm']
     )
     assert.strictEqual(domainRegistry(), domainRegistry())
     assert.equal(domainRegistry().get('dhcp_hosts'), dhcpHostsDomain)

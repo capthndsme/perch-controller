@@ -1,4 +1,10 @@
 import type {
+  ConfigDomain,
+  SectionEdit,
+  SyncedSection,
+  ValidationCtx,
+} from '#services/gateway_config/domain'
+import type {
   GatewayCapabilities,
   Issue,
   SectionOwnership,
@@ -18,6 +24,7 @@ import {
 /**
  * The `sqm` config domain (docs/gateway/qos.md section 2.3; plan 3 section
  * 9.2): how the config plane models `/etc/config/sqm` `queue` sections.
+ * Registered in `gateway_config/domains/index.ts`.
  *
  * Two-way synced, whole-package ownership, untagged pre-existing sections
  * (the live gateway's `eth1`) are imported as they are; `normalizeSqmOption`
@@ -26,43 +33,7 @@ import {
  * that through ownership: while the router's section says `enabled '0'`,
  * Perch does not own `enabled` (the router's value always wins, it is never
  * drift and never a conflict), and owns every other option it sees.
- *
- * TODO(gw/data merge): the `ConfigDomain` interface lives in
- * `app/services/gateway_config/domain.ts` on branch gw/data, which is not
- * committed yet. The structural types below mirror that interface as of
- * 2026-09-23 (`SyncedSection`, `SectionEdit`, `ValidationCtx`,
- * `ConfigDomain`); after the merge, delete them, import the real ones, type
- * `sqmDomain` as `ConfigDomain<SqmQueueObject>` and register it in
- * `gateway_config/domains/index.ts`.
  */
-
-/** Mirror of gw/data `SyncedSection`. */
-export interface SqmSyncedSection {
-  perchId: string | null
-  config: string
-  name: string
-  type: string
-  anonymous: boolean
-  options: UciOptions
-}
-
-/** Mirror of gw/data `SectionEdit` (the variants this domain emits). */
-export type SqmSectionEdit =
-  | {
-      op: 'put'
-      perchId: string | null
-      config: string
-      type: string
-      name?: string
-      options: UciOptions
-    }
-  | { op: 'delete'; perchId: string }
-
-/** Mirror of gw/data `ValidationCtx` (the fields this domain reads). */
-export interface SqmValidationCtx {
-  capabilities: GatewayCapabilities | null
-  all: SqmSyncedSection[]
-}
 
 /** The domain object: one queue section, options verbatim. */
 export interface SqmQueueObject {
@@ -113,14 +84,14 @@ export const sqmDomain = {
   // No identityKeys: two queues on one device are kept and flagged
   // (`duplicate_device`, plan 3 section 2.1), never made ambiguous.
 
-  parse(sections: SqmSyncedSection[]): SqmQueueObject[] {
+  parse(sections: SyncedSection[]): SqmQueueObject[] {
     return sections
       .filter((s) => s.config === SQM_CONFIG && s.type === SQM_QUEUE_TYPE)
       .map((s) => ({ perchId: s.perchId, section: s.name, options: cloneOptions(s.options) }))
   },
 
   /** The object's options are the full map, so the render is the map itself. */
-  render(obj: SqmQueueObject): SqmSectionEdit[] {
+  render(obj: SqmQueueObject, _current?: SyncedSection[]): SectionEdit[] {
     return [
       {
         op: 'put',
@@ -133,7 +104,7 @@ export const sqmDomain = {
     ]
   },
 
-  validate(desired: SqmSyncedSection[], _ctx?: SqmValidationCtx): Issue[] {
+  validate(desired: SyncedSection[], _ctx?: ValidationCtx): Issue[] {
     const queues = desired.filter((s) => s.config === SQM_CONFIG && s.type === SQM_QUEUE_TYPE)
     const issues: Issue[] = []
     const setFlags = sqmQueueSetFlags(queues)
@@ -177,7 +148,7 @@ export const sqmDomain = {
     })
     return issues
   },
-}
+} satisfies ConfigDomain<SqmQueueObject>
 
 function cloneOptions(options: UciOptions): UciOptions {
   const out: UciOptions = {}

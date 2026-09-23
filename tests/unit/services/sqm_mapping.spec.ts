@@ -1,3 +1,5 @@
+import { checkRoundTrip, DomainRegistry, type ConfigDomain } from '#services/gateway_config/domain'
+import { domainRegistry } from '#services/gateway_config/domains/index'
 import type { UciOptions } from '#services/gateway_config/types'
 import { sqmDomain, sqmOwnership } from '#services/sqm_domain'
 import {
@@ -391,6 +393,32 @@ test.group('sqm_domain', () => {
       // No aliasing: the render is a copy.
       assert.notStrictEqual((edits[0] as { options: UciOptions }).options, options)
     }
+  })
+
+  test('passes the config plane round-trip check, one queue and all at once', ({ assert }) => {
+    const sections = FIXTURES.map((file, i) => {
+      const { name, options } = fixture(file)
+      return {
+        perchId: `q${i}`,
+        config: 'sqm',
+        name: `${name}_${i}`,
+        type: 'queue',
+        anonymous: false,
+        options,
+      }
+    })
+    for (const section of sections) {
+      assert.deepEqual(checkRoundTrip(sqmDomain, [section]), { ok: true, failures: [] })
+    }
+    assert.deepEqual(checkRoundTrip(sqmDomain, sections), { ok: true, failures: [] })
+    // A section without a perchId yet (an import) round-trips too.
+    assert.isTrue(checkRoundTrip(sqmDomain, [{ ...sections[0], perchId: null }]).ok)
+  })
+
+  test('is registered with the config plane and passes its registry checks', ({ assert }) => {
+    assert.equal(domainRegistry().get('sqm'), sqmDomain as ConfigDomain)
+    assert.doesNotThrow(() => new DomainRegistry([sqmDomain as ConfigDomain]))
+    assert.include(domainRegistry().configs(), 'sqm')
   })
 
   test('claims queue sections of sqm only', ({ assert }) => {
