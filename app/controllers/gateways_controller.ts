@@ -9,9 +9,11 @@ import {
   requestApply,
   requestPackageInstall,
   revertApply,
+  plannedOrders,
   validateStates,
 } from '#services/gateway_config/apply_lifecycle'
 import { planApply } from '#services/gateway_config/apply_plan'
+import { loadOrders } from '#services/gateway_config/order_store'
 import { domainRegistry } from '#services/gateway_config/domains/index'
 import { GatewayPlaneError } from '#services/gateway_config/errors'
 import { GatewayOfflineError, ReadRefusedError } from '#services/gateway_config/gateway_agent'
@@ -350,6 +352,7 @@ export default class GatewaysController {
         hashes: gateway.observedHashes ?? {},
         management: gateway.managementPath,
         registry: domainRegistry(),
+        orders: plannedOrders(await loadOrders(gateway.id), 'apply'),
       })
       return serialize({
         changes: plan.jobs.flatMap((j) => j.changes),
@@ -607,6 +610,7 @@ export default class GatewaysController {
         hashes: gateway.observedHashes ?? {},
         management: gateway.managementPath,
         registry: domainRegistry(),
+        orders: plannedOrders(await loadOrders(gateway.id), 'apply'),
       })
       return serialize({ perchIds, changes: plan.jobs.flatMap((j) => j.changes) })
     } catch (error) {

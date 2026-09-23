@@ -37,6 +37,12 @@ import {
   saveStates,
   writeRevision,
 } from '#services/gateway_config/gateway_store'
+import {
+  findOrder,
+  loadOrders,
+  refreshOrders,
+  saveOrder,
+} from '#services/gateway_config/order_store'
 import { clearPairing } from '#services/gateway_config/pairing'
 import { planRestore } from '#services/gateway_config/revisions'
 import { gatewayQueue } from '#services/gateway_config/serial_queue'
@@ -55,6 +61,13 @@ import {
   type SyncStatus,
 } from '#services/gateway_config/sync_engine'
 import type { GatewayMode, Issue, UciValue } from '#services/gateway_config/types'
+import {
+  orderMembers,
+  resolveOrder,
+  setDesiredOrder,
+  type OrderKey,
+  type OrderState,
+} from '#services/gateway_config/section_order'
 import type User from '#models/user'
 import hash from '@adonisjs/core/services/hash'
 import db from '@adonisjs/lucid/services/db'
@@ -291,6 +304,7 @@ async function syncStatusOf(gateway: Gateway): Promise<SyncStatus> {
     sections: states,
     unledgered: computeUnledgered(states, gateway.observedLedger ?? []),
     registry: domainRegistry(),
+    orders: await loadOrders(gateway.id),
   })
 }
 
@@ -430,6 +444,9 @@ export async function editDomainSections(
     const upserted = new Map<string, SectionState>()
     const deletedAll = new Set<string>()
     const perBatch: MultiEditOutcome['batches'] = []
+    // Order requests of every batch (firewall.md section 3); a later batch's
+    // request for the same config + type replaces an earlier one.
+    const orders = new Map<string, EditSectionsResult['orders'][number]>()
     for (const batch of batches) {
       if (batch.edits.length === 0) {
         perBatch.push({ domain: batch.domain, perchIds: [], created: [], deleted: [] })
@@ -453,6 +470,7 @@ export async function editDomainSections(
         if (error instanceof SectionEditError) throw planeError(422, 'invalid_edit', error.message)
         throw error
       }
+      for (const order of result.orders) orders.set(`${order.config}\u0000${order.type}`, order)
       for (const u of result.upserts) {
         candidate.set(u.perchId, u)
         upserted.set(u.perchId, u)
@@ -504,6 +522,17 @@ export async function editDomainSections(
         trx,
       })
     })
+    // New and deleted members of ordered types (firewall.md section 3), and
+    // the domain's own order edits.
+    await refreshOrders(gateway, [...candidate.values()])
+    for (const order of orders.values()) {
+      const prev = await findOrder(gateway.id, order)
+      await saveOrder(
+        gateway.id,
+        setDesiredOrder(prev, order, [...candidate.values()], order.perchIds),
+        { userId }
+      )
+    }
     await refreshSyncState(gateway)
     return {
       perchIds: [...upserted.keys()],
@@ -900,5 +929,78 @@ export async function bindGateway(
     await offerRejoin(gateway, 'rebound', await lastConfirmedRevision(gateway.id))
     await pushConfigure(gateway)
     return gateway
+  })
+}
+
+// ── section orders (docs/gateway/firewall.md section 3) ──────────────────
+
+/**
+ * A controller reorder of an ordered type: C := `perchIds`, which must name
+ * exactly the synced sections of that type (unmodeled and excluded ones
+ * keep their slots). Nothing is sent; an apply of those sections carries
+ * the `order` op.
+ */
+export async function setSectionOrder(
+  gatewayId: number,
+  userId: number,
+  key: OrderKey,
+  perchIds: string[]
+): Promise<OrderState> {
+  return gatewayQueue.run(gatewayId, async () => {
+    const gateway = await findGateway(gatewayId)
+    requireManaged(gateway)
+    const { states } = await loadSections(gateway.id)
+    const members = orderMembers(states, key)
+    const wanted = new Set(perchIds)
+    const missing = members.filter((id) => !wanted.has(id))
+    const unknown = perchIds.filter((id) => !members.includes(id))
+    if (missing.length > 0 || unknown.length > 0 || wanted.size !== perchIds.length) {
+      throw planeError(422, 'order_incomplete', 'Name every synced section of the type once.', {
+        missing,
+        unknown,
+      })
+    }
+    const inFlight = await inFlightApply(gateway.id)
+    if (inFlight && (inFlight.configs ?? []).includes(key.config)) {
+      throw planeError(409, 'pending_apply', 'An apply of this config is running.')
+    }
+    const prev = await findOrder(gateway.id, key)
+    const next = setDesiredOrder(prev, key, states, perchIds)
+    await saveOrder(gateway.id, next, { userId })
+    await recordGatewayEvent(gateway.id, 'order_changed', {
+      userId,
+      detail: { config: key.config, type: key.type, order: next.desired },
+    })
+    await refreshSyncState(gateway)
+    return next
+  })
+}
+
+/**
+ * Settles an order conflict (two-way) or order drift (Authoritative):
+ * `router` takes the router's order, `controller` keeps C for the next apply.
+ */
+export async function resolveSectionOrder(
+  gatewayId: number,
+  userId: number,
+  key: OrderKey,
+  take: 'router' | 'controller'
+): Promise<OrderState> {
+  return gatewayQueue.run(gatewayId, async () => {
+    const gateway = await findGateway(gatewayId)
+    requireManaged(gateway)
+    const prev = await findOrder(gateway.id, key)
+    if (!prev || (prev.status !== 'conflict' && prev.status !== 'drift')) {
+      throw planeError(409, 'nothing_to_resolve', 'This order has no conflict or drift.')
+    }
+    const { states } = await loadSections(gateway.id)
+    const next = resolveOrder(prev, states, take)
+    await saveOrder(gateway.id, next, { userId })
+    await recordGatewayEvent(gateway.id, 'order_resolved', {
+      userId,
+      detail: { config: key.config, type: key.type, take, was: prev.status },
+    })
+    await refreshSyncState(gateway)
+    return next
   })
 }

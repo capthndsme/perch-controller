@@ -94,6 +94,8 @@ export interface SyncedSection {
   anonymous: boolean
   options: UciOptions
   secrets?: Record<string, SecretSlot>
+  /** Index among the router's sections of its config, when known (validation only). */
+  position?: number | null
 }
 
 /** What a domain edit sets on a secret option. */

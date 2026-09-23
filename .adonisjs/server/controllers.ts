@@ -12,6 +12,7 @@ export const controllers = {
   Destinations: () => import('#controllers/destinations_controller'),
   DeviceLabels: () => import('#controllers/device_labels_controller'),
   Devices: () => import('#controllers/devices_controller'),
+  GatewayFirewall: () => import('#controllers/gateway_firewall_controller'),
   GatewayNames: () => import('#controllers/gateway_names_controller'),
   GatewayObservations: () => import('#controllers/gateway_observations_controller'),
   GatewayNetworks: () => import('#controllers/gateway_networks_controller'),

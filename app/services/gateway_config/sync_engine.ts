@@ -22,6 +22,12 @@ import {
   type DomainRegistry,
 } from '#services/gateway_config/domain'
 import { routerSecretSlots } from '#services/gateway_config/secrets'
+import {
+  orderMembers,
+  routerOrder,
+  type OrderState,
+  type OrderStatus,
+} from '#services/gateway_config/section_order'
 import type {
   ApplyState,
   ConfigDiffEntry,
@@ -1522,6 +1528,15 @@ export type SyncBlocker =
       section: string
       diff: ConfigDiffEntry
     }
+  | {
+      /** An ordered type out of line (docs/gateway/firewall.md section 3). */
+      kind: 'order'
+      config: string
+      type: string
+      status: OrderStatus
+      router: string[]
+      desired: string[]
+    }
 
 export interface SyncStatus {
   inSync: boolean
@@ -1546,6 +1561,8 @@ export interface SyncStatusInput {
   /** Synced rows not (correctly) in the router's ledger (`computeUnledgered`). */
   unledgered: string[]
   registry: DomainRegistry | null
+  /** Section orders (firewall rules, redirects) after the same read. */
+  orders?: OrderState[]
 }
 
 /**
@@ -1610,6 +1627,18 @@ export function computeSyncStatus(input: SyncStatusInput): SyncStatus {
         diff: { ...emptyDiff(where, s), action: 'adopt' },
       })
     }
+  }
+  for (const order of input.orders ?? []) {
+    if (order.status === 'in_sync') continue
+    const members = orderMembers(input.sections, order)
+    blockers.push({
+      kind: 'order',
+      config: order.config,
+      type: order.type,
+      status: order.status,
+      router: routerOrder(input.sections, order).filter((id) => members.includes(id)),
+      desired: order.desired,
+    })
   }
   return {
     inSync: blockers.length === 0 && !input.luciPending,

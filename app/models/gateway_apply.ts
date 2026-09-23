@@ -21,6 +21,21 @@ export type GatewayApplyOutcome = {
 }
 
 /**
+ * Work that runs once the job is live on the router (docs/gateway/firewall.md
+ * section 5): the WAN block's conntrack flush.
+ */
+export type GatewayApplyPostActions = {
+  conntrackFlush?: {
+    mac: string
+    ips: string[]
+    /** The sections whose change must be live first (the block set and rules). */
+    perchIds: string[]
+    done?: boolean
+    result?: Record<string, unknown> | null
+  }
+}
+
+/**
  * One apply job (docs/gateway/config-plane.md sections 3.4, 5.6 and 9). The
  * wire `applyId` is `applyKey`. `protected` marks the management-path job
  * (README 3.8), which runs alone with the longer confirm window.
@@ -66,4 +81,8 @@ export default class GatewayApply extends GatewayApplySchema {
   /** The request's section filter for the next job of the chain (null = all). */
   @jsonColumn('chain_perch_ids')
   declare chainPerchIds: string[] | null
+
+  /** Runs once the job is live (`post_actions`); carried along a chain until done. */
+  @jsonColumn('post_actions')
+  declare postActions: GatewayApplyPostActions | null
 }

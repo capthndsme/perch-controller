@@ -4,6 +4,7 @@ import { dhcpPoolsDomain } from '#services/gateway_config/domains/dhcp_pools'
 import { sqmDomain } from '#services/sqm_domain'
 import { dnsRecordsDomain } from '#services/gateway_config/domains/dns_records'
 import { networksDomain } from '#services/gateway_config/domains/networks'
+import { firewallDomain } from '#services/gateway_config/domains/firewall'
 
 /**
  * The domains this controller models, in claim order (the first domain
@@ -21,6 +22,7 @@ export const DOMAINS: readonly ConfigDomain[] = Object.freeze([
   dhcpPoolsDomain as ConfigDomain,
   dhcpHostsDomain as ConfigDomain,
   dnsRecordsDomain as ConfigDomain,
+  firewallDomain as ConfigDomain,
   sqmDomain as ConfigDomain,
 ])
 

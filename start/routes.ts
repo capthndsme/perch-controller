@@ -61,6 +61,7 @@ const QosController = () => import('#controllers/qos_controller')
 const GatewaysController = () => import('#controllers/gateways_controller')
 const GatewayNamesController = () => import('#controllers/gateway_names_controller')
 const GatewayNetworksController = () => import('#controllers/gateway_networks_controller')
+const GatewayFirewallController = () => import('#controllers/gateway_firewall_controller')
 
 /**
  * Setup wizard endpoints. INTENTIONALLY outside the requireSetupComplete
@@ -351,8 +352,13 @@ router
         router
           .get(':mac/reservation', [GatewayNamesController, 'showReservation'])
           .as('reservation')
+        /** The per-device WAN block (docs/gateway/firewall.md section 5). */
+        router.get(':mac/wan-access', [GatewayFirewallController, 'showWanAccess']).as('wanAccess')
         router
           .group(() => {
+            router
+              .put(':mac/wan-access', [GatewayFirewallController, 'putWanAccess'])
+              .as('putWanAccess')
             router
               .put(':mac/reservation', [GatewayNamesController, 'putReservation'])
               .as('putReservation')
@@ -773,6 +779,46 @@ router
             router
               .post(':id/dns/label-names/apply', [GatewayNamesController, 'applyLabelNames'])
               .as('applyLabelNames')
+            // The firewall (docs/gateway/firewall.md section 6): admin-only,
+            // reads included (plan 2 section 5). Static `order` segments
+            // before the `:perchId` ones.
+            router.get(':id/firewall', [GatewayFirewallController, 'show']).as('firewall')
+            router
+              .put(':id/firewall/rules/order', [GatewayFirewallController, 'orderRules'])
+              .as('orderFirewallRules')
+            router
+              .put(':id/firewall/port-forwards/order', [
+                GatewayFirewallController,
+                'orderPortForwards',
+              ])
+              .as('orderPortForwards')
+            router
+              .post(':id/firewall/order/resolve', [GatewayFirewallController, 'resolveOrder'])
+              .as('resolveFirewallOrder')
+            router
+              .post(':id/firewall/port-forwards', [GatewayFirewallController, 'createPortForward'])
+              .as('createPortForward')
+            router
+              .patch(':id/firewall/port-forwards/:perchId', [
+                GatewayFirewallController,
+                'updatePortForward',
+              ])
+              .as('updatePortForward')
+            router
+              .delete(':id/firewall/port-forwards/:perchId', [
+                GatewayFirewallController,
+                'deletePortForward',
+              ])
+              .as('deletePortForward')
+            router
+              .post(':id/firewall/rules', [GatewayFirewallController, 'createRule'])
+              .as('createFirewallRule')
+            router
+              .patch(':id/firewall/rules/:perchId', [GatewayFirewallController, 'updateRule'])
+              .as('updateFirewallRule')
+            router
+              .delete(':id/firewall/rules/:perchId', [GatewayFirewallController, 'deleteRule'])
+              .as('deleteFirewallRule')
           })
           .use(middleware.requireAdmin())
       })
