@@ -151,6 +151,18 @@ export function SettingsPage() {
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
                 <div className="space-y-1">
+                  <p className="text-sm font-medium">Gateway configuration</p>
+                  <p className="text-xs text-muted-foreground">
+                    How changes to managed gateways are confirmed, Authoritative Mode's grace delay, and writes
+                    over plain HTTP.
+                  </p>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/settings/gateway-config">Open</Link>
+                </Button>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+                <div className="space-y-1">
                   <p className="text-sm font-medium">Charts</p>
                   <p className="text-xs text-muted-foreground">
                     Finest bucket and point cap of the server and destination traffic charts.

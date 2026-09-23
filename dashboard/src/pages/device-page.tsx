@@ -9,6 +9,7 @@ import { TimePicker } from '@/components/dashboard/time-picker'
 import { DeviceDestinationsTable } from '@/components/destinations/device-destinations-table'
 import { DeviceLabelCard } from '@/components/devices/device-label-editor'
 import { DeviceNetworkCard } from '@/components/gateway/device-network-card'
+import { DeviceReservationCard } from '@/components/gateway-config/device-reservation-card'
 import { PeersPanel } from '@/components/devices/peers-panel'
 import { DeviceSpeedLimitCard } from '@/components/qos/device-speed-limit'
 import { ProtocolsSection } from '@/components/devices/protocols-section'
@@ -407,6 +408,8 @@ export function DevicePage() {
               </div>
             ) : null}
           </Panel>
+
+          <DeviceReservationCard mac={mac ?? ''} />
         </div>
       </div>
 
