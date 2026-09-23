@@ -604,7 +604,7 @@ test.group('gateway networks: REST over the config plane', (group) => {
       .bearerToken(env.adminToken)
       .json({ ipv4: '192.168.9.1/24' })
     refused.assertStatus(409)
-    refused.assertBodyContains({ error: 'network_not_managed' })
+    refused.assertBodyContains({ error: 'not_managed' })
 
     const tagged = (mac: string, network: string, bytes: number) => ({
       ...device(mac, { bytesIn: bytes, bytesOut: bytes }),

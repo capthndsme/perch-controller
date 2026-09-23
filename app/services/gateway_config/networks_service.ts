@@ -9,6 +9,7 @@ import { requestApply } from '#services/gateway_config/apply_lifecycle'
 import { GatewayPlaneError, planeError } from '#services/gateway_config/errors'
 import { recordGatewayEvent } from '#services/gateway_config/events'
 import { editDomainSections, findGateway } from '#services/gateway_config/gateway_config_service'
+import { normalizeMode } from '#services/gateway_config/gateway_registry'
 import { loadSections } from '#services/gateway_config/gateway_store'
 import {
   composeNetworks,
@@ -386,6 +387,12 @@ export type NetworkMeta = {
   capture?: boolean
 }
 
+function requireManagedMode(gateway: Gateway) {
+  if (normalizeMode(gateway.mode) !== 'managed') {
+    throw planeError(409, 'not_managed', 'The gateway is not in managed mode.')
+  }
+}
+
 /** Releases older than 21.02 have no `config device` syntax (plan 1 section 8.1). */
 function requireDeviceSyntax(gateway: Gateway) {
   const release = gateway.capabilities?.openwrt?.release
@@ -500,6 +507,7 @@ export async function createGatewayNetwork(
   input: NetworkCreateInput
 ): Promise<NetworkWriteResult> {
   const gateway = await findGateway(gatewayId)
+  requireManagedMode(gateway)
   refuseFirewallZone(input.firewallZone)
   requireDeviceSyntax(gateway)
   const { states } = await loadSections(gateway.id)
@@ -569,6 +577,7 @@ export async function updateGatewayNetwork(
   let issues: Issue[] = []
   let perchIds: string[] = []
   if (configChange) {
+    requireManagedMode(gateway)
     if (!view.perchId) {
       throw planeError(409, 'network_not_managed', `${view.key} is known from the report only.`)
     }
@@ -602,6 +611,7 @@ export async function deleteGatewayNetwork(
   options: { apply?: boolean } = {}
 ): Promise<NetworkWriteResult> {
   const { gateway, view } = await networkById(gatewayId, networkId)
+  requireManagedMode(gateway)
   if (!view.perchId) {
     throw planeError(409, 'network_not_managed', `${view.key} is known from the report only.`)
   }
