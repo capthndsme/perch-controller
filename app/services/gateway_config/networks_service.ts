@@ -32,6 +32,7 @@ import {
   type CaptureCounters,
   type ReportedNetwork,
 } from '#services/gateway_network_accounting'
+import db from '@adonisjs/lucid/services/db'
 import { DateTime } from 'luxon'
 
 /**
@@ -426,6 +427,35 @@ function refuseFirewallZone(zone: string | null | undefined) {
   )
 }
 
+/**
+ * Plan 1 section 8.2: ports in a network are netdev names, the gateway
+ * node's infrastructure ports (`infra_ports.port_key`). A port the agent
+ * does not report is only a warning (manual cabling happens, and a
+ * collector without the ports feature reports none).
+ */
+async function portWarnings(gateway: Gateway, ports: NetworkPort[] | undefined): Promise<Issue[]> {
+  if (!ports || ports.length === 0 || gateway.collectorId === null) return []
+  const node = await db.from('infra_nodes').where('collector_id', gateway.collectorId).first()
+  if (!node) return []
+  const rows = (await db
+    .from('infra_ports')
+    .where('node_id', node.id)
+    .select('port_key')) as Array<{
+    port_key: string
+  }>
+  if (rows.length === 0) return []
+  const known = new Set(rows.map((r) => r.port_key))
+  return ports
+    .filter((p) => !known.has(p.port))
+    .map((p) => ({
+      severity: 'warning' as const,
+      code: 'port_unknown',
+      message: `${p.port} is not among the ports the gateway reports.`,
+      config: 'network',
+      option: 'ports',
+    }))
+}
+
 async function applyNow(
   gatewayId: number,
   userId: number,
@@ -513,6 +543,7 @@ export async function createGatewayNetwork(
   const { states } = await loadSections(gateway.id)
   const plan = planCreateNetwork(states, input)
   const outcome = await writePlan(gateway.id, userId, plan)
+  const unknownPorts = await portWarnings(gateway, input.ports)
 
   const after = await loadSections(gateway.id)
   const iface = after.states.find(
@@ -550,7 +581,7 @@ export async function createGatewayNetwork(
   const views = await networksOf(gateway)
   return {
     object: views.find((v) => v.key === input.key) ?? null,
-    issues: [...outcome.issues, ...plan.warnings],
+    issues: [...outcome.issues, ...plan.warnings, ...unknownPorts],
     converted: plan.converted,
     apply,
     applyError,
@@ -586,7 +617,7 @@ export async function updateGatewayNetwork(
     const plan = planUpdateNetwork(states, view.key, input)
     if (plan.network.length + plan.pools.length > 0) {
       const outcome = await writePlan(gateway.id, userId, plan)
-      issues = [...outcome.issues, ...plan.warnings]
+      issues = [...outcome.issues, ...plan.warnings, ...(await portWarnings(gateway, input.ports))]
       perchIds = outcome.perchIds
     }
   }

@@ -256,7 +256,10 @@ type DeviceNetworkInterval = { gatewayId: number; network: string; startedAt: st
 | 422 `vlan_not_applicable`, `ports_not_applicable` | the field does not fit the network's mode |
 | 422 `invalid_config` {issues} | the draft would carry a validation error on a touched section |
 
-Vine errors: 422 `{ errors: [...] }`. The events log (`GET /gateways/:id/events`) gets
+Warnings come back in `issues` and never block: the domains' (section 1), `port_unknown` (a port
+that is not among the gateway node's infrastructure ports, `infra_ports.port_key`, when the agent
+reports any; plan 1 section 8.2) and, on delete, `section_kept` (an L2 section or pool the router
+owns stays). Vine errors: 422 `{ errors: [...] }`. The events log (`GET /gateways/:id/events`) gets
 `draft_edited` (with `domains`), `network_labelled` {network, label?, purpose?} and
 `network_capture_changed` {network, capture}.
 

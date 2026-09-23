@@ -517,6 +517,35 @@ test.group('gateway networks: REST over the config plane', (group) => {
       ports: [{ port: 'trunk', tagged: false, pvid: true }],
     })
     pvid.assertStatus(201)
+    assert.deepEqual(pvid.body().data.issues, [], 'no ports reported yet: nothing to check')
+    // Ports the gateway reports (infrastructure view): an unknown one is a warning.
+    const [nodeId] = await db.table('infra_nodes').insert({
+      kind: 'gateway',
+      origin: 'agent',
+      collector_id: env.collector.id,
+      created_at: DateTime.utc().toSQL({ includeOffset: false }),
+      updated_at: DateTime.utc().toSQL({ includeOffset: false }),
+    })
+    await db.table('infra_ports').insert({
+      node_id: nodeId,
+      port_key: 'trunk',
+      origin: 'agent',
+      created_at: DateTime.utc().toSQL({ includeOffset: false }),
+      updated_at: DateTime.utc().toSQL({ includeOffset: false }),
+    })
+    const warned = await post({
+      key: 'z',
+      vlanId: 114,
+      ports: [
+        { port: 'trunk', tagged: true, pvid: false },
+        { port: 'trunk9', tagged: true, pvid: false },
+      ],
+    })
+    warned.assertStatus(201)
+    assert.deepEqual(
+      warned.body().data.issues.map((i: any) => [i.code, i.severity]),
+      [['port_unknown', 'warning']]
+    )
     const clash = await post({
       key: 'y',
       vlanId: 112,
