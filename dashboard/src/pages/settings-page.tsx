@@ -148,6 +148,17 @@ export function SettingsPage() {
                   <Link to="/settings/charts">Open</Link>
                 </Button>
               </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Guest portal</p>
+                  <p className="text-xs text-muted-foreground">
+                    History retention, sign-in rate limits, offline voucher redemption and the Paid Hotspot API rate.
+                  </p>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/settings/portal">Open</Link>
+                </Button>
+              </div>
             </>
           ) : (
             <p className="text-sm text-muted-foreground">

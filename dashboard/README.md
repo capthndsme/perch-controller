@@ -30,6 +30,9 @@ different origin than the API; `.env.example` explains both.
 | `/servers` | Bytes served per TLS/HTTP name by your own hosts, with a rate overlay. |
 | `/wifi`, `/wifi/ssids/:ssid`, `/wifi/aps/:id`, `/wifi/clients/:mac` | Client distribution by band or AP, throughput per AP, SSIDs, active clients, APs; SSID throughput and clients; AP health; client signal history and roaming. |
 | `/settings`, `/settings/users`, `/settings/wifi-sources`, `/settings/hostname-enrichment` | Profile and password; users and roles; access points (probe, two-way commands); hostname sources. |
+| `/portal`, `/portal/portals/:id` | Guest portals (one per gateway network): health, "update the collector" notice, guests per device with the running entitlement and its queue (time before data), delivery `pending` badges, extend / revoke / authorize a device, sessions, setup and the guest-capture privacy note. |
+| `/portal/vouchers`, `/portal/vouchers/:id`, `/portal/vouchers/:id/print` | Voucher batches, code lookup, a batch's codes (shown on demand, copy buttons for handing one out from a phone), CSV, revoke / delete; the print sheet is outside the shell (A4 print styles, cut lines). |
+| `/portal/users`, `/portal/api-clients`, `/portal/templates`, `/portal/templates/:id`, `/settings/portal` | Portal users; API clients (token shown once, rotate, revoke) with the Paid Hotspot API explainer; page templates (upload with per-file / per-line checks, duplicate, sandboxed preview); Settings → Guest portal. Writes and the admin catalogs are admin-only. |
 
 ## Conventions
 
