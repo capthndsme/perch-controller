@@ -2128,3 +2128,42 @@ back and forth. Each flip wrote a roaming event, and `wifi_station_latest` flipp
   The one event was the S23 Ultra moving to the Second Floor AP at −72 dBm, 4.5 minutes
   after the restart: a real edge-of-coverage roam. The bogus events already stored stay
   in history (offered: collapse each ping-pong burst into its net move).
+
+## 2026-09-23 — Perch 1.0.0-rc.1 released
+
+- **Versions.** perch-agentkit v0.2.0 (`hoststat.PortReader`); perch-controller, perch-collector and
+  perch-apd v1.0.0-rc.1, all GitHub pre-releases. Both daemons require kit v0.2.0 (go.sum pins the
+  published tag); the workspace `go.work` replaces v0.2.0 with the local kit.
+- **Branches.** Each of the four repos has a long-lived `stable` branch at its release commit. Fixes
+  land on stable and merge back; 1.0.0 final will be tagged on stable. `main` carries on.
+- **What went in.** The uncommitted work of 2026-09-22/23: presence (one "connected", Connected /
+  Disconnected, Settings → Presence, the Ethernet mark, roaming ownership), the infrastructure view
+  (ports from both agents, the map, devices and the Wi-Fi overlay), lazy dashboard pages and vendor
+  chunks, and the collector's and perch-apd's port reporting (`perch-collector ports`,
+  `perch-apd ports`).
+- **OpenWrt package version.** apk-tools rejects `1.0.0-rc.1`, so the packages are `1.0.0_rc1`
+  (`scripts/openwrt-package.sh` already mapped `-rc.N` → `_rcN`; the package Makefiles now carry it,
+  with `PERCH_VERSION` mapping back to the tag for the source URL and `--version`). Checked on the
+  OpenWrt images: apk accepts it and sorts it below `1.0.0`; opkg sorts `1.0.0_rc1` *above* `1.0.0`
+  (`_` orders after the end of the string), so rc → final on 24.10 needs
+  `opkg install --force-downgrade` (in both daemons' READMEs). A local x86_64 / 25.12.5 build of
+  perch-apd installed in a 25.12 rootfs and printed `1.0.0-rc.1`.
+- **Workflows.** A tag with a `-` makes the release a GitHub pre-release, so `releases/latest`
+  (install.sh, the dashboard's AP install commands) keeps resolving to perch-apd 0.1.2 and
+  perch-collector 0.2.0 (checked after the release). Images: `latest` and `major.minor` only on final
+  tags, an rc tag gets its version plus `rc`, `main` publishes `edge` (it used to move `latest`). The
+  compose files take `PERCH_IMAGE_TAG` (default `latest`). The collector's `make build` stamps
+  `git describe`, and `perch-collector version` prints it.
+- **CI.** All release, OpenWrt package (5 arches × .ipk/.apk per daemon) and Docker runs passed on
+  the first try. perch-apd's CI on main failed once: an allocation bound in `push_test.go` does not
+  hold under `-race` (4 allocations, the instrumentation's). Fixed as a test-only commit on main,
+  fast-forwarded to stable; no new rc, since the tagged code and its release were unaffected.
+- **Hygiene before the push.** No secrets, domain, WAN or LAN addresses in the pushed diffs and
+  history. The dev log had a camera's LAN address and OUI prefix and the lab router's container name;
+  go-collector's docs still named a WAN container (public since the initial commit). All neutralised.
+- **Tests.** Controller lint, typecheck, 493/493 tests, dashboard lint and build. Kit and both
+  daemons on Go 1.26 and 1.22.12, with and without the workspace. The collector's nDPI tests pass in an
+  Alpine container with nDPI 5.0 (the host has 4.2).
+- **Not done here.** The live controller, gateway and APs were not touched: they still run the
+  pre-release builds (collector 0.3.0-pre.1, perch-apd 0.2.0-pre.1), which are the same code as the rc
+  under older version strings.
