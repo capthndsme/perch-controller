@@ -17,11 +17,16 @@ import { applyViewOf } from '#transformers/gateway_transformer'
 import {
   deviceGatewayValidator,
   deviceReservationValidator,
-  dnsPolicyValidator,
   dnsRecordPatchValidator,
   dnsRecordValidator,
   labelNamesApplyValidator,
 } from '#validators/gateways'
+import {
+  dnsSettings,
+  hasSettingsPatch,
+  updateDnsSettings,
+} from '#services/gateway_config/dns_service'
+import { dnsSettingsPatchValidator } from '#validators/gateway_native'
 import type { HttpContext } from '@adonisjs/core/http'
 
 /**
@@ -88,22 +93,53 @@ export default class GatewayNamesController {
     }
   }
 
-  /** GET /api/v1/gateways/:id/dns */
+  /**
+   * GET /api/v1/gateways/:id/dns: records, names and label names
+   * (`dnsOverview`) plus the resolver settings (`settings`,
+   * docs/gateway/native-sync.md section 3).
+   */
   async dns({ params, response, serialize }: HttpContext) {
     try {
-      return serialize(await dnsOverview(Number(params.id)))
+      const id = Number(params.id)
+      return serialize({ ...(await dnsOverview(id)), settings: await dnsSettings(id) })
     } catch (error) {
       return planeRefusal(response, error)
     }
   }
 
-  /** PATCH /api/v1/gateways/:id/dns {labelNames} */
+  /**
+   * PATCH /api/v1/gateways/:id/dns `{labelNames?, …settings}`: the label-name
+   * policy and/or the resolver settings (one dnsmasq instance, Perch's items
+   * only). Answers the GET shape plus `issues`, `apply`, `applyError`.
+   */
   async updateDns({ params, request, response, auth, serialize }: HttpContext) {
-    const { labelNames } = await request.validateUsing(dnsPolicyValidator)
+    const { labelNames, ...patch } = await request.validateUsing(dnsSettingsPatchValidator)
     try {
-      return serialize(
-        await setDnsLabelPolicy(Number(params.id), auth.getUserOrFail().id, labelNames)
-      )
+      const id = Number(params.id)
+      const userId = auth.getUserOrFail().id
+      if (labelNames === undefined && !hasSettingsPatch(patch)) {
+        return response.unprocessableEntity({
+          error: 'nothing_to_change',
+          message: 'Send labelNames or a DNS setting.',
+        })
+      }
+      let write: { issues: unknown[]; apply: unknown; applyError: unknown } = {
+        issues: [],
+        apply: null,
+        applyError: null,
+      }
+      if (hasSettingsPatch(patch)) {
+        const result = await updateDnsSettings(id, userId, { ...patch, apply: applyFlag(request) })
+        write = await withApplyView(result)
+      }
+      if (labelNames !== undefined) await setDnsLabelPolicy(id, userId, labelNames)
+      return serialize({
+        ...(await dnsOverview(id)),
+        settings: await dnsSettings(id),
+        issues: write.issues,
+        apply: write.apply,
+        applyError: write.applyError,
+      })
     } catch (error) {
       return planeRefusal(response, error)
     }

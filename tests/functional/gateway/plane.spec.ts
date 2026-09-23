@@ -39,10 +39,12 @@ function routerConfigs(): Record<string, Section[]> {
   return {
     dhcp: [
       {
+        // No domain models odhcpd (IPv6 stays the router's): the unmodeled
+        // example. dnsmasq has a domain since plan 2 phase 4 (dns_settings).
         name: 'cfg01411c',
-        type: 'dnsmasq',
+        type: 'odhcpd',
         anonymous: true,
-        options: { domainneeded: '1', local: '/lan/' },
+        options: { maindhcp: '0', leasefile: '/tmp/hosts/odhcpd' },
       },
       {
         name: 'lan',
@@ -248,7 +250,7 @@ test.group('gateway config plane', (group) => {
     const byName = new Map<string, any>(sections.body().data.map((s: any) => [s.section, s]))
     assert.equal(byName.get('nas').scope, 'synced')
     assert.equal(byName.get('nas').domain, 'dhcp_hosts')
-    // dnsmasq's section has no domain yet; the `lan` pool and interface do
+    // odhcpd's section has no domain; the `lan` pool and interface do
     // (dhcp_pools, networks).
     assert.equal(byName.get('cfg01411c').scope, 'unmodeled')
     assert.equal(byName.get('nas').router.options.ip, '192.168.1.50')
@@ -1054,9 +1056,9 @@ test.group('gateway config plane', (group) => {
       .json({ ip: '192.168.1.56' })
     refused.assertStatus(409)
     refused.assertBodyContains({ error: 'dhcp_host_exists' })
-    const dnsmasq = await sectionByName(env.gatewayId, 'cfg01411c')
+    const odhcpd = await sectionByName(env.gatewayId, 'cfg01411c')
     const unmodeled = await client
-      .patch(`/api/v1/gateways/${env.gatewayId}/sections/${dnsmasq.perchId}`)
+      .patch(`/api/v1/gateways/${env.gatewayId}/sections/${odhcpd.perchId}`)
       .bearerToken(env.adminToken)
       .json({ scope: 'synced' })
     unmodeled.assertStatus(409)

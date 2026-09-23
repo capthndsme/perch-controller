@@ -20,6 +20,7 @@ import { GatewayPlaneError, planeError } from '#services/gateway_config/errors'
 import { recordGatewayEvent } from '#services/gateway_config/events'
 import { editSections, findGateway } from '#services/gateway_config/gateway_config_service'
 import { loadSections } from '#services/gateway_config/gateway_store'
+import { checkRecordPin } from '#services/gateway_config/dns_service'
 
 async function loadStates(gatewayId: number) {
   const loaded = await loadSections(gatewayId)
@@ -84,7 +85,7 @@ export function reservedNames(gateway: Gateway): string[] {
   return out
 }
 
-function checkName(gateway: Gateway, name: string, field = 'hostname') {
+export function checkName(gateway: Gateway, name: string, field = 'hostname') {
   if (!HOSTNAME.test(name)) {
     throw planeError(422, 'dns_name_invalid', `"${name}" is not a valid DNS name.`, { field })
   }
@@ -430,6 +431,7 @@ export async function createDnsRecord(
   if (input.type === 'cname' && takenNames(states).has(input.name.toLowerCase())) {
     throw planeError(409, 'dns_name_taken', `${input.name} is already in use.`)
   }
+  await checkRecordPin(gateway, null, { name: input.name, value: input.value })
   const edits = dnsRecordsDomain.render(
     {
       perchId: null,
@@ -464,6 +466,7 @@ export async function updateDnsRecord(
   if (next.type === 'a' && !isValidIp(next.value)) {
     throw planeError(422, 'dns_value_invalid', `"${next.value}" is not an IP address.`)
   }
+  await checkRecordPin(gateway, record, next)
   const outcome = await editSections(
     gateway.id,
     userId,
@@ -482,8 +485,9 @@ export async function deleteDnsRecord(
   const gateway = await findGateway(gatewayId)
   const { states } = await loadSections(gateway.id)
   const row = states.find((s) => s.perchId === perchId)
-  if (!row || !recordOf(row))
-    throw planeError(404, 'dns_record_not_found', `No DNS record ${perchId}.`)
+  const existing = row ? recordOf(row) : null
+  if (!row || !existing) throw planeError(404, 'dns_record_not_found', `No DNS record ${perchId}.`)
+  await checkRecordPin(gateway, existing, null)
   const outcome = await editSections(gateway.id, userId, 'dns_records', [{ op: 'delete', perchId }])
   const { apply, applyError } = await applyNow(
     gateway,
