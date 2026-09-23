@@ -40,6 +40,7 @@ import {
   type TrafficScope,
 } from '#validators/devices'
 import { pickShaping, shapingByMac } from '#services/qos_views'
+import { deviceNetworksFor, type DeviceNetworkLatest } from '#services/gateway_network_accounting'
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import { DateTime } from 'luxon'
@@ -279,6 +280,11 @@ type ProtocolTopDeviceRow = {
   packetsOut: bigint | number | string
 }
 
+/** The device's gateway network for a row (docs/gateway/networks.md 4.3). */
+function networkOf(latest: DeviceNetworkLatest | undefined) {
+  return latest ? { gatewayId: latest.gatewayId, name: latest.network, since: latest.seenAt } : null
+}
+
 export default class DevicesController {
   async index({ request, response, serialize }: HttpContext) {
     const qs = await devicesIndexValidator.validate(request.qs())
@@ -396,6 +402,7 @@ export default class DevicesController {
       placements,
       gatewaySeen,
       shaping,
+      networksByMac,
     ] = await Promise.all([
       queryLatestWifiContext(macs, thresholds),
       queryTrafficSeenAt(macs),
@@ -412,6 +419,7 @@ export default class DevicesController {
       // Traffic shaping, read per request (plan cached briefly): one query
       // when there is no managed gateway.
       shapingByMac(macs),
+      deviceNetworksFor(macs),
     ])
     const rowsWithHostnames = rows.map((row, i) => {
       const match = hostnameMatches[i]
@@ -455,6 +463,7 @@ export default class DevicesController {
         presence,
         attachment: placement?.attachment ?? null,
         shaping: pickShaping(shaping.get(row.mac.toLowerCase()), row.collectorId),
+        network: networkOf(networksByMac.get(row.mac.toLowerCase())),
       } satisfies DeviceSummaryRow
     })
 
@@ -909,8 +918,15 @@ export default class DevicesController {
     const mac = normalizeMac(params.mac) ?? String(params.mac).toLowerCase()
     const placements = await loadDeviceAttachments([mac], thresholds)
     const placement = placements.get(mac)
-    const presence = await queryDevicePresence(params.mac, thresholds, placement?.onMap ?? null)
-    return serialize({ ...presence, attachment: placement?.attachment ?? null })
+    const [presence, networks] = await Promise.all([
+      queryDevicePresence(params.mac, thresholds, placement?.onMap ?? null),
+      deviceNetworksFor([mac]),
+    ])
+    return serialize({
+      ...presence,
+      attachment: placement?.attachment ?? null,
+      network: networkOf(networks.get(mac)),
+    })
   }
 
   /**

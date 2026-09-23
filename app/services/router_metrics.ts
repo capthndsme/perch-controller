@@ -39,6 +39,12 @@ export type GatewayReport = {
    * `infra_ports.ts`, not here.
    */
   ports?: unknown
+  /**
+   * The router's LAN-side networks (perch-collector with capture_networks,
+   * docs/gateway/networks.md); absent from older collectors. Read by
+   * `gateway_network_accounting.ts`, not here.
+   */
+  networks?: unknown
 }
 
 export type ParsedRouterMetrics = {

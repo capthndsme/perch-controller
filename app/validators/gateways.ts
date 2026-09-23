@@ -170,3 +170,75 @@ export const deviceReservationValidator = vine.compile(
 export const deviceGatewayValidator = vine.compile(
   vine.object({ gatewayId: vine.number().withoutDecimals().min(1).optional() })
 )
+
+// ── networks (docs/gateway/networks.md section 3) ─────────────────────────
+
+const networkPort = () =>
+  vine.object({
+    port: vine
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9_.@-]{1,15}$/),
+    tagged: vine.boolean(),
+    pvid: vine.boolean(),
+  })
+
+const dhcpPool = () =>
+  vine.object({
+    enabled: vine.boolean().optional(),
+    start: vine.number().withoutDecimals().min(1).max(65534),
+    limit: vine.number().withoutDecimals().min(1).max(65534),
+    leaseTime: vine
+      .string()
+      .trim()
+      .regex(/^(\d{1,7}[smhdw]?|infinite)$/i),
+  })
+
+const networkMeta = {
+  label: vine.string().trim().minLength(1).maxLength(80).optional(),
+  purpose: vine.enum(['lan', 'guest', 'iot', 'management', 'custom'] as const).optional(),
+  capture: vine.boolean().optional(),
+  /** Refused until a firewall domain exists (409 `firewall_not_managed`). */
+  firewallZone: vine.string().trim().maxLength(32).nullable().optional(),
+}
+
+/** `POST /gateways/:id/networks` */
+export const networkCreateValidator = vine.compile(
+  vine.object({
+    key: vine.string().trim().maxLength(15),
+    l2Mode: vine.enum(['bridge', 'bridge_vlan', '8021q', 'device'] as const),
+    bridge: vine.string().trim().maxLength(15).nullable().optional(),
+    vlanId: vine.number().withoutDecimals().nullable().optional(),
+    parentDevice: vine.string().trim().maxLength(15).nullable().optional(),
+    ports: vine.array(networkPort()).maxLength(64).optional(),
+    ipv4: vine.string().trim().maxLength(18).nullable().optional(),
+    dhcp: dhcpPool().nullable().optional(),
+    untaggedVlan: vine.number().withoutDecimals().min(1).max(4094).optional(),
+    ...networkMeta,
+  })
+)
+
+/** `PATCH /gateways/:id/networks/:networkId` */
+export const networkPatchValidator = vine.compile(
+  vine.object({
+    ports: vine.array(networkPort()).maxLength(64).optional(),
+    vlanId: vine.number().withoutDecimals().optional(),
+    ipv4: vine.string().trim().maxLength(18).nullable().optional(),
+    dhcp: dhcpPool().nullable().optional(),
+    ...networkMeta,
+  })
+)
+
+/** `GET /gateways/:id/networks/history` */
+export const networkHistoryValidator = vine.compile(
+  vine.object({
+    range: vine
+      .string()
+      .regex(/^(\d{1,6})(s|m|h|d)$/)
+      .optional(),
+    from: vine.string().optional(),
+    to: vine.string().optional(),
+    resolution: vine.enum(['auto', '1m', '5m', '15m', '1h'] as const).optional(),
+    network: vine.string().trim().maxLength(15).optional(),
+  })
+)

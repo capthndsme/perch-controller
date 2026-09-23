@@ -248,7 +248,9 @@ test.group('gateway config plane', (group) => {
     const byName = new Map<string, any>(sections.body().data.map((s: any) => [s.section, s]))
     assert.equal(byName.get('nas').scope, 'synced')
     assert.equal(byName.get('nas').domain, 'dhcp_hosts')
-    assert.equal(byName.get('lan').scope, 'unmodeled')
+    // dnsmasq's section has no domain yet; the `lan` pool and interface do
+    // (dhcp_pools, networks).
+    assert.equal(byName.get('cfg01411c').scope, 'unmodeled')
     assert.equal(byName.get('nas').router.options.ip, '192.168.1.50')
 
     env.gw.routerEdit('dhcp', (s) => {
@@ -1052,9 +1054,9 @@ test.group('gateway config plane', (group) => {
       .json({ ip: '192.168.1.56' })
     refused.assertStatus(409)
     refused.assertBodyContains({ error: 'dhcp_host_exists' })
-    const lan = await sectionByName(env.gatewayId, 'lan')
+    const dnsmasq = await sectionByName(env.gatewayId, 'cfg01411c')
     const unmodeled = await client
-      .patch(`/api/v1/gateways/${env.gatewayId}/sections/${lan.perchId}`)
+      .patch(`/api/v1/gateways/${env.gatewayId}/sections/${dnsmasq.perchId}`)
       .bearerToken(env.adminToken)
       .json({ scope: 'synced' })
     unmodeled.assertStatus(409)

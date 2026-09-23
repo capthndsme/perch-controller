@@ -60,6 +60,7 @@ const PortalAuthorizationsController = () => import('#controllers/portal_authori
 const QosController = () => import('#controllers/qos_controller')
 const GatewaysController = () => import('#controllers/gateways_controller')
 const GatewayNamesController = () => import('#controllers/gateway_names_controller')
+const GatewayNetworksController = () => import('#controllers/gateway_networks_controller')
 
 /**
  * Setup wizard endpoints. INTENTIONALLY outside the requireSetupComplete
@@ -341,6 +342,7 @@ router
         router.get(':mac/shaping', [DevicesController, 'shaping']).as('shaping')
         router.get(':mac/protocols', [DevicesController, 'protocols']).as('protocols')
         router.get(':mac/network', [GatewayObservationsController, 'deviceNetwork']).as('network')
+        router.get(':mac/networks', [GatewayNetworksController, 'device']).as('networks')
         /**
          * The device's DHCP reservation and DNS name on the managed gateway
          * (docs/gateway/config-plane.md section 10.3). Reads for any user,
@@ -656,6 +658,19 @@ router
       .use([middleware.auth(), middleware.requirePasswordChange()])
 
     /**
+     * Every gateway's networks, and the accounting scope changes the charts
+     * mark (docs/gateway/networks.md). Any signed-in user.
+     */
+    router
+      .group(() => {
+        router.get('', [GatewayNetworksController, 'all']).as('index')
+        router.get('scope-changes', [GatewayNetworksController, 'scopeChanges']).as('scopeChanges')
+      })
+      .prefix('networks')
+      .as('networks')
+      .use([middleware.auth(), middleware.requirePasswordChange()])
+
+    /**
      * The managed gateway's config plane (docs/gateway/config-plane.md
      * section 10). `:id` is `gateways.id`. Reads for any signed-in user,
      * writes admin-only; entering managed mode and Authoritative Mode ON also
@@ -683,8 +698,29 @@ router
         router.get(':id/pairing', [GatewaysController, 'pairing']).as('pairing')
         router.get(':id/dns', [GatewayNamesController, 'dns']).as('dns')
         router.get(':id/dns/label-names', [GatewayNamesController, 'labelNames']).as('labelNames')
+        /**
+         * Networks (docs/gateway/networks.md). `history` is a static segment
+         * declared before `:networkId` (numeric: `gateway_networks.id`).
+         */
+        router.get(':id/networks', [GatewayNetworksController, 'index']).as('networks')
+        router
+          .get(':id/networks/history', [GatewayNetworksController, 'history'])
+          .as('networkHistory')
+        router
+          .get(':id/networks/:networkId', [GatewayNetworksController, 'show'])
+          .as('network')
+          .where('networkId', router.matchers.number())
         router
           .group(() => {
+            router.post(':id/networks', [GatewayNetworksController, 'store']).as('createNetwork')
+            router
+              .patch(':id/networks/:networkId', [GatewayNetworksController, 'update'])
+              .as('updateNetwork')
+              .where('networkId', router.matchers.number())
+            router
+              .delete(':id/networks/:networkId', [GatewayNetworksController, 'destroy'])
+              .as('deleteNetwork')
+              .where('networkId', router.matchers.number())
             router.patch(':id', [GatewaysController, 'update']).as('update')
             router.post(':id/bind', [GatewaysController, 'bind']).as('bind')
             router.post(':id/refresh', [GatewaysController, 'refresh']).as('refresh')

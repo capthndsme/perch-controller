@@ -394,37 +394,89 @@ export async function editSections(
   domain: string,
   edits: SectionEdit[]
 ): Promise<EditOutcome> {
+  const outcome = await editDomainSections(gatewayId, userId, [{ domain, edits }])
+  return {
+    perchIds: outcome.perchIds,
+    deleted: outcome.deleted,
+    issues: outcome.issues,
+  }
+}
+
+export type DomainEditBatch = { domain: string; edits: SectionEdit[] }
+
+export type MultiEditOutcome = EditOutcome & {
+  /** Per batch, in order: the rows it changed or created, and the new ones alone. */
+  batches: Array<{ domain: string; perchIds: string[]; created: string[]; deleted: string[] }>
+}
+
+/**
+ * Edits of several domains as one draft change (plan 1 section 8.1: a new
+ * network, its DHCP pool and later its firewall zone go into one apply).
+ * Each batch is planned against the rows as the batches before it left
+ * them; validation runs once over the result; everything is stored in one
+ * transaction or not at all.
+ */
+export async function editDomainSections(
+  gatewayId: number,
+  userId: number,
+  batches: DomainEditBatch[]
+): Promise<MultiEditOutcome> {
   return gatewayQueue.run(gatewayId, async () => {
     const gateway = await findGateway(gatewayId)
     requireManaged(gateway)
     const loaded = await loadSections(gateway.id)
-    let result: EditSectionsResult
-    try {
-      result = planSectionEdits({
-        rows: loaded.states,
-        edits,
-        domain,
-        registry: domainRegistry(),
-        authoritative: authoritativeOf(gateway),
-        newPerchId: perchIdFactory(loaded.states.map((s) => s.perchId)),
-      })
-    } catch (error) {
-      if (error instanceof EditRefusedError) {
-        throw planeError(409, error.code, error.message)
+    const newPerchId = perchIdFactory(loaded.states.map((s) => s.perchId))
+    const candidate = new Map(loaded.states.map((s) => [s.perchId, s]))
+    const upserted = new Map<string, SectionState>()
+    const deletedAll = new Set<string>()
+    const perBatch: MultiEditOutcome['batches'] = []
+    for (const batch of batches) {
+      if (batch.edits.length === 0) {
+        perBatch.push({ domain: batch.domain, perchIds: [], created: [], deleted: [] })
+        continue
       }
-      if (error instanceof SectionEditError) throw planeError(422, 'invalid_edit', error.message)
-      throw error
+      let result: EditSectionsResult
+      const before = new Set(candidate.keys())
+      try {
+        result = planSectionEdits({
+          rows: [...candidate.values()],
+          edits: batch.edits,
+          domain: batch.domain,
+          registry: domainRegistry(),
+          authoritative: authoritativeOf(gateway),
+          newPerchId,
+        })
+      } catch (error) {
+        if (error instanceof EditRefusedError) {
+          throw planeError(409, error.code, error.message)
+        }
+        if (error instanceof SectionEditError) throw planeError(422, 'invalid_edit', error.message)
+        throw error
+      }
+      for (const u of result.upserts) {
+        candidate.set(u.perchId, u)
+        upserted.set(u.perchId, u)
+        deletedAll.delete(u.perchId)
+      }
+      for (const id of result.deleted) {
+        candidate.delete(id)
+        upserted.delete(id)
+        deletedAll.add(id)
+      }
+      perBatch.push({
+        domain: batch.domain,
+        perchIds: result.upserts.map((u) => u.perchId),
+        created: result.upserts.filter((u) => !before.has(u.perchId)).map((u) => u.perchId),
+        deleted: result.deleted,
+      })
     }
+    const touched = [...upserted.keys(), ...deletedAll]
     const inFlight = await inFlightApply(gateway.id)
-    const touched = [...result.upserts.map((u) => u.perchId), ...result.deleted]
     if (inFlight && inFlight.perchIds.some((id) => touched.includes(id))) {
       throw planeError(409, 'pending_apply', 'An apply carrying this section is running.')
     }
     // Validate the draft as it would be; an edit that leaves an error on a
     // section it touches is refused before anything is stored.
-    const candidate = new Map(loaded.states.map((s) => [s.perchId, s]))
-    for (const u of result.upserts) candidate.set(u.perchId, u)
-    for (const id of result.deleted) candidate.delete(id)
     const issues = validateStates(gateway, [...candidate.values()])
     const blocking = issues.filter(
       (i) => i.severity === 'error' && i.perchId && touched.includes(i.perchId)
@@ -432,23 +484,32 @@ export async function editSections(
     if (blocking.length > 0) {
       throw planeError(422, 'invalid_config', blocking[0].message, { issues: blocking })
     }
+    // Deleted rows that existed before: dropped (controller-only rows the
+    // router never had); new rows deleted again within the batches: nothing.
+    const existing = new Set(loaded.states.map((s) => s.perchId))
     const changes = [
-      ...result.upserts.map((s) => ({ perchId: s.perchId, after: s })),
-      ...result.deleted.map((id) => ({ perchId: id, after: null })),
+      ...[...upserted.values()].map((s) => ({ perchId: s.perchId, after: s })),
+      ...[...deletedAll]
+        .filter((id) => existing.has(id))
+        .map((id) => ({ perchId: id, after: null })),
     ]
     await db.transaction(async (trx) => {
       await saveStates(gateway.id, loaded.rows, changes, { userId, trx })
       await recordGatewayEvent(gateway.id, 'draft_edited', {
         userId,
-        detail: { domain, perchIds: touched },
+        detail:
+          batches.length === 1
+            ? { domain: batches[0].domain, perchIds: touched }
+            : { domains: batches.map((b) => b.domain), perchIds: touched },
         trx,
       })
     })
     await refreshSyncState(gateway)
     return {
-      perchIds: result.upserts.map((u) => u.perchId),
-      deleted: result.deleted,
+      perchIds: [...upserted.keys()],
+      deleted: [...deletedAll].filter((id) => existing.has(id)),
       issues: issues.filter((i) => !i.perchId || touched.includes(i.perchId)),
+      batches: perBatch,
     }
   })
 }

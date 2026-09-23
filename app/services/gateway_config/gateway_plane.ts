@@ -21,6 +21,7 @@ import {
   rememberGatewaySession,
   type HelloGatewayConfig,
 } from '#services/gateway_config/gateway_registry'
+import { refreshCaptureExclusions } from '#services/gateway_network_accounting'
 import { reconcilePairingWithHello } from '#services/gateway_config/pairing'
 import { gatewayQueue } from '#services/gateway_config/serial_queue'
 import type { RouterAuthor } from '#services/gateway_config/types'
@@ -58,7 +59,10 @@ export async function prepareGatewayHello(
       ...session,
       capabilities: params.capabilities ?? [],
     })
-    return await ensureGateway(collector, hello, params.capabilities ?? null)
+    const gateway = await ensureGateway(collector, hello, params.capabilities ?? null)
+    // The per-network capture flags ride in agent.configure (networks.md 5).
+    if (gateway) await refreshCaptureExclusions(collector.id)
+    return gateway
   } catch (error) {
     logger.error({ collectorId: collector.id, err: error }, 'gateway_plane: hello failed')
     return null

@@ -3,7 +3,8 @@
 Status: built through work packages S1–S4 (2026-09-23): data layer and pure core, the agent
 wiring on the collector socket, the per-gateway serial queue, the apply lifecycle, Authoritative
 Mode's enforcement, pairing for plain HTTP, and the REST API with the first domains (DHCP
-reservations, DNS names). Networks (section 8, S5) are not here yet.
+reservations, DNS names). Networks (section 8, S5: the `networks` and `dhcp_pools` domains, the
+networks REST, per-network accounting) are `networks.md`.
 
 The collector on an OpenWrt router becomes a managed gateway: controller edits apply to the
 router's native UCI config, and router edits (LuCI, `uci`, ssh) flow back. This document is the
@@ -18,7 +19,7 @@ Code: `app/services/gateway_config/` (pure, no I/O unless noted), models `app/mo
 Section numbers follow plan 1 of the design (and the code comments cite them): 2 model, 5 sync,
 4 the agent protocol as the controller uses it, 6 services and applying, 7 domains, 9 storage,
 10 REST, 11 settings and security. The router side (plan 1 section 3) is perch-collector's
-`ARCHITECTURE.md`; section 8 (networks) is added when it is built.
+`ARCHITECTURE.md`; section 8 (networks) is `networks.md`.
 
 | File | Role |
 |---|---|
@@ -29,7 +30,8 @@ Section numbers follow plan 1 of the design (and the code comments cite them): 2
 | `sync_engine.ts` | three-way merge, conflicts, drift, reconciling a read, statuses, the "in sync" predicate, state machines |
 | `apply_plan.ts` | ops of an apply job, management-path split, ledger, `editSections` core |
 | `revisions.ts` | snapshots, diffs, rejoin offer, pruning selection, restore |
-| `domains/` | the registry's domains; `dhcp_hosts.ts` is the sample |
+| `domains/` | the registry's domains: `dhcp_hosts.ts` (the sample), `dns_records.ts`, `dhcp_pools.ts`, `networks.ts` |
+| `network_model.ts`, `networks_service.ts` | networks from sections, network edits, the networks REST (`networks.md`) |
 | `gateway_config_settings.ts` | Settings → Gateway (DB) |
 | `config_retention.ts` | pruning of events and revisions (DB) |
 | `serial_queue.ts` | the per-gateway serial queue (6.6) |
@@ -381,7 +383,9 @@ re-plan after it finishes (the hashes change).
 - Conflicted sections are `blocked`; a `revert` job plans only drifted sections.
 
 `planSectionEdits` is the pure core of `gatewayConfig.editSections(gatewayId, userId, edits)`, the
-single write entry point for domain REST handlers: it turns a domain's `SectionEdit`s into new C
+single write entry point for domain REST handlers (`editDomainSections(gatewayId, userId, [{domain,
+edits}, …])` does several domains as one draft change: planned in order against the evolving rows,
+validated once, stored in one transaction; `editSections` is its one-domain form): it turns a domain's `SectionEdit`s into new C
 values and new controller rows, refusing sections that are not synced, belong to another domain or
 live in an excluded config.
 
@@ -520,7 +524,8 @@ type SectionEdit =
 
 **Invariant**, tested for every domain with `checkRoundTrip(domain, sections)`: applying
 `render(parse(x))` to x changes nothing, compared strictly (not normalised). The engine checks it
-per section on import. Register domains in `domains/index.ts` (claim order = array order).
+per section on import. Register domains in `domains/index.ts` (claim order = array order: `dhcp_hosts`,
+`dns_records`, `dhcp_pools`, `networks`).
 Perch-only metadata (labels, purposes) lives in each domain's own table keyed by `perch_id`, never
 in UCI.
 
@@ -554,9 +559,10 @@ hangs off `gateways` with ON DELETE CASCADE.
 | `gateway_applies` | `apply_key` UNIQUE (wire applyId); kind, state, ops, base hashes, perch ids, `protected`, confirm mode and timeout, timestamps of each step, outcome, `replaced_router_content` (the router's content before the job, every kind), revision number; since 051 `agent_confirmed_at`, `written`, `ledger`, `secret_refs`, `configs`, `changes`, `chain_perch_ids`, `chain_step`, `retried`, `signed`, `packages`; `kind` also `package` |
 | `gateway_revisions` | UNIQUE (gateway, number); source, author, router author, summary, note, snapshot, diff, hashes, `apply_id`, **`confirmed_at`** |
 | `gateway_config_events` | audit (event names in `GATEWAY_EVENTS`), INDEX (gateway, created_at) and (created_at) |
-| `gateway_networks` | Perch-only network metadata keyed by the interface's perch_id |
+| `gateway_networks` | Perch-only network metadata keyed by the interface's perch_id, else (052) by network name |
 | `gateway_network_samples` | PK (gateway, network, recorded_at); pruned with `router_samples` |
 | `device_network_latest` | PK (gateway, mac); written on change only |
+| `device_network_history`, `gateway_scope_changes` | (052) a MAC's network intervals; the accounting scope rule's changes (`networks.md` 4) |
 
 **Revisions and the rejoin offer** (README 3.7). `confirmed_at` is set when the state is known to
 work on the router: a confirmed apply, or a router state reported by a live agent. A gateway that

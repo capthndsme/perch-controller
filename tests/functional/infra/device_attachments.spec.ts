@@ -167,7 +167,13 @@ test.group('infra | devices on the map', (group) => {
     assert.isNull(rows.get(macs.phone).attachment)
 
     const presence = await presenceOf(client, operatorToken, macs.camera)
-    assert.deepEqual(Object.keys(presence).sort(), ['attachment', 'lastSeenAt', 'status', 'via'])
+    assert.deepEqual(Object.keys(presence).sort(), [
+      'attachment',
+      'lastSeenAt',
+      'network',
+      'status',
+      'via',
+    ])
     assert.deepEqual(presence.attachment, cameraAttachment)
     assert.isNull(await attachmentOf(client, operatorToken, macs.phone))
 

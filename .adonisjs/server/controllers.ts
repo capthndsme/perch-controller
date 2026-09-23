@@ -14,6 +14,7 @@ export const controllers = {
   Devices: () => import('#controllers/devices_controller'),
   GatewayNames: () => import('#controllers/gateway_names_controller'),
   GatewayObservations: () => import('#controllers/gateway_observations_controller'),
+  GatewayNetworks: () => import('#controllers/gateway_networks_controller'),
   GatewaySettings: () => import('#controllers/gateway_settings_controller'),
   Gateways: () => import('#controllers/gateways_controller'),
   Infra: () => import('#controllers/infra_controller'),

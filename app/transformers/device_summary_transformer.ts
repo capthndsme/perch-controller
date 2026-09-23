@@ -88,6 +88,11 @@ export type DeviceSummaryRow = {
    * read per request; null when no gateway caps it.
    */
   shaping?: DeviceShaping | null
+  /**
+   * The gateway network the device was last seen on (perch-collector with
+   * capture_networks; docs/gateway/networks.md 4.3), read per request.
+   */
+  network?: { gatewayId: number; name: string; since: string } | null
 }
 
 /**
@@ -190,6 +195,7 @@ export default class DeviceSummaryTransformer extends BaseTransformer<DeviceSumm
       presence: this.resource.presence ?? { status: 'disconnected', via: 'lan', lastSeenAt: null },
       attachment: this.resource.attachment ?? null,
       shaping: this.resource.shaping ?? null,
+      network: this.resource.network ?? null,
     }
   }
 
