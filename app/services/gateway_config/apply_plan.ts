@@ -18,6 +18,7 @@ import { wireOptions } from '#services/gateway_config/secrets'
 import {
   applyControllerEdit,
   controllerWins,
+  pauseHeld,
   type SectionState,
 } from '#services/gateway_config/sync_engine'
 import type {
@@ -695,34 +696,59 @@ export function planSectionEdits(input: EditSectionsInput): EditSectionsResult {
 
   const domain = input.registry?.get(input.domain) ?? null
   const rules = input.registry?.rules(input.domain) ?? DEFAULT_RULES
+  // README 2: a one-way domain's sections are authoritative in managed mode.
+  const authoritative = input.authoritative || domain?.oneWay === true
+  const pause = domain?.routerPause ?? null
+  const reclaimed = new Set<string>()
+  for (const edit of input.edits) {
+    if (edit.op === 'put' && edit.perchId && pause && edit.reclaim?.includes(pause.option)) {
+      reclaimed.add(edit.perchId)
+    }
+  }
   const upserts: SectionState[] = []
   const deleted: string[] = []
   for (const row of synced) {
     const next = after.find((s) => s.perchId === row.perchId)
-    const desired = next ? contentOf(next) : null
-    if (contentsEqual(desired, row.desired, rules) && sameSecretRefs(desired, row.desired)) continue
+    let desired = next ? contentOf(next) : null
+    let ownership = ownershipFor(row.ownership, row.desired, desired)
+    if (pause && desired && desired.type === pause.type && pauseHeld(row.ownership, pause.option)) {
+      if (reclaimed.has(row.perchId)) {
+        // Decision 15: the admin's explicit resume takes the option back.
+        ownership = claimedOwnership(domain!, row, desired, pause.option)
+      } else {
+        // The router holds it: C keeps the router's value, or C would stay
+        // "ahead" of a value no apply may write.
+        desired = keepRouterValue(desired, row.router ?? row.base, pause.option)
+      }
+    }
+    const sameOwnership = JSON.stringify(ownership) === JSON.stringify(row.ownership)
+    if (
+      contentsEqual(desired, row.desired, rules) &&
+      sameSecretRefs(desired, row.desired) &&
+      sameOwnership
+    ) {
+      continue
+    }
     if (!desired && row.base === null && row.router === null) {
       deleted.push(row.perchId)
       continue
     }
-    upserts.push(
-      applyControllerEdit(row, desired, {
-        authoritative: input.authoritative,
-        rules,
-        ownership: ownershipFor(row.ownership, row.desired, desired),
-      })
-    )
+    upserts.push(applyControllerEdit(row, desired, { authoritative, rules, ownership }))
   }
   for (const id of created) {
     const section = after.find((s) => s.perchId === id)
     if (!section) continue
     const desired = contentOf(section)
+    // A section Perch creates is Perch's, whatever its pause option says
+    // (decision 15 is about the router pausing what Perch wrote).
+    const options = { ...section.options }
+    if (pause && section.type === pause.type) delete options[pause.option]
     const claimed = domain?.ownership?.({
       name: section.name,
       type: section.type,
       anonymous: false,
       index: 0,
-      options: section.options,
+      options,
       config: section.config,
     })
     const ownership = claimed && claimed.kind === 'options' ? claimed : null
@@ -750,6 +776,38 @@ export function planSectionEdits(input: EditSectionsInput): EditSectionsResult {
     .filter((e): e is Extract<SectionEdit, { op: 'order' }> => e.op === 'order')
     .map((e) => ({ config: e.config, type: e.type, perchIds: [...e.perchIds] }))
   return { upserts, deleted, orders }
+}
+
+/** The domain's ownership of a section as if it were not paused (a reclaim). */
+function claimedOwnership(
+  domain: NonNullable<ReturnType<DomainRegistry['get']>>,
+  row: SectionState,
+  desired: SectionContent,
+  option: string
+): SectionState['ownership'] {
+  const options = { ...desired.options }
+  delete options[option]
+  const claimed = domain.ownership?.({
+    name: row.name,
+    type: desired.type,
+    anonymous: row.anonymous,
+    index: 0,
+    options,
+    config: row.config,
+  })
+  return claimed && claimed.kind === 'options' ? claimed : null
+}
+
+function keepRouterValue(
+  desired: SectionContent,
+  router: SectionContent | null,
+  option: string
+): SectionContent {
+  const options = { ...desired.options }
+  const value = router?.options[option]
+  if (value === undefined) delete options[option]
+  else options[option] = Array.isArray(value) ? [...value] : value
+  return { ...desired, options }
 }
 
 function sameSecretRefs(a: SectionContent | null, b: SectionContent | null): boolean {

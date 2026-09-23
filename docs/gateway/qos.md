@@ -3,11 +3,10 @@
 Status (2026-09-23): data model, settings, WAN SQM mapping, the WAN queue API, read APIs and the
 planner (branch `gw/qos`); policy / group / assignment / schedule writes, the device-set sender, the
 `perch-qos` package seam, expiry, the portal-facing API and the live ingest (branch `gw/ctl-qos`,
-sections 5.2 to 8). Router writes of config (`sqm`, `perch-qos`) wait for the config plane's apply path
-([config-plane.md](config-plane.md)): WAN queue writes answer `409 plane_unavailable`, the `perch-qos`
-package is kept as `config.error 'plane_unavailable'` and offered again. Device entries go to the agent
-directly (`qos.devices.set`). The agent side (`perch-collector` `internal/qos`, the `perch-qos`
-package) is built on its own branch.
+sections 5.2 to 8); router writes of config (`sqm`, `perch-qos`) through the config plane's apply path
+([config-plane.md](config-plane.md) 6.8; branch `gw/plane-writer`: sections 2.4 and 6.3). Device entries
+go to the agent directly (`qos.devices.set`). The agent side is `perch-collector` `internal/qos` and the
+`perch-qos` package.
 
 Scope: WAN SQM (sqm-scripts, two-way synced), per-device and bucket caps (HTB on two Perch ifbs, fed
 from the LAN side), nested buckets, weekly schedules, quotas (the primitive the captive portal reuses).
@@ -76,24 +75,26 @@ Claims `sqm` `queue` sections, owns the whole section, `normalize` = `normalizeS
 `requires` sqm-scripts, `parse`/`render` carry the option map verbatim (round-trip identity is
 tested on every fixture). No identity keys (duplicates are flagged, not made ambiguous).
 
-Decision 15 is expressed through ownership: while the router's section says `enabled '0'`, Perch
+Decision 15 is expressed through ownership: while the router holds the queue at `enabled '0'`, Perch
 does not own `enabled`, so the router's value always wins (never drift, never a conflict, never
-reverted) and every other option stays Perch's.
-
-Until gw/data's `ConfigDomain` interface is merged, the file carries structural mirrors of
-`SyncedSection`, `SectionEdit` and `ValidationCtx` (TODO in the file: import the real ones and
-register the domain in `gateway_config/domains/index.ts`).
+reverted) and every other option stays Perch's. The domain's `routerPause` rule makes the engine apply
+this on every read, not only on import (config-plane.md 6.8): the router switching a queue off holds
+`enabled`, switching it back releases it. A queue Perch creates disabled is Perch's (no hold).
 
 ### 2.3 Router import (`recordRouterSqm`, `app/services/qos_wan_queues.ts`)
 
-The plane's observe path calls it with each read of the router's `sqm` config:
+The plane's read listener (`onRouterRead`, installed by `installPlaneWriters()`) calls it with each
+read of the router's `sqm` config, with the plane's view of each section:
 
 - a new section becomes a row with `origin: 'router'`, options as they are (the live gateway's
   untagged `eth1` stays untagged: `perch_id` comes from the ledger only);
 - changed options are taken over (`router_updated_at`);
 - enabled → disabled on the router sets `router_paused_at` (decision 15); back on clears it; a queue
   that was never on is not a pause;
-- vanished sections are removed; controller rows not yet on the router (null `uci_section`) stay.
+- vanished sections are removed; controller rows not yet on the router (null `uci_section`) stay;
+- with the plane: a section whose controller change waits for its apply (status `ahead`, `pending`,
+  `conflict`) keeps the row's desired options, a pending delete is not re-created, and a pending create
+  (the plane row has no router side yet) is not removed.
 
 ### 2.4 The write seam (`app/services/sqm_plane.ts`)
 
@@ -110,14 +111,36 @@ class SqmPlaneError { status: 409 | 422 | 503; code: string; extra: Record<strin
 setSqmPlaneWriter(writer): SqmPlaneWriter   // install at boot; returns the previous one
 ```
 
-`StubSqmPlaneWriter` is installed until the plane's apply path exists: it records the change
-(bounded, 50) and throws `409 plane_unavailable`. The endpoint returns that with
-`intended: {action, queueId, uciSection, options, changed}` and `warnings`, and stores nothing. Once a
-writer accepts, the row takes the desired options (`origin` unchanged, `controller` for new ones) and
-the sync state follows the plane's section (`queued` → `applying` → `in_sync`, or `offline`).
+`SqmPlaneAccepted` also carries `applyId`, `state: 'queued' | 'applying' | 'applied'`, `apply` (the
+config plane's `GatewayApply`) and `applyError: {error, message} | null` (why no apply started: the draft
+is kept, e.g. `apply_in_flight`).
 
-Wiring (wave 2): `submit` renders with `sqmDomain.render()` and calls
-`gatewayConfig.editSections(gatewayId, userId, edits)`.
+**`PlaneSqmWriter`** (`app/services/qos_plane_writers.ts`, installed at boot by
+`providers/qos_plane_provider.ts`, web only; `StubSqmPlaneWriter` stays the default elsewhere):
+
+1. refuses early: `409 qos_not_managed`; `409 config_not_allowed` when the router's
+   `capabilities.allowedConfigs` lacks `sqm`, with what to do (install sqm-scripts, which joins the
+   allowlist by itself; or `list managed_config 'sqm'`; section 6.3 `planeAccess`); `409 sqm_not_read`
+   (an update of a queue the plane has not read); `409 sqm_not_synced` (the router's queue is
+   excluded or unmodeled);
+2. renders the change through `sqmDomain.render()` (a create is a put without a perch id, named
+   `perch_<id>`; a delete a delete edit) into `editSections(gatewayId, actor, 'sqm', edits)` (the
+   admin's user id; `{system: 'qos'}` without one); the plane's refusals pass through (`422
+   invalid_config {issues}`, `409 pending_apply`, …);
+3. asks for an apply of exactly that section (`requestApply({perchIds})`, the confirm mode of Settings →
+   Gateway: in `admin_and_agent` the dashboard offers "Keep changes" on the returned `apply`);
+4. a router refusal of that apply (nothing changed on the router) drops the draft of the section and
+   becomes the refusal: `422 sqm_below_floor` (+`minWanKbit`, `applyId`: the router's floor,
+   perch-qos `globals.min_wan_kbit`), `422 invalid_config`, `409 config_not_allowed`, `409` with the
+   agent's code otherwise.
+
+The endpoints then store the row (`uci_section` = the name the apply gives it, `origin` unchanged,
+`controller` for new ones) and answer `{queue, warnings, apply, applyError}`; `queue.sync` follows the
+plane's section and its newest apply: `queued` (`offline` while the agent is away) → `applying`
+(sent, waiting for the confirm) → `in_sync`, or `rolled_back` / `failed` with `error` = the apply's
+reason while the draft waits. `DELETE /qos/wan-queues/:id` answers `200 {queue, apply, applyError}`:
+`queue` is null once the router has no such queue, else the queue it still runs (flag
+`pending_delete`) until the apply confirms and the next read drops the row.
 
 ## 3. Buckets, caps and the planner (`app/services/qos_plan.ts`, pure)
 
@@ -491,17 +514,56 @@ setQosPlaneWriter(writer): QosPlaneWriter   // install at boot; returns the prev
 
 Submitted `applyDebounceSeconds` after the last write, when the plan's `fingerprints.config` differs from
 `qos_gateway_states.config_fingerprint` (what the plane last accepted); POST `/qos/pause` / `/resume`
-always resubmit. `StubQosPlaneWriter` (installed until the plane's apply path exists) records the change
-(bounded, 50) and throws `409 plane_unavailable`: the config state is `queued` with
-`error 'plane_unavailable'`, offered again on the next change or at most every 5 minutes by the sweep.
-Once a writer accepts, the state is `queued` at the returned revision until the router's report shows
-`configRevision >= revision` (`in_sync`).
+always resubmit. `StubQosPlaneWriter` (the default outside the web process) records the change (bounded, 50) and throws
+`409 plane_unavailable`: the config state is `queued` with `error 'plane_unavailable'`, offered again on
+the next change or at most every 5 minutes by the sweep.
 
-Wiring (wave 2): a `perch-qos` domain that owns the whole package (types `globals`, `bucket`,
-`network`, `schedule`), one-way (router edits are drift), except `globals.enabled '0'` (a router-side
-pause, never reverted; `overrideRouterPause` = the admin resumed over it); `submit` turns `sections`
-into section edits for `gatewayConfig.editSections` (sections no longer in the plan are deleted), in the
-apply order `sqm` / `perch-qos` (README section 3.5).
+`QosPlaneAccepted` = `{ revision, applyId?, state?: 'queued' | 'applying' | 'in_sync', error? }`;
+`QosPlaneWriter.resume?(gatewayId, userId)` starts the apply of a package that waited.
+
+**The `perch_qos` domain** (`app/services/perch_qos_domain.ts`, registered after `sqm`) owns the whole
+package: types `globals`, `bucket`, `network`, `schedule` (anonymous sections other than `globals` are
+not claimed: perch-collector ignores them). Options verbatim (round trip tested on planner output),
+`normalize` = booleans and unpadded numbers, `globals.exempt` and `schedule.window` merge as sets.
+**One-way** (`oneWay`): router edits are drift in managed mode, Authoritative Mode or not, and the
+enforcement tick reverts them (config-plane.md 6.8); the first import of the file the perch-qos package
+installs is not drift. **Decision 15** (`routerPause` on `globals.enabled`): the router's `enabled '0'` is
+held as a pause (never drift, never reverted, every later package keeps `'0'`); the router switching it
+back releases it; `POST /qos/resume {overrideRouter: true}` (`overrideRouterPause`) sends the put with
+`reclaim: ['enabled']`, which writes `'1'`. Validation mirrors what perch-collector refuses: one globals,
+section names, whole-number rates, bucket `class` 0x02–0xff, known parent / bucket names, schedule
+windows (`<days> HH:MM-HH:MM`) and actions (unknown schedules are warnings).
+
+**`PlaneQosWriter`**:
+
+1. refuses early: `409 qos_not_managed`; `409 config_not_allowed` (the router's allowlist lacks
+   `perch-qos`; the perch-qos package brings it by itself); `409 qos_package_missing` (no perch-qos on
+   the router and no file read);
+2. `revision` = max(`qos_gateway_states.config_revision`, the router's `globals.revision`) + 1, written
+   as `globals.revision` (perch-collector reports it back as `qos.configRevision`); options that are
+   `''` are left out (UCI keeps no empty values; perch-collector reads absent as `''`);
+3. one put per planned section (matched by type and name; `globals` by type), a delete for every synced
+   section the plan no longer has, into `editSections(gatewayId, actor, 'perch_qos', edits)`; the actor
+   is the admin who made the change, or `{system: 'qos'}` for Perch's own (a portal grant, the expiry
+   sweep: `userId` null), shown as "Perch (system)";
+4. an apply of every synced section of the package, **confirmed by the agent alone** (Perch writes the
+   package by itself too, and it never touches the management path);
+5. another apply open (`apply_in_flight`, or `pending_apply` from `editSections`): the state is `queued`
+   with `error 'apply_in_flight'`, and the package is (re)submitted when that apply ends (the
+   `onApplySaved` listener) or by the next sweep; a router refusal drops the draft and becomes `422` /
+   `409` with the router's reason.
+
+**State** (`GET /qos` `config`): the apply carrying the package (`qos_gateway_states.config_apply_key`,
+migration `111`, so it survives a restart) decides `queued` → `applying` (sent, pending confirm, or
+confirmed while the router's shaper has not reported the revision yet) → `in_sync` (the router reports
+`configRevision >= revision`, or the apply confirmed on a router that reports no shaper state), or
+`rolled_back` / `failed` with `error` = the apply's reason. The listener also moves the sender's own
+state as the apply goes.
+
+`GET /qos` gains `planeAccess: { sqm, perchQos }`, each `{ config, package, allowed: boolean | null,
+installed: boolean | null, hint: string | null }` (README 7.7: installed sibling packages join the
+router's allowlist by themselves; `hint` says what the router's owner does when `allowed` is false);
+a managed gateway that does not allow one also lists `config_not_allowed` in `errors`.
 
 ### 6.4 Pause and expiry
 
@@ -659,9 +721,9 @@ ensureTierPolicy(i: { collectorId?; gatewayId?; key: string; name: string; share
 
 ## 9. Not built yet
 
-- The agent: `perch-collector` `internal/qos`, the `perch-qos` package, the schedule evaluator on the
-  router clock (on its own branch).
-- `sqmDomain` and a `perch-qos` domain registered with the config plane, and the real `SqmPlaneWriter` /
-  `QosPlaneWriter` (after gw/data merges).
+- A rolled-back reclaim (an admin's resume over a router pause that the router rolled back) leaves
+  the option owned by Perch again; the next package would then write `'1'`. Rare; the admin resumed.
+- The package is written once the gateway is managed (the sender's sweep); a gateway without the
+  perch-qos package shows `config.error 'qos_package_missing'` until it is installed.
 - `usage.source: 'capture'` for MACs in a rest leaf; `collectors.last_status.qos` (plan 3 section 4:
   the live state is in memory only); the network list for `qos_unknown_network` (M5).

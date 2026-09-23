@@ -526,7 +526,8 @@ test.group('qos | wan queues: writes once the plane accepts them', (group) => {
     const deleted = await client
       .delete(`/api/v1/qos/wan-queues/${queue.id}`)
       .bearerToken(adminToken)
-    deleted.assertStatus(204)
+    deleted.assertStatus(200)
+    assert.containsSubset(bodyOf(deleted).data, { queue: null, apply: null, applyError: null })
     assert.isNull(await QosWanQueue.find(queue.id))
     assert.equal(writer.changes[2].action, 'delete')
   })

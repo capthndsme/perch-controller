@@ -1,5 +1,6 @@
 import type {
   ConfigDomain,
+  RouterPauseRule,
   SectionEdit,
   SyncedSection,
   ValidationCtx,
@@ -22,9 +23,10 @@ import {
 } from '#services/sqm_mapping'
 
 /**
- * The `sqm` config domain (docs/gateway/qos.md section 2.3; plan 3 section
+ * The `sqm` config domain (docs/gateway/qos.md section 2.2; plan 3 section
  * 9.2): how the config plane models `/etc/config/sqm` `queue` sections.
- * Registered in `gateway_config/domains/index.ts`.
+ * Registered in `gateway_config/domains/index.ts`; `SQM_PAUSE` makes the
+ * engine hold a router-side pause on every read (config-plane.md 6.8).
  *
  * Two-way synced, whole-package ownership, untagged pre-existing sections
  * (the live gateway's `eth1`) are imported as they are; `normalizeSqmOption`
@@ -58,10 +60,18 @@ export function sqmOwnership(section: { options: UciOptions }): SectionOwnership
   return { kind: 'options', options: [...owned].sort() }
 }
 
+/** Decision 15 as the engine's pause rule: a router-side `enabled '0'`. */
+export const SQM_PAUSE: RouterPauseRule = {
+  type: SQM_QUEUE_TYPE,
+  option: 'enabled',
+  isPaused: (value) => typeof value === 'string' && normalizeSqmOption('enabled', value) === '0',
+}
+
 export const sqmDomain = {
   key: 'sqm',
   configs: [SQM_CONFIG],
   types: [SQM_QUEUE_TYPE],
+  routerPause: SQM_PAUSE,
 
   claims(section: UciSection & { config: string }, _all?: UciConfigSet): boolean {
     return section.config === SQM_CONFIG && section.type === SQM_QUEUE_TYPE

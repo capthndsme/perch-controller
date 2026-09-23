@@ -1,5 +1,7 @@
 import { GatewayApplySchema } from '#database/schema'
 import { jsonColumn } from '#models/json_column'
+import { emitApplySaved } from '#services/gateway_config/hooks'
+import { afterSave } from '@adonisjs/lucid/orm'
 import type {
   ApplyOp,
   ConfigDiffEntry,
@@ -85,4 +87,10 @@ export default class GatewayApply extends GatewayApplySchema {
   /** Runs once the job is live (`post_actions`); carried along a chain until done. */
   @jsonColumn('post_actions')
   declare postActions: GatewayApplyPostActions | null
+
+  /** Features follow their applies (`onApplySaved`, section 6.8). */
+  @afterSave()
+  static async notifyListeners(apply: GatewayApply) {
+    await emitApplySaved(apply)
+  }
 }

@@ -1,4 +1,5 @@
 import type Gateway from '#models/gateway'
+import GatewayApply from '#models/gateway_apply'
 import GatewaySection from '#models/gateway_section'
 import InfraNode from '#models/infra_node'
 import InfraPort from '#models/infra_port'
@@ -78,10 +79,26 @@ export function applyStateOf(
   section: Pick<GatewaySection, 'status' | 'updatedAt'> | null,
   queue: Pick<QosWanQueue, 'origin' | 'uciSection' | 'routerUpdatedAt' | 'updatedAt'>,
   online: boolean,
-  revision: number
+  revision: number,
+  lastApply: Pick<GatewayApply, 'state' | 'outcome' | 'finishedAt'> | null = null
 ): QosApplyState {
   let state: QosApplyStateName
   let at: DateTime | null
+  let error: string | null = null
+  if (
+    section &&
+    section.status === 'ahead' &&
+    lastApply &&
+    (lastApply.state === 'rolled_back' || lastApply.state === 'failed')
+  ) {
+    // The change's apply did not stick; the draft waits for another try.
+    return {
+      revision,
+      state: lastApply.state,
+      at: lastApply.finishedAt ? lastApply.finishedAt.toUTC().toISO() : null,
+      error: lastApply.outcome?.error ?? lastApply.outcome?.reason ?? lastApply.state,
+    }
+  }
   if (section) {
     switch (section.status) {
       case 'in_sync':
@@ -109,7 +126,7 @@ export function applyStateOf(
     at = queue.updatedAt ?? null
   }
   if (state === 'queued' && !online) state = 'offline'
-  return { revision, state, at: at ? at.toUTC().toISO() : null, error: null }
+  return { revision, state, at: at ? at.toUTC().toISO() : null, error }
 }
 
 async function recordsFor(resolved: ResolvedGateway, queues: QosWanQueue[]) {
@@ -123,24 +140,54 @@ async function recordsFor(resolved: ResolvedGateway, queues: QosWanQueue[]) {
           .where('config', SQM_CONFIG)
           .whereIn('sectionName', sectionNames)
   const byName = new Map(sections.map((s) => [s.sectionName, s]))
+  const lastApplies = await lastAppliesOf(
+    gateway.id,
+    sections.map((s) => s.perchId)
+  )
   const setFlags = sqmQueueSetFlags(queues)
   return queues.map((queue, index): WanQueueRecord => {
     const view = parseSqmQueue(queue.options)
     const flags = new Set([...view.flags, ...setFlags[index]])
     if (queue.routerPausedAt) flags.add('router_paused')
+    const section = queue.uciSection ? (byName.get(queue.uciSection) ?? null) : null
+    // The draft deletes the queue; the router drops it with the apply.
+    if (section && section.desiredContent === null && section.routerContent !== null) {
+      flags.add('pending_delete')
+    }
     return {
       queue,
       view: { ...view, flags: [...flags].sort() },
       gatewayId: gateway.id,
       collectorId: gateway.collectorId,
       sync: applyStateOf(
-        queue.uciSection ? (byName.get(queue.uciSection) ?? null) : null,
+        section,
         queue,
         online,
-        gateway.headRevision
+        gateway.headRevision,
+        section ? (lastApplies.get(section.perchId) ?? null) : null
       ),
     }
   })
+}
+
+/** The newest apply carrying each section (the last 50 applies of the gateway). */
+async function lastAppliesOf(
+  gatewayId: number,
+  perchIds: string[]
+): Promise<Map<string, GatewayApply>> {
+  const out = new Map<string, GatewayApply>()
+  if (perchIds.length === 0) return out
+  const applies = await GatewayApply.query()
+    .where('gateway_id', gatewayId)
+    .whereNot('kind', 'package')
+    .orderBy('id', 'desc')
+    .limit(50)
+  for (const apply of applies) {
+    for (const id of apply.perchIds ?? []) {
+      if (perchIds.includes(id) && !out.has(id)) out.set(id, apply)
+    }
+  }
+  return out
 }
 
 async function queuesOf(gatewayId: number): Promise<QosWanQueue[]> {
@@ -333,6 +380,10 @@ async function submit(change: SqmQueueChange, warnings: QosWarning[]): Promise<S
 export interface WanQueueWriteResult {
   record: WanQueueRecord
   warnings: QosWarning[]
+  /** The config plane apply carrying the change (config-plane.md `GatewayApply`), when one started. */
+  apply: unknown | null
+  /** Why no apply started (the draft is kept; apply it from the gateway page). */
+  applyError: { error: string; message: string } | null
 }
 
 /** POST /qos/wan-queues. */
@@ -377,16 +428,30 @@ export async function createWanQueue(
     },
     warnings
   )
-  const queue = await QosWanQueue.create({
-    gatewayId: resolved.gateway.id,
-    uciSection: accepted.uciSection,
-    perchId: accepted.perchId,
-    device: view.device,
-    enabled: view.enabled,
-    options: result.options,
-    origin: 'controller',
-  })
-  return { record: await recordOf(await resolveGateway(ref), queue.id), warnings }
+  // A read during the apply may have imported the new section already.
+  const existing = accepted.uciSection
+    ? await QosWanQueue.query()
+        .where('gatewayId', resolved.gateway.id)
+        .where('uciSection', accepted.uciSection)
+        .first()
+    : null
+  const queue =
+    existing ??
+    (await QosWanQueue.create({
+      gatewayId: resolved.gateway.id,
+      uciSection: accepted.uciSection,
+      perchId: accepted.perchId,
+      device: view.device,
+      enabled: view.enabled,
+      options: result.options,
+      origin: 'controller',
+    }))
+  return {
+    record: await recordOf(await resolveGateway(ref), queue.id),
+    warnings,
+    apply: accepted.apply ?? null,
+    applyError: accepted.applyError ?? null,
+  }
 }
 
 /** PATCH /qos/wan-queues/:id. */
@@ -426,7 +491,7 @@ export async function updateWanQueue(
   ]
   if (result.changed.length === 0 || sqmOptionsEqual(queue.options, result.options)) {
     // Nothing the router would see changes: no plane round trip.
-    return { record: await recordOf(resolved, queue.id), warnings }
+    return { record: await recordOf(resolved, queue.id), warnings, apply: null, applyError: null }
   }
 
   const accepted = await submit(
@@ -451,16 +516,35 @@ export async function updateWanQueue(
     uciSection: accepted.uciSection ?? queue.uciSection,
   })
   await queue.save()
-  return { record: await recordOf(resolved, queue.id), warnings }
+  return {
+    record: await recordOf(resolved, queue.id),
+    warnings,
+    apply: accepted.apply ?? null,
+    applyError: accepted.applyError ?? null,
+  }
 }
 
-/** DELETE /qos/wan-queues/:id. */
-export async function deleteWanQueue(queueId: number, userId: number | null): Promise<void> {
+export interface WanQueueDeleteResult {
+  /** The queue while the router still runs it (flag `pending_delete`); null once gone. */
+  record: WanQueueRecord | null
+  apply: unknown | null
+  applyError: { error: string; message: string } | null
+}
+
+/**
+ * DELETE /qos/wan-queues/:id. The row goes when the router no longer has
+ * the queue: at once for a queue that never reached it, else with the read
+ * after the apply (until then it is listed with `pending_delete`).
+ */
+export async function deleteWanQueue(
+  queueId: number,
+  userId: number | null
+): Promise<WanQueueDeleteResult> {
   const queue = await QosWanQueue.find(queueId)
   if (!queue) throw queueNotFound(queueId)
   const resolved = await resolveGateway({ gatewayId: queue.gatewayId })
   requireManaged(resolved.gateway)
-  await submit(
+  const accepted = await submit(
     {
       action: 'delete',
       gatewayId: resolved.gateway.id,
@@ -474,7 +558,24 @@ export async function deleteWanQueue(queueId: number, userId: number | null): Pr
     },
     []
   )
-  await queue.delete()
+  const stillOnRouter =
+    queue.uciSection !== null &&
+    accepted.uciSection !== null &&
+    (await GatewaySection.query()
+      .where('gatewayId', resolved.gateway.id)
+      .where('config', SQM_CONFIG)
+      .where('sectionName', queue.uciSection)
+      .whereNotNull('routerContent')
+      .first()) !== null
+  if (!stillOnRouter || accepted.state === 'applied') {
+    await queue.delete()
+    return { record: null, apply: accepted.apply ?? null, applyError: accepted.applyError ?? null }
+  }
+  return {
+    record: await recordOf(await resolveGateway({ gatewayId: queue.gatewayId }), queue.id),
+    apply: accepted.apply ?? null,
+    applyError: accepted.applyError ?? null,
+  }
 }
 
 function warningMessage(code: string): string {
@@ -495,6 +596,19 @@ export interface RouterSqmImport {
   resumed: number[]
 }
 
+/** What the config plane holds for one `sqm` section (by section name), for the import. */
+export interface PlaneSqmSection {
+  perchId: string
+  /** Scope `synced` (Perch writes it). */
+  synced: boolean
+  /** The router has it (R not null). */
+  onRouter: boolean
+  /** The draft keeps it (C not null); false = a delete waits for its apply. */
+  desired: boolean
+  /** A controller change waits for its apply (status ahead, pending, conflict, reverting). */
+  pending: boolean
+}
+
 /**
  * Records a read of the router's `sqm` config (plan 3 section 2.3, lab test
  * S0): new sections become `origin: 'router'` rows, as they are; changed
@@ -511,10 +625,20 @@ export async function recordRouterSqm(
   gatewayId: number,
   config: UciConfig,
   at: DateTime = DateTime.utc(),
-  perchIds: Record<string, string> = {}
+  perchIds: Record<string, string> = {},
+  plane: Map<string, PlaneSqmSection> = new Map()
 ): Promise<RouterSqmImport> {
   const result: RouterSqmImport = { created: 0, updated: 0, removed: 0, paused: [], resumed: [] }
-  const sections = config.sections.filter((s) => s.type === SQM_QUEUE_TYPE)
+  // With the config plane: a queue whose controller change waits for its
+  // apply keeps the controller's options (the row shows the desired state;
+  // the read after the confirm brings it in), a pending delete is not
+  // re-created, and a pending create is not removed.
+  const sections = config.sections.filter(
+    (s) => s.type === SQM_QUEUE_TYPE && !(plane.get(s.name)?.pending ?? false)
+  )
+  const held = new Set(
+    [...plane.entries()].filter(([, p]) => p.pending || (p.desired && !p.onRouter)).map(([n]) => n)
+  )
   await db.transaction(async (trx) => {
     const existing = await QosWanQueue.query({ client: trx })
       .where('gatewayId', gatewayId)
@@ -566,7 +690,7 @@ export async function recordRouterSqm(
       result.updated++
     }
     for (const row of existing) {
-      if (seen.has(row.uciSection!)) continue
+      if (seen.has(row.uciSection!) || held.has(row.uciSection!)) continue
       row.useTransaction(trx)
       await row.delete()
       result.removed++

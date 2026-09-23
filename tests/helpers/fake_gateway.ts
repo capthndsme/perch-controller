@@ -85,6 +85,12 @@ export type FakeGatewayOptions = {
   pushAfterHello?: boolean
   configs?: Record<string, Section[]>
   capabilities?: string[]
+  /** The router's effective allowlist (`allowedConfigs`); default: every config it has. */
+  allowedConfigs?: string[]
+  /** Answer the QoS RPCs (`qos.probe`, `qos.devices.set`) like perch-collector. */
+  qos?: boolean
+  /** WAN interfaces the pushes' gateway report names (none = no gateway report). */
+  wan?: string[]
 }
 
 export class FakeGateway {
@@ -219,6 +225,23 @@ export class FakeGateway {
         'collector.push',
         reading([device(GW_MAC, { bytesIn: this.bytes, bytesOut: this.bytes })], {
           seq: this.seq++,
+          ...(this.options.wan
+            ? {
+                gateway: {
+                  collectedAt: new Date().toISOString(),
+                  conntrack: { entries: 10, limit: 65536 },
+                  tcpEstablished: 1,
+                  load: { load1: 0.1, load5: 0.1, load15: 0.1 },
+                  memory: { totalBytes: 1e9, availableBytes: 5e8 },
+                  wan: this.options.wan.map((name) => ({
+                    name,
+                    rxBytes: this.bytes,
+                    txBytes: this.bytes,
+                  })),
+                  wanSource: 'default-route',
+                },
+              }
+            : {}),
         })
       )
     } catch {
@@ -278,7 +301,25 @@ export class FakeGateway {
         this.calls.push({ method, params, signed })
         return fn(params, gen)
       }
+    const qos: Record<string, (raw: Record<string, unknown>) => unknown> = this.options.qos
+      ? {
+          'qos.probe': wrap('qos.probe', () => ({
+            sqm: { installed: true, version: '1.6.0', luci: false, queues: [] },
+            kernel: { htb: true, fq_codel: true, cake: true, ifb: true, clsact: true },
+            conflicts: [],
+            flowOffload: { software: false, hardware: false },
+            lanDevices: [],
+            configured: true,
+          })),
+          'qos.devices.set': wrap('qos.devices.set', (params) => ({
+            revision: params.revision,
+            accepted: Array.isArray(params.devices) ? params.devices.length : 0,
+            rejected: [],
+          })),
+        }
+      : {}
     return {
+      ...qos,
       'gateway.capabilities': wrap('gateway.capabilities', () => this.#capabilities()),
       'gateway.config.read': wrap('gateway.config.read', () => this.#read()),
       'net.conntrack_flush': (params: Record<string, unknown>) => {
@@ -507,7 +548,7 @@ export class FakeGateway {
     return {
       protocol: 1,
       access: this.access,
-      allowedConfigs: Object.keys(this.configs),
+      allowedConfigs: this.options.allowedConfigs ?? Object.keys(this.configs),
       transportOk: this.transportOk,
       allowInsecure: this.options.allowInsecure ?? false,
       confirmMaxSeconds: 600,

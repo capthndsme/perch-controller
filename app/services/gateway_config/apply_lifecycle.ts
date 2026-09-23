@@ -50,18 +50,22 @@ import {
   markInFlight,
   markRolledBack,
   nextApplyState,
+  authoritativeFor,
   sectionsDueForRevert,
   type ApplyEvent,
   type SectionState,
 } from '#services/gateway_config/sync_engine'
-import type {
-  ApplyKind,
-  ApplyState,
-  ConfigDiffEntry,
-  ConfirmMode,
-  Issue,
-  LedgerEntry,
-  SectionContent,
+import {
+  actorColumns,
+  parseSystemActor,
+  type ApplyKind,
+  type ApplyState,
+  type ConfigDiffEntry,
+  type ConfirmMode,
+  type Issue,
+  type LedgerEntry,
+  type PlaneActor,
+  type SectionContent,
 } from '#services/gateway_config/types'
 import logger from '@adonisjs/core/services/logger'
 import { randomBytes } from 'node:crypto'
@@ -103,6 +107,11 @@ const MAX_CHAIN = 5
 
 export type ApplyRequest = {
   userId: number | null
+  /**
+   * Who asks, when it is not (only) a user: `{ system: 'qos' }` for writes
+   * Perch makes by itself (section 6.8). Wins over `userId`.
+   */
+  actor?: PlaneActor | null
   perchIds?: string[]
   kind?: 'apply' | 'revert'
   dryRun?: boolean
@@ -118,12 +127,33 @@ export type DryRunResult = {
   issues: Issue[]
 }
 
+/** The request's actor: `actor`, else the user. */
+function requestActor(request: Pick<ApplyRequest, 'userId' | 'actor'>): PlaneActor | null {
+  return request.actor ?? request.userId
+}
+
+/** Who asked for an apply (a user, or Perch itself), for its events and revision. */
+export function applyActor(apply: GatewayApply): PlaneActor | null {
+  const system = parseSystemActor(apply.systemActor)
+  if (system) return { system }
+  return apply.requestedByUserId
+}
+
 function newApplyKey(gatewayId: number): string {
   return `g${gatewayId}-${randomBytes(6).toString('hex')}`
 }
 
 function authoritativeOf(gateway: Gateway): boolean {
   return normalizeMode(gateway.mode) === 'managed' && Boolean(gateway.authoritative)
+}
+
+/** Authoritative for one section: the gateway's flag, or a one-way domain (README 2). */
+function authoritativeRow(gateway: Gateway, domain: string | null): boolean {
+  return authoritativeFor(
+    { mode: normalizeMode(gateway.mode), authoritative: Boolean(gateway.authoritative) },
+    domainRegistry(),
+    domain
+  )
 }
 
 /** Desired synced sections for validation, plus the unmanaged ones. */
@@ -334,7 +364,7 @@ export async function requestApply(
       await apply.save()
     }
     await recordGatewayEvent(gateway.id, 'apply_requested', {
-      userId: request.userId,
+      actor: requestActor(request),
       applyId: Number(apply.id),
       detail: {
         applyId: apply.applyKey,
@@ -402,7 +432,9 @@ async function createApply(
     protected: job.protected,
     routerMaxSeconds: routerConfirmMax(gateway),
   })
-  apply.requestedByUserId = options.userId
+  const actor = actorColumns(requestActor(options))
+  apply.requestedByUserId = actor.userId
+  apply.systemActor = actor.systemActor
   apply.note = options.note ? options.note.slice(0, 500) : null
   apply.requestedAt = now
   apply.queueExpiresAt = now.plus({ hours: settings.queueExpiryHours })
@@ -607,7 +639,14 @@ async function onSendError(gateway: Gateway, apply: GatewayApply, error: unknown
     await sendApply(gateway, apply)
     return
   }
-  await failApply(gateway, apply, code, (error as Error).message)
+  // The agent's refusal details (`detail`, `minWanKbit`, `configs`, …) stay
+  // on the outcome: the feature that asked shows them.
+  const extra = data
+    ? Object.fromEntries(
+        Object.entries(data).filter(([key]) => key !== 'error' && key !== 'result')
+      )
+    : {}
+  await failApply(gateway, apply, code, (error as Error).message, extra)
 }
 
 async function onApplyReply(
@@ -646,6 +685,12 @@ async function onApplyReply(
   await failApply(gateway, apply, 'apply_failed', `unexpected apply reply state "${state}"`)
 }
 
+/** An agent's error data, bounded (it is stored and served). */
+function boundedData(data: Record<string, unknown>): Record<string, unknown> {
+  const text = JSON.stringify(data)
+  return text.length <= 2000 ? data : { truncated: true }
+}
+
 function hashesOf(value: unknown): Record<string, string> {
   if (typeof value !== 'object' || value === null) return {}
   return Object.fromEntries(
@@ -653,10 +698,20 @@ function hashesOf(value: unknown): Record<string, string> {
   ) as Record<string, string>
 }
 
-async function failApply(gateway: Gateway, apply: GatewayApply, error: string, message: string) {
+async function failApply(
+  gateway: Gateway,
+  apply: GatewayApply,
+  error: string,
+  message: string,
+  data: Record<string, unknown> = {}
+) {
   apply.state = 'failed'
   apply.finishedAt = DateTime.utc()
-  apply.outcome = { error, message: message.slice(0, 500) }
+  apply.outcome = {
+    error,
+    message: message.slice(0, 500),
+    ...(Object.keys(data).length > 0 ? { data: boundedData(data) } : {}),
+  }
   await apply.save()
   await markRows(gateway, apply.perchIds, (s) => restoreStatus(gateway, s))
   await recordGatewayEvent(gateway.id, 'failed', {
@@ -670,7 +725,7 @@ async function failApply(gateway: Gateway, apply: GatewayApply, error: string, m
 /** Status of a row whose job ended without a change on the router. */
 function restoreStatus(gateway: Gateway, s: SectionState): SectionState {
   return markRolledBack(s, {
-    authoritative: authoritativeOf(gateway),
+    authoritative: authoritativeRow(gateway, s.domain),
     now: DateTime.utc().toISO()!,
     rules: domainRegistry().rules(s.domain),
   })
@@ -838,7 +893,6 @@ async function finishConfirmed(
   }
 
   const loaded = await loadSections(gateway.id)
-  const authoritative = authoritativeOf(gateway)
   const changes: Array<{ perchId: string; after: SectionState | null }> = []
   const after = new Map(loaded.states.map((s) => [s.perchId, s]))
   for (const s of loaded.states) {
@@ -846,7 +900,7 @@ async function finishConfirmed(
     const written: SectionContent | null =
       apply.written && s.perchId in apply.written ? apply.written[s.perchId] : s.router
     let next: SectionState | null = markConfirmed(s, written, {
-      authoritative,
+      authoritative: authoritativeRow(gateway, s.domain),
       rules: domainRegistry().rules(s.domain),
     })
     const renamed = renames.get(s.perchId)
@@ -890,7 +944,7 @@ async function finishConfirmed(
     before: loaded.states,
     after: [...after.values()],
     source: apply.kind === 'revert' ? 'revert' : 'controller',
-    userId: apply.requestedByUserId,
+    actor: applyActor(apply),
     applyId: Number(apply.id),
     confirmed: true,
     note: apply.note,
@@ -943,6 +997,7 @@ async function chainNext(gateway: Gateway, apply: GatewayApply): Promise<void> {
   const { states } = await loadSections(gateway.id)
   const request: ApplyRequest = {
     userId: apply.requestedByUserId,
+    actor: applyActor(apply),
     perchIds: apply.chainPerchIds ?? undefined,
   }
   // Only the sections the request covered: without a filter, the ones the
@@ -971,7 +1026,7 @@ async function chainNext(gateway: Gateway, apply: GatewayApply): Promise<void> {
     await next.save()
   }
   await recordGatewayEvent(gateway.id, 'apply_requested', {
-    userId: apply.requestedByUserId,
+    actor: applyActor(apply),
     applyId: Number(next.id),
     detail: { applyId: next.applyKey, kind: next.kind, chainedFrom: apply.applyKey },
   })
@@ -1114,7 +1169,7 @@ async function settleRolledBack(gateway: Gateway, apply: GatewayApply, result: A
     changes.push({
       perchId: s.perchId,
       after: markRolledBack(s, {
-        authoritative: authoritativeOf(gateway),
+        authoritative: authoritativeRow(gateway, s.domain),
         now: now.toISO()!,
         discarded,
         rules: domainRegistry().rules(s.domain),
@@ -1297,10 +1352,18 @@ async function assumeRolledBack(gateway: Gateway, apply: GatewayApply, now: Date
  * delay ago (a failing revert is not hammered).
  */
 async function enforce(gateway: Gateway, settings: GatewayConfigSettings, now: DateTime) {
-  if (!authoritativeOf(gateway) || gateway.enforcement !== 'active') return
+  if (normalizeMode(gateway.mode) !== 'managed' || gateway.enforcement !== 'active') return
+  // Without Authoritative Mode only one-way domains' sections are enforced
+  // (README 2: Perch-owned config, router edits are drift).
+  const registry = domainRegistry()
+  const oneWay = registry.list().some((d) => d.oneWay)
+  if (!authoritativeOf(gateway) && !oneWay) return
   if (!writeAccess(gateway, settings).writable) return
   if (await hasOpenApply(gateway.id)) return
-  const { states } = await loadSections(gateway.id)
+  const loaded = await loadSections(gateway.id)
+  const states = authoritativeOf(gateway)
+    ? loaded.states
+    : loaded.states.filter((s) => registry.get(s.domain)?.oneWay === true)
   const due = sectionsDueForRevert(states, {
     now: now.toISO()!,
     delaySeconds: settings.authoritativeRevertDelaySeconds,
@@ -1325,17 +1388,18 @@ async function enforce(gateway: Gateway, settings: GatewayConfigSettings, now: D
   ) {
     return
   }
-  await startRevert(gateway, due, null)
+  await startRevert(gateway, due, { system: 'enforcement' })
 }
 
 /** Queues and sends a revert job for the given drifted sections. */
 export async function startRevert(
   gateway: Gateway,
   perchIds: string[],
-  userId: number | null
+  actor: PlaneActor | null
 ): Promise<GatewayApply | null> {
   const settings = await getGatewayConfigSettings()
   const { states } = await loadSections(gateway.id)
+  const { userId } = actorColumns(actor)
   const plan = planFor(
     gateway,
     states,
@@ -1346,13 +1410,14 @@ export async function startRevert(
   if (!job) return null
   const apply = await createApply(gateway, settings, job, {
     userId,
+    actor,
     perchIds,
     kind: 'revert',
     queued: false,
     chainStep: 0,
   })
   await recordGatewayEvent(gateway.id, 'apply_requested', {
-    userId,
+    actor,
     applyId: Number(apply.id),
     detail: { applyId: apply.applyKey, kind: 'revert', perchIds: job.perchIds },
   })

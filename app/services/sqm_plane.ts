@@ -2,21 +2,16 @@ import type { UciOptions } from '#services/gateway_config/types'
 
 /**
  * The seam between the WAN queue REST endpoints and the config plane
- * (docs/gateway/qos.md section 2.5; plan 3 section 9.2). Every router write
+ * (docs/gateway/qos.md section 2.4; plan 3 section 9.2). Every router write
  * goes through the config plane (README section 2, "one write path"); the
  * QoS code never talks to the agent about `sqm` itself.
  *
- * The plane's apply path does not exist yet (gw/data builds
- * `gatewayConfig.editSections` and the apply lifecycle in wave 2). Until it
- * lands, `StubSqmPlaneWriter` is installed: it records the intended change
- * (bounded, for tests and debugging) and refuses with `plane_unavailable`,
- * which the endpoints return as 409 with the intended change in the body.
- *
- * Wiring the real plane (TODO wave 2): implement `SqmPlaneWriter.submit` by
- * turning the change into `sqmDomain.render(...)` section edits and handing
- * them to `gatewayConfig.editSections(gatewayId, userId, edits)`; return the
- * section's perchId / name and the draft revision. Install it with
- * `setSqmPlaneWriter` at boot (a provider), never per request.
+ * The real writer is `PlaneSqmWriter` (`qos_plane_writers.ts`): the change
+ * rendered through `sqmDomain.render()` into `editSections`, then an apply
+ * of that section. `providers/qos_plane_provider.ts` installs it at boot
+ * (web only). `StubSqmPlaneWriter` stays the default elsewhere (tests, ace
+ * commands): it records the intended change (bounded) and refuses with
+ * `plane_unavailable`.
  */
 
 /** One intended change to a gateway's `sqm` config. */
@@ -37,14 +32,29 @@ export interface SqmQueueChange {
   requestedAt: string
 }
 
+/**
+ * Where a change stands once the plane took it: `queued` (in the draft; the
+ * apply waits for the agent, or for another apply to finish: `applyError`
+ * says why), `applying` (sent, waiting for the confirm), `applied` (the
+ * router confirmed, or nothing was left to write).
+ */
+export type SqmPlaneState = 'queued' | 'applying' | 'applied'
+
 /** What the plane answers when it accepts a change into the desired state. */
 export interface SqmPlaneAccepted {
   /** The section's ledger id (a new one for a create). */
   perchId: string | null
-  /** The section's UCI name; null until the router has it. */
+  /** The section's UCI name (a create's is the name the apply gives it). */
   uciSection: string | null
-  /** The gateway's desired-state revision after the change. */
+  /** The gateway's agreed revision when the change was accepted (the apply makes the next). */
   revision: number
+  /** The apply carrying the change (`gateway_applies.apply_key`), when one started. */
+  applyId?: string | null
+  state?: SqmPlaneState
+  /** The apply (the config plane's `GatewayApply` wire shape), when one started. */
+  apply?: unknown | null
+  /** Why no apply started (the draft is kept): `apply_in_flight`, `agent_offline`, … */
+  applyError?: { error: string; message: string } | null
 }
 
 export interface SqmPlaneWriter {

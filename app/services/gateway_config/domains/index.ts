@@ -2,6 +2,7 @@ import { DomainRegistry, type ConfigDomain } from '#services/gateway_config/doma
 import { dhcpHostsDomain } from '#services/gateway_config/domains/dhcp_hosts'
 import { dhcpPoolsDomain } from '#services/gateway_config/domains/dhcp_pools'
 import { sqmDomain } from '#services/sqm_domain'
+import { perchQosDomain } from '#services/perch_qos_domain'
 import { dnsRecordsDomain } from '#services/gateway_config/domains/dns_records'
 import { networksDomain } from '#services/gateway_config/domains/networks'
 import { firewallDomain } from '#services/gateway_config/domains/firewall'
@@ -24,6 +25,7 @@ export const DOMAINS: readonly ConfigDomain[] = Object.freeze([
   dnsRecordsDomain as ConfigDomain,
   firewallDomain as ConfigDomain,
   sqmDomain as ConfigDomain,
+  perchQosDomain as ConfigDomain,
 ])
 
 let registry: DomainRegistry | null = null

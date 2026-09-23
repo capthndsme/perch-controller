@@ -722,7 +722,7 @@ export class GatewaySchema extends BaseModel {
 }
 
 export class GatewayApplySchema extends BaseModel {
-  static $columns = ['adminConfirmedAt', 'adminConfirmedBy', 'agentConfirmedAt', 'agentReconnectedAt', 'applyKey', 'chainStep', 'confirmMode', 'confirmTimeoutSeconds', 'deadlineAt', 'finishedAt', 'gatewayId', 'id', 'kind', 'note', 'protected', 'queueExpiresAt', 'requestedAt', 'requestedByUserId', 'retried', 'revisionNumber', 'sentAt', 'signed', 'state'] as const
+  static $columns = ['adminConfirmedAt', 'adminConfirmedBy', 'agentConfirmedAt', 'agentReconnectedAt', 'applyKey', 'chainStep', 'confirmMode', 'confirmTimeoutSeconds', 'deadlineAt', 'finishedAt', 'gatewayId', 'id', 'kind', 'note', 'protected', 'queueExpiresAt', 'requestedAt', 'requestedByUserId', 'retried', 'revisionNumber', 'sentAt', 'signed', 'state', 'systemActor'] as const
   $columns = GatewayApplySchema.$columns
   @column.dateTime()
   declare adminConfirmedAt: DateTime | null
@@ -770,6 +770,8 @@ export class GatewayApplySchema extends BaseModel {
   declare signed: boolean
   @column()
   declare state: string
+  @column()
+  declare systemActor: string | null
 }
 
 export class GatewayBackupSchema extends BaseModel {
@@ -802,7 +804,7 @@ export class GatewayBackupSchema extends BaseModel {
 }
 
 export class GatewayConfigEventSchema extends BaseModel {
-  static $columns = ['applyId', 'createdAt', 'event', 'gatewayId', 'id', 'revisionNumber', 'userId'] as const
+  static $columns = ['applyId', 'createdAt', 'event', 'gatewayId', 'id', 'revisionNumber', 'systemActor', 'userId'] as const
   $columns = GatewayConfigEventSchema.$columns
   @column()
   declare applyId: bigint | number | null
@@ -816,6 +818,8 @@ export class GatewayConfigEventSchema extends BaseModel {
   declare id: bigint | number
   @column()
   declare revisionNumber: number | null
+  @column()
+  declare systemActor: string | null
   @column()
   declare userId: number | null
 }
@@ -929,7 +933,7 @@ export class GatewayObservationSchema extends BaseModel {
 }
 
 export class GatewayRevisionSchema extends BaseModel {
-  static $columns = ['applyId', 'authorUserId', 'confirmedAt', 'createdAt', 'gatewayId', 'id', 'note', 'number', 'source', 'summary'] as const
+  static $columns = ['applyId', 'authorUserId', 'confirmedAt', 'createdAt', 'gatewayId', 'id', 'note', 'number', 'source', 'summary', 'systemActor'] as const
   $columns = GatewayRevisionSchema.$columns
   @column()
   declare applyId: bigint | number | null
@@ -951,6 +955,8 @@ export class GatewayRevisionSchema extends BaseModel {
   declare source: string
   @column()
   declare summary: string
+  @column()
+  declare systemActor: string | null
 }
 
 export class GatewayScopeChangeSchema extends BaseModel {
@@ -1633,8 +1639,10 @@ export class QosAssignmentSchema extends BaseModel {
 }
 
 export class QosGatewayStateSchema extends BaseModel {
-  static $columns = ['configFingerprint', 'configRevision', 'configSubmittedAt', 'createdAt', 'devicesAckedAt', 'devicesAckedRevision', 'devicesRevision', 'gatewayId', 'id', 'pausedAt', 'pausedByUserId', 'updatedAt'] as const
+  static $columns = ['configApplyKey', 'configFingerprint', 'configRevision', 'configSubmittedAt', 'createdAt', 'devicesAckedAt', 'devicesAckedRevision', 'devicesRevision', 'gatewayId', 'id', 'pausedAt', 'pausedByUserId', 'updatedAt'] as const
   $columns = QosGatewayStateSchema.$columns
+  @column()
+  declare configApplyKey: string | null
   @column()
   declare configFingerprint: string | null
   @column()

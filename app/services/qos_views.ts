@@ -10,6 +10,8 @@ import { cachedShapingContext, type ShapingContext } from '#services/qos_plan_ca
 import { listPolicies, wireRate, type QosRate } from '#services/qos_reads'
 import { qosDeliveryState, type ApplyState, type DevicesDelivery } from '#services/qos_sync'
 import { listWanQueues } from '#services/qos_wan_queues'
+import { planeConfigAccess } from '#services/plane_config_access'
+import GatewayApply from '#models/gateway_apply'
 import type { DateTime } from 'luxon'
 
 /**
@@ -311,6 +313,32 @@ function bucketLive(live: QosLiveEntry | null, policyId: number) {
   return { down, up }
 }
 
+/** The package's state from its config plane apply. */
+function configStateOfApply(apply: GatewayApply): Pick<ApplyState, 'state' | 'error' | 'at'> {
+  const at = (apply.finishedAt ?? apply.sentAt ?? apply.requestedAt)?.toUTC().toISO() ?? null
+  switch (apply.state) {
+    case 'queued':
+      return { state: 'queued', error: null, at }
+    case 'sending':
+    case 'pending_confirm':
+    case 'confirmed':
+      // Confirmed: the file is on the router; in sync once its shaper runs it.
+      return { state: 'applying', error: null, at }
+    case 'rolled_back':
+      return { state: 'rolled_back', error: apply.outcome?.reason ?? 'rolled_back', at }
+    case 'cancelled':
+      return apply.outcome?.reason === 'nothing_to_apply'
+        ? { state: 'in_sync', error: null, at }
+        : { state: 'failed', error: 'cancelled', at }
+    default:
+      return {
+        state: 'failed',
+        error: apply.outcome?.error ?? apply.outcome?.reason ?? apply.state,
+        at,
+      }
+  }
+}
+
 export async function qosOverview(ref: GatewayRef) {
   const { gateway, online } = await resolveGateway(ref)
   const input = await shapingInput(gateway)
@@ -347,8 +375,32 @@ export async function qosOverview(ref: GatewayRef) {
         }
       : null
 
-  // The package is in sync once the router reports the revision the plane accepted.
+  // The package follows its config plane apply (queued → applying →
+  // applied / rolled back) and is in sync once the router reports the
+  // revision the plane wrote (or confirmed it, when the router does not
+  // report the shaper).
   const config: ApplyState = { ...delivery.config }
+  if (
+    state?.configApplyKey &&
+    (config.revision === 0 || config.revision === state.configRevision)
+  ) {
+    const apply = await GatewayApply.query()
+      .where('gatewayId', gateway.id)
+      .where('applyKey', state.configApplyKey)
+      .first()
+    if (apply) {
+      config.revision = Number(state.configRevision ?? config.revision)
+      const fromApply = configStateOfApply(apply)
+      if (config.error !== 'apply_in_flight' || fromApply.state !== 'queued') {
+        config.state = fromApply.state
+        config.error = fromApply.error
+        config.at = fromApply.at ?? config.at
+      }
+      if (apply.state === 'confirmed' && (!report || report.configRevision === null)) {
+        config.state = 'in_sync'
+      }
+    }
+  }
   if (
     config.error === null &&
     config.revision > 0 &&
@@ -394,8 +446,25 @@ export async function qosOverview(ref: GatewayRef) {
   for (const r of devices.rejected) {
     errors.push({ code: 'qos_entry_rejected', message: r.error, mac: r.mac })
   }
-  if (config.error && config.error !== 'plane_unavailable') {
-    errors.push({ code: config.error, message: 'The perch-qos package was not accepted.' })
+  if (config.error && !['plane_unavailable', 'apply_in_flight'].includes(config.error)) {
+    errors.push({
+      code: config.error,
+      message:
+        config.state === 'rolled_back'
+          ? 'The perch-qos package was rolled back on the router.'
+          : 'The perch-qos package was not accepted.',
+    })
+  }
+  // README 7.7: the router lets the plane write a config only when it is on
+  // its allowlist (installed sibling packages join it by themselves).
+  const planeAccess = {
+    sqm: planeConfigAccess(gateway, 'sqm'),
+    perchQos: planeConfigAccess(gateway, 'perch-qos'),
+  }
+  for (const access of [planeAccess.sqm, planeAccess.perchQos]) {
+    if (access.allowed === false && gateway.mode === 'managed') {
+      errors.push({ code: 'config_not_allowed', message: access.hint ?? access.config })
+    }
   }
   if (delivery.probeError && delivery.probeError !== 'qos_unsupported' && online) {
     errors.push({ code: 'qos_probe_failed', message: delivery.probeError })
@@ -406,6 +475,8 @@ export async function qosOverview(ref: GatewayRef) {
     gatewayId: gateway.id,
     collectorId: gateway.collectorId,
     managed: gateway.mode === 'managed',
+    /** Whether the router lets Perch write `sqm` / `perch-qos` (README 7.7), with what to do. */
+    planeAccess,
     authoritative: Boolean(gateway.authoritative),
     online,
     agentSupportsQos: delivery.probeError === 'qos_unsupported' ? false : probe ? true : null,
