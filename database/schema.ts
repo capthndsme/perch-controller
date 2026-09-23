@@ -1162,7 +1162,19 @@ export class InfraPortSchema extends BaseModel {
 }
 
 export class PortalSchema extends BaseModel {
-  static $columns = ['appliedRevision', 'createdAt', 'deletedAt', 'enforcement', 'gatewayId', 'id', 'instance', 'name', 'networkPerchId', 'privacyNotice', 'revision', 'templateId', 'updatedAt'] as const
+  static $columns = [
+    'appliedRevision',
+    'createdAt',
+    'deletedAt',
+    'gatewayId',
+    'id',
+    'name',
+    'networkPerchId',
+    'privacyNotice',
+    'revision',
+    'templateId',
+    'updatedAt',
+  ] as const
   $columns = PortalSchema.$columns
   @column()
   declare appliedRevision: number | null
@@ -1171,13 +1183,9 @@ export class PortalSchema extends BaseModel {
   @column.dateTime()
   declare deletedAt: DateTime | null
   @column()
-  declare enforcement: string
-  @column()
   declare gatewayId: number
   @column({ isPrimary: true })
   declare id: number
-  @column()
-  declare instance: string | null
   @column()
   declare name: string
   @column()
@@ -1274,12 +1282,40 @@ export class PortalEventSchema extends BaseModel {
 }
 
 export class PortalGatewayStateSchema extends BaseModel {
-  static $columns = ['ackedEventSeq', 'createdAt', 'gatewayId', 'keyEpoch', 'lastReportAt', 'lastSyncAt', 'routerKeyEpoch', 'updatedAt'] as const
+  static $columns = [
+    'ackedEventSeq',
+    'capabilitiesAt',
+    'configRevision',
+    'configuredAt',
+    'createdAt',
+    'deliveryError',
+    'deliveryFailedAt',
+    'deliveryFailures',
+    'gatewayId',
+    'keyEpoch',
+    'lastReportAt',
+    'lastSyncAt',
+    'routerConfigRevision',
+    'routerKeyEpoch',
+    'updatedAt',
+  ] as const
   $columns = PortalGatewayStateSchema.$columns
   @column()
   declare ackedEventSeq: bigint | number
+  @column.dateTime()
+  declare capabilitiesAt: DateTime | null
+  @column()
+  declare configRevision: number
+  @column.dateTime()
+  declare configuredAt: DateTime | null
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
+  @column()
+  declare deliveryError: string | null
+  @column.dateTime()
+  declare deliveryFailedAt: DateTime | null
+  @column()
+  declare deliveryFailures: number
   @column({ isPrimary: true })
   declare gatewayId: number
   @column()
@@ -1288,6 +1324,8 @@ export class PortalGatewayStateSchema extends BaseModel {
   declare lastReportAt: DateTime | null
   @column.dateTime()
   declare lastSyncAt: DateTime | null
+  @column()
+  declare routerConfigRevision: number | null
   @column()
   declare routerKeyEpoch: number | null
   @column.dateTime({ autoCreate: true, autoUpdate: true })

@@ -1,6 +1,8 @@
+import Gateway from '#models/gateway'
 import Portal from '#models/portal'
+import { rotatePortalGatewayKey } from '#services/portal_agent'
 import { sendPortalPushes } from '#services/portal_agent_sender'
-import { idParam, portalNotFound } from '#services/portal_errors'
+import { gatewayNotFound, idParam, portalNotFound } from '#services/portal_errors'
 import {
   createPortal,
   deletePortal,
@@ -77,5 +79,17 @@ export default class PortalPortalsController {
       await runInPortalQueue(gatewayId, () => sendPortalPushes(gatewayId, [{ kind: 'sync' }]))
     }
     return { data: portalSettingsView(settings) }
+  }
+
+  /**
+   * POST /api/v1/portal/gateways/:gatewayId/rotate-key: a new gateway key
+   * epoch (docs/gateway/portal.md 13.8). Every voucher verifier and signature
+   * of the gateway changes; the router gets the key with its next configure.
+   */
+  async rotateKey({ params, auth }: HttpContext) {
+    const gatewayId = idParam(params.gatewayId, gatewayNotFound)
+    if (!(await Gateway.find(gatewayId))) throw gatewayNotFound(gatewayId)
+    const result = await rotatePortalGatewayKey(gatewayId, auth.user?.id ?? null)
+    return { data: result }
   }
 }

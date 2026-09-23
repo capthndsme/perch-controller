@@ -102,5 +102,10 @@ export default {
     qos_wan_queues: {
       skipColumns: ['options'],
     },
+    // Collector socket (migration 077): the hello's portal object and the
+    // last portal.configure result.
+    portal_gateway_states: {
+      skipColumns: ['capabilities', 'router_status'],
+    },
   },
 } satisfies SchemaRules

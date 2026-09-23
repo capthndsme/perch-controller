@@ -275,6 +275,12 @@ export type WireOfflineVoucher = {
   timeUsedSeconds: number
   bytesUsed: number
   revision: number
+  /**
+   * When the voucher was first redeemed (null = unused). Added by WP3 as the
+   * record's last field: the router needs it to tell a used voucher from an
+   * unused one (`redeemBy` only applies to unused ones).
+   */
+  firstUsedAt: number | null
 }
 
 export const VOUCHER_RECORD_TAG = 'perch-portal-voucher-v1'
@@ -300,6 +306,7 @@ export function canonicalOfflineVoucher(keys: PortalGatewayKeys, v: WireOfflineV
     ['timeUsedSeconds', v.timeUsedSeconds],
     ['bytesUsed', v.bytesUsed],
     ['revision', v.revision],
+    ['firstUsedAt', v.firstUsedAt],
   ])
 }
 

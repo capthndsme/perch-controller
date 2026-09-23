@@ -34,8 +34,8 @@ import { DateTime } from 'luxon'
 /**
  * Guest portals (docs/gateway/portal.md section 11.4): several per gateway
  * (decision 19), one live portal per network. The row holds Perch's
- * application data; openNDS's own settings stay native config owned by the
- * config plane, so `native` is not written here. Every change bumps
+ * application data; the router's enforcement is Perch's own (decision 27)
+ * and gets everything it needs in `portal.configure`. Every change bumps
  * `revision` and hands the router a `configure` push.
  */
 
@@ -81,7 +81,13 @@ function managementNetwork(gateway: Gateway): string | null {
   return gateway.managementPath?.network ?? gateway.capabilities?.management?.network ?? null
 }
 
-function portalCapable(gateway: Gateway): boolean | null {
+/**
+ * From the router's last hello (`portal_gateway_states.capabilities_at` set:
+ * capable when it listed `portal`), else the config plane's capability
+ * report, else unknown.
+ */
+function portalCapable(gateway: Gateway, state: PortalGatewayState | undefined): boolean | null {
+  if (state?.capabilitiesAt) return state.capabilities !== null
   const value = gateway.capabilities?.portal
   if (value === undefined || value === null) return null
   return Boolean(value)
@@ -135,7 +141,7 @@ export async function portalViews(portals: Portal[]): Promise<PortalView[]> {
           online: gateway.collectorId !== null && collectorHub.isOnline(gateway.collectorId),
           mode: gateway.mode,
           authoritative: Boolean(gateway.authoritative),
-          portalCapable: portalCapable(gateway),
+          portalCapable: portalCapable(gateway, states.get(gateway.id)),
         }
       : null
     const section = sections.find(
@@ -252,8 +258,6 @@ export async function createPortal(
         gatewayId: gateway.id,
         name: input.name,
         networkPerchId: input.networkPerchId,
-        instance: null,
-        enforcement: 'opennds',
         methods: {
           voucher: input.methods?.voucher ?? true,
           password: input.methods?.password ?? false,

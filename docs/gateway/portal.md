@@ -1,7 +1,8 @@
 # Guest portal: controller domain
 
 Status: WP1 (controller domain) built on branch `gw/portal`, WP2 (REST API,
-§11–12) on `gw/portal-rest`, September 2026.
+§11–12) on `gw/portal-rest`, WP3 (collector socket, §13) on `gw/portal-sock`,
+September 2026.
 This file is the contract for the REST layer (WP2), the collector socket
 (WP3) and the router side in perch-collector (WP4). It promotes sections 3–5
 of the portal design and applies the owner's decisions 19–25, which override
@@ -15,6 +16,7 @@ the design where they differ:
 | 23  | Time before data buckets; a reused voucher moves | Stacking and device slots (§4.6)                                               |
 | 24  | Pre-auth DNS rate-limited                        | A setting the router enforces (§8)                                             |
 | 25  | Outside authorizations: Perch always decides     | Always undone and logged, whatever the Authoritative Mode (§4.8)               |
+| 27  | Perch nftables enforcement, not openNDS          | Router config is Perch runtime data in `portal.configure` (§13)                |
 
 The code lives in `app/services/portal/*` (pure, no app imports),
 `app/services/portal_{keys,settings,store,retention}.ts` (bound to the app and
@@ -25,27 +27,29 @@ the database), `app/models/portal*.ts`, `voucher*.ts`, migrations
 
 | Question                      | Decision                                                                                                                                                                |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Enforcement                   | openNDS 10.x, one instance per portal network if the M1 spike allows it; otherwise Perch's own nftables table (`portals.enforcement`)                                   |
-| Page hosting                  | Router-local FAS served by perch-collector (`:2080`), FAS level 1                                                                                                       |
+| Enforcement                   | Perch's own nftables table `inet perch_portal` rendered by perch-collector, every portal (decision 27); no openNDS                                                      |
+| Page hosting                  | Guest pages served by perch-collector on the router (`:2080`), port 80 redirected there                                                                                 |
 | Controller exposure to guests | None                                                                                                                                                                    |
 | Login identities              | `portal_users`, never controller `users`                                                                                                                                |
-| Byte counting                 | The router's kernel counters (openNDS), never pcap                                                                                                                      |
+| Byte counting                 | The router's kernel counters (netdev per-MAC counters), never pcap                                                                                                      |
 | Authority                     | Controller: vouchers, grants (create, extend, revoke), the offline voucher list. Router: usage, session facts, offline redemptions                                      |
 | Outage                        | The router keeps grants and enforces expiry and quotas. It also redeems the vouchers it holds (decision 20). Password logins and API authorizations need the controller |
 | Scope v1                      | Several portals per gateway, one per network                                                                                                                            |
 
 ## 2. Three kinds of state
 
-| Layer                | What                                                                                     | Where                               | Sync                                                            | Who wins                                             |
-| -------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------- |
-| Native config        | `/etc/config/opennds` (one section per portal instance), `perch-collector.main.portal_*` | router UCI                          | two-way, config plane                                           | config plane rules; `faskey` never leaves the router |
-| Perch app data       | portals, templates, vouchers, portal users, API clients, `system_settings.portal`        | controller DB                       | down (`portal.configure`, `portal.template`, `portal.vouchers`) | controller, always                                   |
-| Runtime: entitlement | grants and their limits                                                                  | controller DB, cached on the router | down (`portal.authorize` / `deauthorize` / full sync)           | controller for create, extend, revoke                |
-| Runtime: facts       | usage, sessions, router deauths, offline redemptions, outside auths                      | router                              | up (`portal.sync`, `portal.event`, `portal.sessions`)           | router: the controller never invents usage           |
+| Layer                | What                                                                              | Where                               | Sync                                                            | Who wins                                   |
+| -------------------- | --------------------------------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------- | ------------------------------------------ |
+| Native config        | `perch-collector.main.portal_*` (enable, port, storage)                           | router UCI                          | not synced (excluded config)                                    | the router's operator                      |
+| Perch app data       | portals, templates, vouchers, portal users, API clients, `system_settings.portal` | controller DB                       | down (`portal.configure`, `portal.template`, `portal.vouchers`) | controller, always                         |
+| Runtime: entitlement | grants and their limits                                                           | controller DB, cached on the router | down (`portal.authorize` / `deauthorize` / full sync)           | controller for create, extend, revoke      |
+| Runtime: facts       | usage, sessions, router deauths, offline redemptions, outside auths               | router                              | up (`portal.sync`, `portal.event`, `portal.sessions`)           | router: the controller never invents usage |
 
 The `portals` row stores no native setting. `network_perch_id` is the ledger
 id of the `interface` section the portal sits on; it stays stable across
-renames. `instance` names the openNDS section that serves the portal.
+renames. Everything the router needs to enforce a portal (network, methods,
+template, settings, key) is Perch runtime data in `portal.configure` (§13.2);
+nothing goes through the config plane (decision 27).
 
 ## 3. Codes (`portal/codes.ts`)
 
@@ -168,8 +172,9 @@ function transitionGrant(grant: GrantLifecycle, event: GrantEvent): GrantTransit
   fails with `grant_ended`; WP2 maps it to 409.
 - **Deauth is always respected.** A router deauth (`router_deauth`) ends the
   grant, not the voucher, and is never undone.
-- **Idle.** openNDS idle deauth pauses a grant. The device is re-authorized
-  automatically when it comes back.
+- **Idle.** `paused` is kept for a router that reports idle devices; Perch's
+  nftables enforcement (decision 27) does not, so `session_paused` /
+  `session_resumed` never arrive today and reconciliation tolerates that.
 
 ### 4.3 Counting
 
@@ -199,7 +204,8 @@ Counters are cumulative per grant (`bytes_up`, `bytes_down`, and
 
 - **Per-grant deadline.** A grant's own deadline tightens its group's
   (`grantLimits`).
-- **openNDS backstops** (`ndsBackstops`):
+- **Backstops** (`ndsBackstops`, from the openNDS design; unused since
+  decision 27, the QoS seam §13.7 is the in-kernel backstop):
   - Session timeout: the remaining minutes, rounded up.
   - Download quota: the remaining kB, rounded up.
 
@@ -292,7 +298,7 @@ revoked before the router redeemed it, the grant is recorded and then ended
 
 ### 4.8 Authorizations made outside Perch (decision 25)
 
-`ndsctl auth` by hand, LuCI, and so on:
+A MAC added to a portal's nft set by hand, another tool, and so on:
 
 - The router undoes it within one tick, on its own, in both Authoritative Mode
   settings.
@@ -319,21 +325,21 @@ guest networks is the privacy-preserving default an operator can override.
 All tables are `utf8mb4_unicode_ci`. Unions are strings enforced in the app;
 JSON is stored as text and parsed by the models (`schema_rules.ts`).
 
-| Table                   | Notes                                                                                                                                                                                                                                                                                                                                                               |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `portal_templates`      | `sha256` of the file set; `builtin` read-only; one seeded builtin row with no files (= the collector's compiled-in pages)                                                                                                                                                                                                                                           |
-| `portal_template_files` | `content` MEDIUMBLOB; unique (template_id, name)                                                                                                                                                                                                                                                                                                                    |
-| `portals`               | `gateway_id` → gateways CASCADE; `network_perch_id`, `instance`, `enforcement` (`opennds`\|`perch_nft`), `methods` JSON, `template_id` → templates SET NULL, `csp_connect_src` JSON, `privacy_notice`, `revision`, `applied_revision`, `status` JSON, `deleted_at`. Generated `active_network` = network while not deleted; **unique (gateway_id, active_network)** |
-| `voucher_batches`       | `portal_id` → portals CASCADE (null = any portal); limits; `redeem_by`; `revoked_at`                                                                                                                                                                                                                                                                                |
-| `vouchers`              | `code_hash` CHAR(64) unique (HMAC, §6.1), `code_encrypted` (APP_KEY), `hint`, `bound_portal_id` → portals SET NULL, clock (`first_used_at`, `starts_at`, `expires_at`), totals, `revision`, `revoked_at`, `exhausted_at`                                                                                                                                            |
-| `portal_users`          | `username` unique, scrypt `password` (hashed by the model), `max_devices`, `session_minutes`, rates, `portal_ids` JSON, `revision`                                                                                                                                                                                                                                  |
-| `portal_api_clients`    | `token_hash` unique (SHA-256), `token_prefix`, `scopes`/`portal_ids` JSON, per-call caps                                                                                                                                                                                                                                                                            |
-| `portal_grants`         | BIGINT id; `portal_id` → portals CASCADE; `mac` CHAR(17); `source` voucher\|user\|api\|admin; `group_key`; FKs to voucher/user/api client/user SET NULL; `external_ref` (unique with api_client_id), `local_ref` (unique with portal_id); `g:` limits; counters; `state`, `delivery`, `revision`, `started_at`, `last_seen_at`, `ended_at`, `end_reason`            |
-| `portal_sessions`       | per active stretch: `start_bytes_*` at open, `bytes_*` = end − start at close                                                                                                                                                                                                                                                                                       |
-| `portal_gateway_states` | PK `gateway_id` → gateways CASCADE; `acked_event_seq` (one journal per router, shared by its portals), `key_epoch`, `router_key_epoch`, `last_sync_at`                                                                                                                                                                                                              |
-| `portal_authorizations` | (076) authorize API ledger: idempotency per principal + `external_ref`, audit (§11.6)                                                                                                                                                                                                                                                                               |
-| `portal_outbox`         | (076) pushes waiting for the router, one per (gateway, `dedupe_key`) (§11.2)                                                                                                                                                                                                                                                                                        |
-| `portal_events`         | audit: `gateway_id` CASCADE, `portal_id` CASCADE null, `grant_id` SET NULL, `mac`, `type`, `detail` JSON                                                                                                                                                                                                                                                            |
+| Table                   | Notes                                                                                                                                                                                                                                                                                                                                                    |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `portal_templates`      | `sha256` of the file set; `builtin` read-only; one seeded builtin row with no files (= the collector's compiled-in pages)                                                                                                                                                                                                                                |
+| `portal_template_files` | `content` MEDIUMBLOB; unique (template_id, name)                                                                                                                                                                                                                                                                                                         |
+| `portals`               | `gateway_id` → gateways CASCADE; `network_perch_id`, `methods` JSON, `template_id` → templates SET NULL, `csp_connect_src` JSON, `privacy_notice`, `revision`, `applied_revision`, `status` JSON, `deleted_at`. Generated `active_network` = network while not deleted; **unique (gateway_id, active_network)**                                          |
+| `voucher_batches`       | `portal_id` → portals CASCADE (null = any portal); limits; `redeem_by`; `revoked_at`                                                                                                                                                                                                                                                                     |
+| `vouchers`              | `code_hash` CHAR(64) unique (HMAC, §6.1), `code_encrypted` (APP_KEY), `hint`, `bound_portal_id` → portals SET NULL, clock (`first_used_at`, `starts_at`, `expires_at`), totals, `revision`, `revoked_at`, `exhausted_at`                                                                                                                                 |
+| `portal_users`          | `username` unique, scrypt `password` (hashed by the model), `max_devices`, `session_minutes`, rates, `portal_ids` JSON, `revision`                                                                                                                                                                                                                       |
+| `portal_api_clients`    | `token_hash` unique (SHA-256), `token_prefix`, `scopes`/`portal_ids` JSON, per-call caps                                                                                                                                                                                                                                                                 |
+| `portal_grants`         | BIGINT id; `portal_id` → portals CASCADE; `mac` CHAR(17); `source` voucher\|user\|api\|admin; `group_key`; FKs to voucher/user/api client/user SET NULL; `external_ref` (unique with api_client_id), `local_ref` (unique with portal_id); `g:` limits; counters; `state`, `delivery`, `revision`, `started_at`, `last_seen_at`, `ended_at`, `end_reason` |
+| `portal_sessions`       | per active stretch: `start_bytes_*` at open, `bytes_*` = end − start at close                                                                                                                                                                                                                                                                            |
+| `portal_gateway_states` | PK `gateway_id` → gateways CASCADE; `acked_event_seq` (one journal per router, shared by its portals), `key_epoch`, `router_key_epoch`, `last_sync_at`                                                                                                                                                                                                   |
+| `portal_authorizations` | (076) authorize API ledger: idempotency per principal + `external_ref`, audit (§11.6)                                                                                                                                                                                                                                                                    |
+| `portal_outbox`         | (076) pushes waiting for the router, one per (gateway, `dedupe_key`) (§11.2)                                                                                                                                                                                                                                                                             |
+| `portal_events`         | audit: `gateway_id` CASCADE, `portal_id` CASCADE null, `grant_id` SET NULL, `mac`, `type`, `detail` JSON                                                                                                                                                                                                                                                 |
 
 - **Merge.** Nothing here references `collectors`: the portal follows its
   gateway through `collectors:merge`, and no registry entry is needed.
@@ -392,12 +398,12 @@ Field encoding:
 - **Integer lists:** sorted ascending and comma-joined.
 - **Times:** epoch milliseconds.
 
-| Record          | Tag                                                  | Fields in order                                                                                                                                                                         |
-| --------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| group           | `perch-portal-group-v1`                              | groupKey, durationMode, expiresAt, durationSeconds, quotaBytes, baseTimeUsedSeconds, baseBytesUsed, downKbps, upKbps, maxDevices, revision                                              |
-| grant           | `perch-portal-grant-v1`                              | grantId, localRef, portalId, groupKey, mac, expiresAt, revision                                                                                                                         |
-| offline voucher | `perch-portal-voucher-v1`                            | voucherId, verifier, portalIds, groupKey, durationMode, startMode, durationSeconds, quotaBytes, downKbps, upKbps, maxDevices, redeemBy, expiresAt, timeUsedSeconds, bytesUsed, revision |
-| envelope        | `perch-portal-<authorize\|deauthorize\|vouchers>-v1` | full, serverNow, nonce, ackedEventSeq, grantIds, reason, itemCount, externalCount; then one line per item signature (wire order), then `ext:<portalId>:<mac>` per external              |
+| Record          | Tag                                                  | Fields in order                                                                                                                                                                                            |
+| --------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| group           | `perch-portal-group-v1`                              | groupKey, durationMode, expiresAt, durationSeconds, quotaBytes, baseTimeUsedSeconds, baseBytesUsed, downKbps, upKbps, maxDevices, revision                                                                 |
+| grant           | `perch-portal-grant-v1`                              | grantId, localRef, portalId, groupKey, mac, expiresAt, revision                                                                                                                                            |
+| offline voucher | `perch-portal-voucher-v1`                            | voucherId, verifier, portalIds, groupKey, durationMode, startMode, durationSeconds, quotaBytes, downKbps, upKbps, maxDevices, redeemBy, expiresAt, timeUsedSeconds, bytesUsed, revision, firstUsedAt (WP3) |
+| envelope        | `perch-portal-<authorize\|deauthorize\|vouchers>-v1` | full, serverNow, nonce, ackedEventSeq, grantIds, reason, itemCount, externalCount; then one line per item signature (wire order), then `ext:<portalId>:<mac>` per external                                 |
 
 The router verifies every item and the envelope with `signKey`. It rejects:
 
@@ -440,8 +446,10 @@ WireGroup = { groupKey, durationMode, expiresAt, durationSeconds, quotaBytes,
 WireGrant = { grantId: number|null, localRef: string|null, portalId, groupKey, mac,
   expiresAt, revision }                      // expiresAt: grant-level deadline (new)
 
-// portal.vouchers params (new): the full offline list every time
-{ enabled, serverNow, nonce, keyEpoch, vouchers: (WireOfflineVoucher & {sig})[], sig }
+// portal.vouchers params (new): the full offline list every time, in parts of ≤ 4000 (WP3)
+{ enabled, serverNow, nonce, keyEpoch, vouchers: (WireOfflineVoucher & {sig})[],
+  append, part, parts, sig }            // envelope reason = 'append' when append, else null
+WireOfflineVoucher = { …, revision, firstUsedAt }   // firstUsedAt: epoch ms or null (WP3)
 
 // portal.deauthorize params
 { grantIds, reason, serverNow, nonce, keyEpoch, sig }
@@ -601,8 +609,8 @@ under RA 10173.
 
 ## 10. Deviations from the design, and why
 
-- **`portals` is keyed per network.** It has `network_perch_id`, `instance` and
-  `enforcement` (decision 19). `acked_event_seq` moved to
+- **`portals` is keyed per network.** It has `network_perch_id` (decision 19;
+  `instance` and `enforcement` were dropped by migration 078, decision 27). `acked_event_seq` moved to
   `portal_gateway_states`, because a router has one journal for all its
   portals.
 - **No `external` grant source** and no `authoritative_revert` end reason
@@ -696,7 +704,7 @@ outboxDedupeKey(push): string                    // 'authorize' | 'deauthorize' 
   row per `(gateway_id, dedupe_key)`; a new push merges into it (grant ids
   united, sorted). Columns: `id, gateway_id, kind, dedupe_key, portal_id,
 grant_ids` (JSON text), `attempts, last_error, created_at, updated_at`.
-- **WP3 contract.** Install a sender that enqueues (same function) and, when
+- **WP3 contract** (built, §13.4). Install a sender that enqueues (same function) and, when
   the gateway's collector is online, drains at once: inside the gateway's
   queue, read its rows in id order, **delete** them, send; on failure
   re-enqueue (or rely on the next full sync) and answer `pending`; answer
@@ -726,16 +734,14 @@ type Portal = {
     label: string | null
     purpose: string | null
   } // gateway_networks
-  enforcement: 'opennds' | 'perch_nft'
-  instance: string | null
   methods: { voucher: boolean; password: boolean }
   templateId: number | null
   cspConnectSrc: string[]
   privacyNotice: string | null
-  native: null // openNDS settings: config plane (not served yet)
   status: {
-    openNds: 'running' | 'stopped' | 'missing' | 'unknown'
-    fas: 'ok' | 'misconfigured' | 'unknown'
+    state: 'active' | 'disabled' | 'waiting_device' | 'error' | 'unknown' // Perch enforcement (§13.3)
+    device: string | null
+    counting: boolean
     issues: string[]
     listen: string | null // from the last portal.configure result (WP3 writes portals.status)
     revision: number
@@ -1059,9 +1065,9 @@ validated with `authorizeValidator` like HTTP.
 
 - Portals are created on `{gatewayId, networkPerchId}` (decision 19), not
   `{collectorId, network}`; errors `gateway_not_found`, `network_not_found`.
-- No `native` writes and no `configChange` in answers: openNDS settings are
-  native config for the config plane's openNDS domain (not built yet);
-  `native` reads null. `collector_not_capable` is not refused: the portal is
+- No `native` settings and no `configChange` in answers: the router's
+  enforcement is Perch's own (decision 27). `collector_not_capable` is not
+  refused: the portal is
   created and `gateway.portalCapable` shows the capability.
 - No 503 `gateway_offline`: every change is queued (`delivery`).
 - Authorize answers `delivery: 'applied' | 'pending'` (design: `'queued'`),
@@ -1133,3 +1139,250 @@ snippets (`portalSnippets(methods)`: forms posting to `/portal/voucher`,
 `/portal/login`, `/portal/logout`) and the guest message texts
 (`PORTAL_MESSAGES`, keyed by `message_code`). The collector must embed the
 same files, snippets and texts; the seeded row keeps the empty-set digest.
+
+## 13. Collector socket (WP3, branch `gw/portal-sock`)
+
+Code: `app/services/portal_agent.ts` (sessions, sender, connect sequence,
+deliveries, retries, key rotation), `portal_guest.ts` (`portal.redeem`,
+`portal.login`), `portal_relay.ts` (`portal.relay`), `portal_shaping.ts`
+(QoS seam), `portal/delta.ts` (pure deltas), the hub's `onRequest`
+(`agent_hub.ts`), migration `077`. Decision 27 applies throughout: the router
+enforces with Perch's own nftables table, so nothing here reads or writes
+openNDS or the config plane. The portal's router configuration is Perch
+runtime data sent in `portal.configure`.
+
+### 13.1 Agent requests on the hub
+
+`AgentHub.onRequest(method, handler)` answers agent → server requests
+(`handler(rowId, params)`, one per method). A resolved value is the `result`
+(`undefined` → `null`); an `AgentRpcError` answers its code, message and
+`data`; any other error answers -32603 and is logged; no handler answers
+-32601. At most `MAX_AGENT_REQUESTS_IN_FLIGHT` (32) requests per session are
+answered at a time; more get -32000 `{error: 'busy'}`. A session that closed
+while its handler ran gets no answer.
+
+### 13.2 RPC table (as built, aligned with perch-collector `internal/portal`)
+
+Server → router (requests, 15 s timeout; `portal.sync` 30 s):
+
+| Method               | Params                                                                                                                                                                                                                                                                                                              | Result                                                                                                                                        |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `portal.configure`   | `{revision, gatewayId, keys?: {epoch, gatewayKey}, settings, storage?: {path?, flushIntervalSeconds?}, portals: [{portalId, name, network, enabled, methods, templateSha256, cspConnectSrc, privacyNotice, gatewayName, walledGarden, relay}]}` (the gateway's complete portal set; a portal not listed is removed) | `{revision, keyEpoch, missingTemplates: [sha], portals: [{portalId, device, state, listen, counting, issues}], enforcement, storage, issues}` |
+| `portal.template`    | `{sha256, files: [{name, contentType, dataBase64}]}`                                                                                                                                                                                                                                                                | `{stored: true}`                                                                                                                              |
+| `portal.authorize`   | §6.4 (full or delta)                                                                                                                                                                                                                                                                                                | `{results: [{grantId, localRef?, revision, state: active\|pending_device\|rejected, error?}], ended: [{grantId, localRef?}]}`                 |
+| `portal.deauthorize` | §6.4                                                                                                                                                                                                                                                                                                                | `{ended: [grantId]}`                                                                                                                          |
+| `portal.vouchers`    | §6.4                                                                                                                                                                                                                                                                                                                | `{stored, rejected}`                                                                                                                          |
+| `portal.sync`        | `{ackedEventSeq}`                                                                                                                                                                                                                                                                                                   | `RouterPortalReport` (§7)                                                                                                                     |
+
+- `settings` = the §8 values the router enforces: `enforceIntervalSeconds,
+usageIntervalSeconds, guestFailuresPerDevicePerMinute,
+guestFailuresPerDevicePerHour, guestFailuresPerPortalPerMinute,
+preauthDnsPerDevicePerMinute, offlineRedemption` (false also when
+  `offlineVoucherLimit` is 0).
+- `network` is the portal network's `interface` section name from the config
+  plane's ledger (`gateway_sections`). A portal whose section is unknown is
+  left out and its status reads `state: 'error'`, issue `network_unknown`.
+- `templateSha256` is the template's set digest, `sha256("")` for the
+  builtin (or no template). `walledGarden` is `[]` (no controller field yet).
+- `relay` is true when a non-revoked API client lists the portal: the router
+  then serves `/portal/v1/authorizations` (§13.6).
+- `storage` carries the gateway's `local_state_path` /
+  `local_state_flush_seconds` overrides (decision 18) when set.
+
+Router → server:
+
+| Method            | Kind         | Params → result                                                                                                                     |
+| ----------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `portal.redeem`   | request      | `{portalId, mac, ip, hostname?, code, replace?}` → `{grant: WireGrant & {sig}, group: WireGroup & {sig}, queued}`                   |
+| `portal.login`    | request      | `{portalId, mac, ip, hostname?, username, password, replace?}` → same                                                               |
+| `portal.relay`    | request      | `{portalId, op: authorize\|status\|deauthorize, mac?, token, body?, clientIp}` → `{status, body}`                                   |
+| `portal.event`    | notification | one `RouterEvent` (§7): schedules a full sync within `eventSyncDelay` (1 s), coalesced per gateway                                  |
+| `portal.sessions` | notification | `{collectedAt, clients, preauthCount, portals}`: stamps `last_report_at`; a sync when the last is older than `usageIntervalSeconds` |
+
+Refusals of `portal.redeem` / `portal.login` are -32000 with `data.error` ∈
+`invalid_code | invalid_credentials | expired | exhausted | revoked |
+disabled | device_limit | wrong_portal | rate_limited | bad_request`. A queued
+entitlement answers `{grant: null, group: null, queued: true}`.
+
+### 13.3 Capability and status
+
+- The hello's `capabilities` list containing `portal` makes the gateway
+  portal-capable. Its `portal` object `{version, keyEpoch, configRevision,
+enforcement, storage, port, maxPortals}` is stored in
+  `portal_gateway_states.capabilities` (null = not capable) with
+  `capabilities_at`; `keyEpoch` becomes `router_key_epoch`.
+  `Portal.gateway.portalCapable` reads it (fallback: the config plane's
+  `gateways.capabilities.portal`).
+- A gateway needs a `gateways` row (the config plane creates it) for any of
+  this; a collector without one gets no portal calls.
+- Each `portal.configure` bumps `config_revision`; the answer sets
+  `router_config_revision`, `configured_at`, `router_status`
+  (`{enforcement, storage, issues, at}`) and each listed portal's
+  `status` (`{revision, templateSha256, state, device, counting, issues,
+listen, at}`) and `applied_revision`. `Portal.status` in the REST view is now
+  `{state: active|disabled|waiting_device|error|unknown, device, counting,
+issues, listen, revision, appliedRevision, delivery, clients, lastReportAt,
+lastConfiguredAt}` (the WP2 `openNds` / `fas` fields are gone, decision 27).
+
+### 13.4 Connect sequence and deliveries
+
+On every hello of a portal-capable gateway, inside its portal queue:
+
+1. `portal.configure` (with `keys` when `router_key_epoch ≠ key_epoch`), then
+   `portal.template` for each sha in `missingTemplates`.
+2. `portal.sync` → `loadServerPortalState` → `reconcile` →
+   `applyPortalDbChanges`.
+3. `portal.authorize {full: true}` with the inserted grant ids bound; its
+   results acknowledge delivery (`delivered`), its `ended` list acknowledges
+   removals.
+4. `portal.vouchers` (the list after reconciliation, so it reflects the
+   offline redemptions just recorded).
+5. Shaping sync (§13.7).
+6. Outbox rows older than the sequence are dropped (it covered them), the
+   gateway is marked ready, newer rows are drained.
+
+A gateway with no portal rows whose router reports no `configRevision` is
+marked ready without any call.
+
+**Sender** (`SocketPortalAgentSender`, installed by `attachPortalAgent`): every
+push is enqueued; when the gateway is ready the outbox is drained at once and
+the answer is `applied` only if every row was acknowledged. **Drain**: rows in
+id order are deleted, then delivered in the order configure, template, sync,
+deauthorize, authorize, vouchers (a `sync` row makes the deltas redundant):
+
+| Push          | Delivery                                                                                                                                       |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `configure`   | `portal.configure` for the gateway                                                                                                             |
+| `template`    | `portal.template` for the portal's template (not builtin), then `portal.configure`                                                             |
+| `authorize`   | `portal.authorize {full: false}` with the ids' **live** grants and their groups (`portalDelta`: same `base*` as the full set); results applied |
+| `deauthorize` | `portal.deauthorize` per reason (the grant's `end_reason`, `queued` for a queued grant) for the ids that are not live any more; removals acked |
+| `vouchers`    | `portal.vouchers` with `offlineVoucherList`                                                                                                    |
+| `sync`        | `portal.configure` (settings live there) + a full sync                                                                                         |
+
+**Failures.** The undelivered pushes go back to the outbox (`attempts + 1`,
+`last_error`), `portal_gateway_states.delivery_failures/_error/_failed_at`
+record it, and a retry runs after `2 s · 2^(n−1)` (±20 %, at most 5 min) in
+the gateway's queue. An offline gateway just waits for its reconnect. A
+refusal `no_keys`, `key_epoch_mismatch` or `bad_signature` clears
+`router_key_epoch`, so the retry sends the key first. A successful drain
+resets the failure count.
+
+### 13.5 Online sign-in (`portal_guest.ts`)
+
+Both run in the gateway's queue; the portal must be the gateway's, live and
+offer the method (else `wrong_portal` / `disabled`).
+
+- **Redeem**: normalized code → `code_hash` → voucher (row locked) →
+  `planVoucherRedemption` with the voucher group's holders and the device's
+  current entitlement. Evicted devices end `moved` (their queues promoted),
+  the voucher is bound, first-used and clocked (first writer), a swap queues
+  the data bucket, and the new grant is `pending_device` (or `queued`).
+- **Login**: `planUserLogin` with `deviceUnseenEvictMinutes`; `replace: true`
+  turns `device_limit` into "the device that joined first leaves"
+  (`replaced`). The grant's own deadline is `sessionMinutes`.
+- **Retries are idempotent**: the same code (or user) from a device that
+  already holds it answers that grant.
+- **Answer**: the grant and its group, each signed (`signGrant` /
+  `signGroup`) under the current epoch, `base*` as in the full set. The
+  router applies it at once; its delivery is acknowledged by the next sync.
+  Pushes for everything else the sign-in changed (the evicted device, a
+  swapped bucket, the offline list) go out right after the answer.
+- **Deadline**: the router waits 8 s, then redeems offline from its own
+  list. A sign-in that has not started within 5 s (queued behind a long
+  sync) is dropped unstarted and answered `controller_unreachable`, which the
+  router shows without falling back to offline redemption, so the same code
+  is never spent twice.
+- **Brute force**: failures only, 15-minute windows, bounded map (4096):
+  `controllerFailuresPerDevicePer15Minutes` per (portal, MAC) for both;
+  `controllerFailuresPerUsernamePer15Minutes` per (portal, username) for
+  logins. An unknown username costs a hash verify like a wrong password.
+
+### 13.6 Router relay: the Paid Hotspot API (decision 22)
+
+`portal.relay` serves the router's `/portal/v1/authorizations[/:mac]` for
+paid-hotspot integrations such as coin-operated vending boxes on the guest
+network. The router passes the request untouched; the controller answers
+`{status, body}` with exactly the HTTP API's bodies (§11.6: `{data: …}`, or
+`{error, message, …}`, or 422 `{errors}`).
+
+- Only `perch_pa_` tokens: anything else (a controller access token
+  included) is 401 `invalid_api_token`.
+- Failed tokens are charged to `relay:<gatewayId>`: 20 in 15 minutes and the
+  gateway's relay answers 429 before any lookup.
+- Accepted calls count against the client's `apiRequestsPerClientPerMinute`
+  (429 `rate_limited`, `retryAfterSeconds` in the body: no headers cross the
+  socket).
+- The portal is the one the request came in on (`portalId` of the relay
+  params); a `portalId` in the body is overwritten. It must be one of the
+  relaying gateway's, and the client's `portalIds` apply (403
+  `portal_not_allowed`), as do scopes, caps, ownership and idempotency.
+- The ledger records `via: 'relay'` and the guest-side `clientIp`.
+- The router adds its own per-address and per-portal limits before asking.
+
+### 13.7 Shaping seam (`portal_shaping.ts`)
+
+Speed caps and single-device quotas go to traffic shaping through
+`PortalShaping { sync(gatewayId, entries), apply(gatewayId, upserts,
+releases) }`. An entry is `{sourceRef: 'portal-grant:<id>' |
+'portal-local:<portalId>:<localRef>', portalId, mac, downKbps, upKbps,
+quotaBytes, expiresAt}`; `quotaBytes` is what is left of a one-device group
+(a shared quota cannot be split per device: the router's tick stays its only
+enforcement). Full syncs call `sync` with the complete set, deltas `apply`.
+Every call is best effort: errors are logged, never fail a delivery.
+
+**Not wired yet**: the QoS side's `qos_shaping.ts` (`shapeDevice` /
+`releaseDevice` by `sourceRef`) was not on `gw/ctl-qos` when this was built,
+so the default is `NoopPortalShaping`. Wiring it is an adapter installed with
+`setPortalShaping` that diffs by `sourceRef`.
+
+### 13.8 Key epoch rotation
+
+`POST /api/v1/portal/gateways/:gatewayId/rotate-key` (admin; 404
+`gateway_not_found`) → `{data: {keyEpoch, delivery}}`. The new epoch is
+`max(key_epoch, router_key_epoch) + 1` (never an epoch the router already
+had); `key_rotated` is logged with the admin. A `configure` (it carries the
+key, the epochs now differ) and a `sync` (re-signs every grant, new voucher
+verifiers) are queued and drained at once when the gateway is ready;
+otherwise the reconnect does it. A router that reports an epoch above the
+controller's (restored database) makes the controller move past it the same
+way.
+
+### 13.9 Deviations from the WP1/WP3 contract
+
+- **Connect order**: configure → template → sync → reconcile → full authorize
+  → vouchers. The vouchers go after reconciliation, not before the sync: a
+  list built before it would re-offer the router vouchers it spent offline
+  under older revisions.
+- **`portal.configure` is per gateway**, not per portal (design §6): one
+  message with every portal, the key and the settings, as the router builds
+  it. `configure:<portalId>` outbox rows all deliver the same message.
+- **`replace`** on redeem has no effect (a voucher always moves to the newest
+  device, decision 23); on login it allows evicting the oldest device.
+- **Username limiter key** is (portal, username), not (username, MAC): per
+  device is already covered by the device limiter.
+- **No openNDS**: no `readOpenNds` / `proposeOpenNds`, no `native` config;
+  the portal status reports Perch's enforcement.
+
+### 13.10 Offline voucher list: parts and `firstUsedAt`
+
+- **Parts.** `offlineVoucherLimit` goes up to 50 000, which as one message
+  would exceed the kit's 4 MiB frame. `buildVouchersMessages` splits the list
+  into messages of at most `VOUCHERS_PER_MESSAGE` (4000, ~0.6 KB each):
+  `{enabled, serverNow, nonce, keyEpoch, vouchers, append, part, parts, sig}`.
+  Part 1 (`append: false`) replaces the router's list; parts 2… (`append:
+true`) add to it. `append` is signed: the envelope's `reason` is `'append'`
+  for those parts and null otherwise (`full` stays `enabled`), so the
+  envelope's canonical form is unchanged. Each part has its own nonce. They
+  are sent in order; a failed part leaves the router with the earlier parts
+  (active vouchers and the newest batches come first) and the retry or next
+  sync sends the whole list again. An empty or disabled list is one message.
+- **`firstUsedAt`** (epoch ms or null) is the offline voucher record's new
+  last field, signed: canonical `… bytesUsed, revision, firstUsedAt`. It tells
+  the router a used voucher from an unused one (`redeemBy` only applies to
+  unused ones) instead of inferring it. Vectors in `crypto.spec.ts`
+  (`firstUsedAt: null` → `fF58SkU0g5C47axcdZN2dLM0sGtvRKWO0ksDlD1kaY8`,
+  `1790000000000` → `AMBsGy99v8xLEJ_uEq9C2LFi2cVgrIzUBYewJLuzLMo`).
+- **Router change needed** (perch-collector `gw/portal-agent`): add
+  `FirstUsedAt *int64` to `WireOfflineVoucher` and its canonical form; in
+  `Vouchers`, build the envelope with `Reason: "append"` when `p.Append`, and
+  merge instead of replacing when `p.Append`.

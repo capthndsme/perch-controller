@@ -34,6 +34,7 @@ import {
 } from '#services/gateway_config/gateway_plane'
 import { handleQosEvent } from '#services/qos_live'
 import { onCollectorConnected } from '#services/qos_sync'
+import { attachPortalAgent, onPortalHello, onPortalSessionClosed } from '#services/portal_agent'
 import { INSTANCE_ID_REGEX, collectorHelloValidator } from '#validators/collectors'
 import logger from '@adonisjs/core/services/logger'
 import db from '@adonisjs/lucid/services/db'
@@ -128,6 +129,8 @@ export function collectorAgentEndpoint(): AgentEndpoint<CollectorPrincipal> {
       collectorHub.onNotification('gateway.config.result', onConfigResult)
       // Plain-HTTP signing pairing (owner decision 29).
       collectorHub.onNotification('gateway.pair.state', onPairState)
+      // The guest portal (docs/gateway/portal.md section 13).
+      attachPortalAgent(collectorHub)
     },
 
     async authenticate(request, { address }) {
@@ -246,6 +249,7 @@ export function collectorAgentEndpoint(): AgentEndpoint<CollectorPrincipal> {
         if (wasCurrent) {
           forgetSessionKey(session.id)
           onGatewaySessionClosed(session.id)
+          onPortalSessionClosed(session.id)
         }
         logger.info(
           { collectorId: session.id, code },
@@ -412,7 +416,20 @@ async function handleHello(
     { collectorId: row.id, lifecycle: outcome.lifecycle, address },
     'collector_agent_gateway: collector connected'
   )
-  if (outcome.lifecycle === 'adopted') void syncCollectorProtocols(row.id)
-  // A managed gateway's shaper: probe it and send the device entries.
-  if (outcome.lifecycle === 'adopted') void onCollectorConnected(row.id)
+  if (outcome.lifecycle === 'adopted') {
+    void syncCollectorProtocols(row.id)
+    // A managed gateway's shaper: probe it and send the device entries.
+    void onCollectorConnected(row.id)
+    // Capability tracking and the portal connect sequence (portal.md 13.2).
+    const helloParams = (frame.params ?? {}) as { portal?: unknown }
+    void onPortalHello(row.id, {
+      capabilities: hello.capabilities,
+      portal: helloParams.portal,
+    }).catch((error) =>
+      logger.error(
+        { collectorId: row.id, err: error },
+        'collector_agent_gateway: portal hello failed'
+      )
+    )
+  }
 }

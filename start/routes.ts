@@ -516,6 +516,9 @@ router
             router.post('portals', [PortalPortalsController, 'store']).as('portals.store')
             router.patch('portals/:id', [PortalPortalsController, 'update']).as('portals.update')
             router.delete('portals/:id', [PortalPortalsController, 'destroy']).as('portals.destroy')
+            router
+              .post('gateways/:gatewayId/rotate-key', [PortalPortalsController, 'rotateKey'])
+              .as('gateways.rotateKey')
 
             router.post('grants/:id/extend', [PortalGrantsController, 'extend']).as('grants.extend')
             router.post('grants/:id/revoke', [PortalGrantsController, 'revoke']).as('grants.revoke')

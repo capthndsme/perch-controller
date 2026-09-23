@@ -200,7 +200,13 @@ export class FakeCollector {
         })
         return
       }
-      // A handler may throw `rpcError(code, message)` to answer with that code.
+      // A handler may throw an error carrying the JSON-RPC error to answer,
+      // or `rpcError(code, message)` to answer with that code.
+      const rpc = (error as { rpc?: Record<string, unknown> }).rpc
+      if (rpc) {
+        this.#reply({ id: call.id, error: rpc })
+        return
+      }
       const code = (error as { rpcCode?: number }).rpcCode ?? -32603
       const text = error instanceof Error ? error.message : String(error)
       this.#reply({ id: call.id, error: { code, message: text } })
