@@ -284,6 +284,17 @@ test.group('gateway networks: REST over the config plane', (group) => {
       () => listData(client, env),
       (data: any[]) => data?.some((n) => n.key === 'office' && n.live !== null)
     )
+    // The push path (collector.push over the agent socket, not a poll) fed
+    // the accounting: samples per network and the scope marker.
+    const samples = await eventually(
+      () => db.from('gateway_network_samples').where('gateway_id', env.gatewayId),
+      (rows: any[]) => rows.length >= 3
+    )
+    assert.includeMembers(
+      samples.map((r: any) => r.network),
+      ['lan', 'guest', 'vlan110']
+    )
+    assert.exists(await db.from('gateway_scope_changes').where('gateway_id', env.gatewayId).first())
     const list = await client
       .get(`/api/v1/gateways/${env.gatewayId}/networks`)
       .bearerToken(env.operatorToken)
