@@ -2646,3 +2646,13 @@ Found in the lab and fixed:
   schedules here).
 - Seen in the ledger, left alone: a DHCP static-host apply the owner requested at 21:09:47 (device labels as host
   names, 3 renames + 7 new hosts) rolled back at 21:11:17 on the 90 s confirm timeout; the 10 sections stay `ahead`.
+- **Follow-ups** (owner: "let's fix the two things", and check every box is on Asia/Manila):
+  - Collector **1.1.0-pre.2** (local tag on 8ed439b, collector only) on the gateway at 22:11 UTC; the probe now reports
+    `tz: "PST-8"` and the controller shows it. pre.1 kept as `/root/perch-collector-1.1.0-pre.1.bak` (and off-box).
+  - The label-name DHCP apply re-requested with the same 10 sections (dry run first), agent check-in 22:12:15,
+    dnsmasq up with the new names (`server-b.lan`, cameras) and the controller's name still resolving, then kept
+    22:12:30 UTC. All 109 sections in sync.
+  - Time zones: gateway, two APs and this host were Asia/Manila; the garage AP (AX23) was on UTC and is now
+    Asia/Manila (`PST-8`, no zoneinfo on it). The controller container stays `TZ=UTC` by design (stored times are
+    UTC, mysql2 parses in the process zone); its instance `timezone` setting is already Asia/Manila. MariaDB's
+    `time_zone` stays UTC.
