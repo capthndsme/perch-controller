@@ -279,10 +279,17 @@ export type PortalEventRow = {
   detail: Record<string, unknown>
 }
 
+/**
+ * A queued `g:` (API/admin) grant with a wall-clock duration was promoted:
+ * its deadline starts now (`expires_at`, first writer wins).
+ */
+export type GrantClockStart = { id: number; expiresAt: number }
+
 export type PortalDbChanges = {
   ackedEventSeq: number
   grantInserts: GrantInsert[]
   grantUpdates: GrantUpdate[]
+  grantClocks: GrantClockStart[]
   /** Session rows to open and close, in the order they happened. */
   sessions: Array<SessionOpen | SessionClose>
   voucherUpdates: VoucherUpdate[]
@@ -396,6 +403,7 @@ export function reconcile(
 
   const events: PortalEventRow[] = []
   const sessions: Array<SessionOpen | SessionClose> = []
+  const grantClocks: GrantClockStart[] = []
   const grantInserts = new Map<string, WorkGrant>()
 
   // --- index ------------------------------------------------------------
@@ -847,6 +855,18 @@ export function reconcile(
             wv.set.startsAt = clock.startsAt
             wv.set.expiresAt = clock.expiresAt
           }
+        } else if (parsed?.kind === 'grant' && next.w.id !== null) {
+          // A queued API/admin grant's wall clock waits for its turn too
+          // (paid time never runs while another entitlement is current).
+          const group = groups.get(next.w.groupKey)
+          const clock = group ? startVoucherClock(group.limits, now) : null
+          if (group && clock) {
+            groups.set(group.groupKey, {
+              ...group,
+              limits: { ...group.limits, expiresAt: clock.expiresAt },
+            })
+            grantClocks.push({ id: next.w.id, expiresAt: clock.expiresAt })
+          }
         }
       }
     }
@@ -984,6 +1004,7 @@ export function reconcile(
       ackedEventSeq,
       grantInserts: inserts,
       grantUpdates,
+      grantClocks,
       sessions,
       voucherUpdates,
       events,
