@@ -38,19 +38,19 @@ export function toSectionState(row: GatewaySection): SectionState {
     ownership: row.ownership && row.ownership.kind === 'options' ? row.ownership : null,
     issue,
     base: row.baseContent,
-    baseRevision: row.baseRevision,
+    baseRevision: row.baseRevision ?? null,
     router: row.routerContent,
     desired: row.desiredContent,
     status,
     conflict: row.conflict,
     driftSince: row.driftSince ? row.driftSince.toUTC().toISO() : null,
-    position: row.position,
+    position: row.position ?? null,
   }
 }
 
 /**
  * Copies a state onto a row (new or loaded) for saving; the caller sets
- * `gatewayId`, `routerAuthor`, `routerChangedAt`, `baseRevision` and
+ * `gatewayId`, `routerAuthor`, `routerChangedAt` and
  * `updatedByUserId` as the occasion needs.
  */
 export function applyStateToRow(row: GatewaySection, state: SectionState): GatewaySection {
@@ -64,6 +64,7 @@ export function applyStateToRow(row: GatewaySection, state: SectionState): Gatew
   row.ownership = state.ownership
   row.issue = state.issue
   row.baseContent = state.base
+  row.baseRevision = state.baseRevision
   row.routerContent = state.router
   row.desiredContent = state.desired
   row.status = state.status
