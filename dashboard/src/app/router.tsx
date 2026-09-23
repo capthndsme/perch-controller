@@ -35,6 +35,19 @@ export const router = createBrowserRouter([
     errorElement: <RouteError fullScreen />,
   },
   {
+    // The voucher print sheet: signed in, but outside the shell (nothing but cards on paper).
+    path: '/portal/vouchers/:id/print',
+    element: (
+      <SetupGate>
+        <AuthGate>
+          <PageRoute key="portalVoucherPrint" page={pages.portalVoucherPrint} fullScreen />
+        </AuthGate>
+      </SetupGate>
+    ),
+    handle: { page: pages.portalVoucherPrint } satisfies PageRouteHandle,
+    errorElement: <RouteError fullScreen />,
+  },
+  {
     path: '/',
     element: (
       <SetupGate>
@@ -61,6 +74,14 @@ export const router = createBrowserRouter([
           { path: 'wifi/clients/:mac', ...page('wifiClient') },
           { path: 'wifi/aps/:id', ...page('wifiAp') },
           { path: 'infrastructure', ...page('infrastructure') },
+          { path: 'portal', ...page('portal') },
+          { path: 'portal/portals/:id', ...page('portalDetail') },
+          { path: 'portal/vouchers', ...page('portalVouchers') },
+          { path: 'portal/vouchers/:id', ...page('portalVoucherBatch') },
+          { path: 'portal/users', ...page('portalUsers') },
+          { path: 'portal/api-clients', ...page('portalApiClients') },
+          { path: 'portal/templates', ...page('portalTemplates') },
+          { path: 'portal/templates/:id', ...page('portalTemplate') },
           { path: 'settings', ...page('settings') },
           { path: 'settings/collectors', ...page('settingsCollectors') },
           { path: 'settings/users', ...page('settingsUsers') },
@@ -68,6 +89,7 @@ export const router = createBrowserRouter([
           { path: 'settings/presence', ...page('settingsPresence') },
           { path: 'settings/charts', ...page('settingsCharts') },
           { path: 'settings/wifi-sources', ...page('settingsWifiSources') },
+          { path: 'settings/portal', ...page('settingsPortal') },
           { path: '*', ...page('notFound') },
         ],
       },
