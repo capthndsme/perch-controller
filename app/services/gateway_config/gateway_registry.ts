@@ -290,6 +290,12 @@ export function setConfigureBlock(
   settings: Pick<GatewayConfigSettings, 'watchSeconds' | 'importDebounceSeconds'>
 ): void {
   if (gateway.collectorId === null) return
+  // Only collectors with the config plane get the block (observation-only
+  // gateways have nothing to watch).
+  if (gateway.capabilities?.capable !== true) {
+    configureBlocks.delete(gateway.collectorId)
+    return
+  }
   const mode = normalizeMode(gateway.mode)
   configureBlocks.set(gateway.collectorId, {
     mode,

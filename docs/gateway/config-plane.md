@@ -129,7 +129,7 @@ controller drives it. Code: `gateway_plane.ts` (socket hooks),
   and, unless the mode is `off`, the configs are read when the hello's hashes
   differ from the last observed ones.
 - **`agent.configure`** gains `gatewayConfig: {mode, authoritative,
-  watchSeconds, debounceSeconds}` for collectors with a gateway row (mode `off`
+  watchSeconds, debounceSeconds}` for collectors with a gateway row and the config plane (mode `off`
   while the collector is not adopted and enabled). Sent again on a mode or
   Authoritative change, and to online gateways when Settings → Gateway changes.
   The agent needs mode `managed` on the session before an apply or install.
