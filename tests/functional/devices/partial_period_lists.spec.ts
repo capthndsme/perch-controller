@@ -45,7 +45,7 @@ async function bootstrap() {
   return { token: token.value!.release(), collectorId: collector.id }
 }
 
-const MAC = 'aa:aa:aa:aa:aa:01'
+const MAC = '02:00:00:00:00:01'
 const fmt = (t: DateTime) => t.toUTC().toFormat('yyyy-MM-dd HH:mm:ss')
 
 test.group('coveredFrom', () => {

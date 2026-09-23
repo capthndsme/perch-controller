@@ -240,17 +240,20 @@ test.group('devices | traffic/top', (group) => {
   }) => {
     const ctx = await bootstrap()
     const collectorId = ctx.collectorId
-    const D = 'dd:dd:dd:dd:dd:dd'
-    // D ties with B (1200 bytes each) but sorts after it.
+    const D = '02:00:00:00:00:0d'
+    // D ties with B (1200 bytes each) and sorts before it, on every refresh.
     await insertBucket(collectorId, D, ctx.t1, { in: 1000, out: 200 })
-    const r = await client
-      .get('/api/v1/traffic/top?range=1h&resolution=1m&limit=2')
-      .bearerToken(ctx.token)
-    r.assertStatus(200)
-    assert.deepEqual(
-      r.body().data.devices.map((d: { mac: string }) => d.mac),
-      [A, B]
-    )
+    for (let i = 0; i < 2; i += 1) {
+      _resetQueryCache()
+      const r = await client
+        .get('/api/v1/traffic/top?range=1h&resolution=1m&limit=2')
+        .bearerToken(ctx.token)
+      r.assertStatus(200)
+      assert.deepEqual(
+        r.body().data.devices.map((d: { mac: string }) => d.mac),
+        [A, D]
+      )
+    }
   })
 
   test('partial first and live last buckets rate over their own seconds', async ({
