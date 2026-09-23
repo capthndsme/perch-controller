@@ -61,6 +61,8 @@ export const router = createBrowserRouter([
           { path: 'wifi/clients/:mac', ...page('wifiClient') },
           { path: 'wifi/aps/:id', ...page('wifiAp') },
           { path: 'infrastructure', ...page('infrastructure') },
+          { path: 'networks', ...page('networks') },
+          { path: 'networks/:gatewayId/:networkId', ...page('network') },
           { path: 'settings', ...page('settings') },
           { path: 'settings/collectors', ...page('settingsCollectors') },
           { path: 'settings/users', ...page('settingsUsers') },
