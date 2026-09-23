@@ -2606,3 +2606,17 @@ Found in the lab and fixed:
 - Lab-only: wpad's ujail and `country` do not work in an unprivileged container (jail off, no
   country on the lab AP); a disabled `sqm` init script ignores Perch's reload (re-enabled on the lab
   gateway).
+
+### Live (2026-09-24 20:50-20:57 UTC)
+- **Controller** 1.1.0-pre.1 from local `main` (`docker compose up -d --build`); migrations 048-123
+  in 6.7 s. Before it: rollback image `perch-controller:rollback-rc3-2026-09-24` and a full dump of the
+  database (off-box, with the daemons' previous binaries and configs). The install commands still
+  hand out the published perch-apd rc.2 / perch-collector rc.3 (`perch.*Version` unchanged).
+- **Gateway collector** 1.1.0-pre.1 static build plus the new init script and boot guard; its UCI
+  config is unchanged, so `config_access none` (unmanaged, the controller reads nothing), portal only
+  offered, no perch-qos. Observation pushes (DHCP, neighbours, interfaces, UPnP, mwan3, resolver,
+  system) now reach the controller. rc.3 kept as `/root/perch-collector-1.0.0-rc.3.bak` (+ init).
+- **APs** (all three) perch-apd 1.1.0-pre.1 binaries over the rc.2 package records; `wifi_groups` is
+  not set, so device groups show "Groups off" (`unsupported`). AX23 flash 4.2 MB free.
+- Checks: every agent reconnected within seconds, Wi-Fi station reports and gateway samples current,
+  no warning or error in the server log.
