@@ -30,6 +30,11 @@ import { DateTime } from 'luxon'
  * that is inactive (expired, its policy disabled or gone, nothing to shape)
  * falls through to the next level.
  *
+ * A device target may name the network it sits in (`within`, set for guest
+ * portal devices: their portal's network). Such a device stays inside that
+ * network's default: without a bucket of its own it sits in the network's
+ * bucket, and its caps are never above the network's per-device cap.
+ *
  * Owner decisions 2026-09-23 built in:
  * - 13: caps are internet-only unless the policy's `includeLan` is on
  *   (`include_lan '1'` on its bucket / network, `includeLan: true` on its
@@ -150,7 +155,16 @@ export interface PlanQuota {
 }
 
 export type PlanTarget =
-  | { type: 'device'; mac: string }
+  | {
+      type: 'device'
+      mac: string
+      /**
+       * The network the device sits in (a UCI interface name): the device
+       * stays inside that network's default (its bucket, at most its
+       * per-device cap). Set for guest portal devices.
+       */
+      within?: string | null
+    }
   | { type: 'group'; groupId: number }
   | { type: 'network'; network: string }
 
@@ -591,6 +605,16 @@ export function planQos(input: PlanInput): QosPlan {
     return { kind: 'shape', policy, rate: assignment.rate }
   }
 
+  const resolutions = new Map<number, Resolution>()
+  const resolveOnce = (assignment: PlanAssignment): Resolution => {
+    let resolution = resolutions.get(assignment.id)
+    if (!resolution) {
+      resolution = resolve(assignment)
+      resolutions.set(assignment.id, resolution)
+    }
+    return resolution
+  }
+
   const referenced = new Set<number>()
   const bucketFor = (
     policy: PlanPolicy | null,
@@ -610,6 +634,30 @@ export function planQos(input: PlanInput): QosPlan {
     return bucketSectionName(policy.classMinor)
   }
 
+  const ordered = [...input.assignments].sort((a, b) => a.id - b.id)
+  const knownNetworks = input.networks ? new Set(input.networks) : null
+
+  // The network defaults, first per network (level 3 below reports their
+  // problems): what a device `within` a network stays inside.
+  const networkDefaults = new Map<string, Extract<Resolution, { kind: 'shape' }>>()
+  for (const assignment of ordered) {
+    if (assignment.target.type !== 'network') continue
+    const network = assignment.target.network
+    if (!UCI_NAME.test(network) || (knownNetworks && !knownNetworks.has(network))) continue
+    if (networkDefaults.has(network)) continue
+    const resolution = resolveOnce(assignment)
+    if (resolution.kind === 'shape') networkDefaults.set(network, resolution)
+    else networkDefaults.set(network, { kind: 'shape', policy: null, rate: null })
+  }
+
+  /** Per direction the lower cap (0 = unlimited that way). */
+  const lowerCap = (a: PlanRate | null, b: PlanRate | null): PlanRate | null => {
+    if (!a) return b
+    if (!b) return a
+    const low = (x: number, y: number) => (x === 0 ? y : y === 0 ? x : Math.min(x, y))
+    return { downKbit: low(a.downKbit, b.downKbit), upKbit: low(a.upKbit, b.upKbit) }
+  }
+
   const entryOrigin = new Map<string, Origin>()
   const entryFor = (
     mac: string,
@@ -618,8 +666,15 @@ export function planQos(input: PlanInput): QosPlan {
   ): DeviceEntry | null => {
     const context = { assignmentId: assignment.id, mac }
     const { policy } = resolution
-    const bucket = bucketFor(policy, context)
-    const capsRaw = resolution.rate ?? policy?.each ?? null
+    let bucket = bucketFor(policy, context)
+    let capsRaw = resolution.rate ?? policy?.each ?? null
+    const within = assignment.target.type === 'device' ? assignment.target.within : null
+    const home = within ? networkDefaults.get(within) : undefined
+    if (home) {
+      // The device stays inside its network's default (portal devices).
+      if (!bucket) bucket = bucketFor(home.policy, { ...context, network: within! })
+      capsRaw = lowerCap(capsRaw, home.rate ?? home.policy?.each ?? null)
+    }
     const caps = capsRaw ? floor(capsRaw, context) : null
     let quota: DeviceEntry['quota'] = null
     if (assignment.quota && assignment.target.type === 'device') {
@@ -662,7 +717,6 @@ export function planQos(input: PlanInput): QosPlan {
 
   const byMac = new Map<string, DeviceEntry>()
   const groups = new Map(input.groups.map((g) => [g.id, g]))
-  const ordered = [...input.assignments].sort((a, b) => a.id - b.id)
   const assignments = new Map(ordered.map((a) => [a.id, a]))
 
   // Level 2: groups (device assignments override below).
@@ -686,7 +740,7 @@ export function planQos(input: PlanInput): QosPlan {
         assignmentId: assignment.id,
       })
     }
-    const resolution = resolve(assignment)
+    const resolution = resolveOnce(assignment)
     if (resolution.kind === 'skip') continue
     for (const raw of group.members) {
       const mac = normalizeMac(raw)
@@ -739,7 +793,7 @@ export function planQos(input: PlanInput): QosPlan {
       continue
     }
     deviceSeen.add(mac)
-    const resolution = resolve(assignment)
+    const resolution = resolveOnce(assignment)
     if (resolution.kind === 'skip') continue
     const entry = entryFor(mac, assignment, resolution)
     if (entry) byMac.set(mac, entry)
@@ -748,7 +802,6 @@ export function planQos(input: PlanInput): QosPlan {
   // Level 3: network defaults.
   const networkSections: PlanSection[] = []
   const networkOrigin = new Map<string, Origin>()
-  const knownNetworks = input.networks ? new Set(input.networks) : null
   const networkSeen = new Set<string>()
   for (const assignment of ordered) {
     if (assignment.target.type !== 'network') continue
@@ -781,7 +834,7 @@ export function planQos(input: PlanInput): QosPlan {
         ...context,
       })
     }
-    const resolution = resolve(assignment)
+    const resolution = resolveOnce(assignment)
     if (resolution.kind === 'skip') continue
     const { policy } = resolution
     const bucket = bucketFor(policy, context)

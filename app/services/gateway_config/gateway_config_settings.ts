@@ -75,7 +75,9 @@ export type GatewayConfigLimits = Record<NumericKey, { min: number; max: number 
 /** Accepted range of each numeric setting (whole numbers). */
 export const GATEWAY_CONFIG_LIMITS: Readonly<GatewayConfigLimits> = {
   confirmTimeoutSeconds: { min: 30, max: 600 },
-  managementConfirmTimeoutSeconds: { min: 60, max: 1800 },
+  // The router gives a protected job at least 300 s (go-collector gwconfig
+  // ProtectedConfirmSeconds): a shorter window here would never apply.
+  managementConfirmTimeoutSeconds: { min: 300, max: 1800 },
   queueExpiryHours: { min: 1, max: 168 },
   watchSeconds: { min: 10, max: 600 },
   importDebounceSeconds: { min: 1, max: 60 },

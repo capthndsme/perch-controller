@@ -875,7 +875,7 @@ choices: { confirmMode } }`; a PATCH takes any subset, 422 outside the limits.
 | Setting | Default | Range |
 |---|---|---|
 | `confirmTimeoutSeconds` | 90 | 30–600 (capped again by the router's `config_confirm_max`) |
-| `managementConfirmTimeoutSeconds` | 300 | 60–1800 (protected jobs, README 3.8) |
+| `managementConfirmTimeoutSeconds` | 300 | 300–1800 (protected jobs, README 3.8; the router's own floor is 300 s) |
 | `confirmMode` | `admin_and_agent` | `agent`, `admin_and_agent` |
 | `queueExpiryHours` | 24 | 1–168 |
 | `watchSeconds` | 30 | 10–600 |

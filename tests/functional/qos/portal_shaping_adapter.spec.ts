@@ -1,8 +1,13 @@
+import GatewaySection from '#models/gateway_section'
 import QosAssignment from '#models/qos_assignment'
+import QosPolicy from '#models/qos_policy'
 import { QosPortalShaping, watchPortalQuotaExhaustion } from '#services/portal_qos_shaping'
 import { portalShaping, type PortalShapingEntry } from '#services/portal_shaping'
 import { handleQosEvent } from '#services/qos_live'
+import { planQos } from '#services/qos_plan'
+import { loadPlanInput } from '#services/qos_reads'
 import { shapeDevice } from '#services/qos_shaping'
+import { seedGrant, seedPortal } from '#tests/helpers/portal'
 import { eventually, seedSetupComplete } from '#tests/helpers/ap_agent'
 import { resetQosTests, seedQosGateway } from '#tests/helpers/qos'
 import db from '@adonisjs/lucid/services/db'
@@ -175,5 +180,63 @@ test.group('qos | portal shaping adapter (portal.md 13.7)', (group) => {
     } finally {
       stop()
     }
+  })
+
+  test('portal devices stay inside their portal network: its bucket, at most its cap', async ({
+    assert,
+  }) => {
+    await seedSetupComplete()
+    const { gateway } = await seedQosGateway()
+    await GatewaySection.create({
+      gatewayId: gateway.id,
+      perchId: 'n_guest',
+      config: 'network',
+      sectionName: 'guest',
+      sectionType: 'interface',
+      anonymous: false,
+      scope: 'synced',
+      domain: 'networks',
+      status: 'in_sync',
+    } as Partial<GatewaySection>)
+    const portal = await seedPortal(gateway.id, 'n_guest')
+    const grant = await seedGrant({ portalId: portal.id, mac: GUEST_A })
+    const policy = await QosPolicy.create({
+      gatewayId: gateway.id,
+      name: 'Guests',
+      sharedDownKbit: 8000,
+      sharedUpKbit: 4000,
+      eachDownKbit: 5000,
+      eachUpKbit: 1000,
+      fairness: 'per_host',
+      includeLan: false,
+      enabled: true,
+      classMinor: 0x12,
+      source: 'admin',
+    } as Partial<QosPolicy>)
+    await QosAssignment.create({
+      gatewayId: gateway.id,
+      policyId: policy.id,
+      targetType: 'network',
+      network: 'guest',
+      quotaUsedBytes: 0,
+      source: 'admin',
+    } as Partial<QosAssignment>)
+    await new QosPortalShaping().sync(gateway.id, [
+      // A voucher with a speed cap (above the network's per-device cap up).
+      entry({ sourceRef: `portal-grant:${grant.id}`, mac: GUEST_A, downKbps: 2000, upKbps: 3000 }),
+      // A voucher with a quota only, not yet bound to a grant id.
+      entry({
+        sourceRef: `portal-local:${portal.id}:q1`,
+        mac: GUEST_B,
+        downKbps: null,
+        upKbps: null,
+        quotaBytes: 20_000_000,
+      }),
+    ])
+    const input = await loadPlanInput(gateway.id)
+    const plan = planQos(input)
+    const byMac = new Map(plan.devices.map((d) => [d.mac, d]))
+    assert.include(byMac.get(GUEST_A)!, { bucket: 'b12', downKbit: 2000, upKbit: 1000 })
+    assert.include(byMac.get(GUEST_B)!, { bucket: 'b12', downKbit: 5000, upKbit: 1000 })
   })
 })

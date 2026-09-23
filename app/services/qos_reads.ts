@@ -245,9 +245,76 @@ export async function listSchedules(ref: GatewayRef, at: Date = new Date()) {
 }
 
 /**
+ * The network each guest portal assignment's device sits in: its portal's
+ * network (the UCI interface of `portals.network_perch_id`), by assignment
+ * id. `sourceRef` is `portal-grant:<grantId>` or
+ * `portal-local:<portalId>:<localRef>`.
+ */
+async function portalNetworks(
+  gatewayId: number,
+  assignments: QosAssignment[],
+  client?: QueryClientContract
+): Promise<Map<number, string>> {
+  const out = new Map<number, string>()
+  const portalOf = new Map<number, number>() // assignment id → portal id
+  const grantOf = new Map<number, number>() // assignment id → grant id
+  for (const a of assignments) {
+    if (a.source !== 'portal' || a.targetType !== 'device' || !a.sourceRef) continue
+    const grant = /^portal-grant:(\d+)$/.exec(a.sourceRef)
+    const local = /^portal-local:(\d+):/.exec(a.sourceRef)
+    if (grant) grantOf.set(a.id, Number(grant[1]))
+    else if (local) portalOf.set(a.id, Number(local[1]))
+  }
+  if (grantOf.size === 0 && portalOf.size === 0) return out
+  const q = client ?? db
+  if (grantOf.size > 0) {
+    const rows = (await q
+      .from('portal_grants')
+      .whereIn('id', [...new Set(grantOf.values())])
+      .select('id', 'portal_id')) as Array<{ id: number; portal_id: number }>
+    const byGrant = new Map(rows.map((r) => [Number(r.id), Number(r.portal_id)]))
+    for (const [assignmentId, grantId] of grantOf) {
+      const portalId = byGrant.get(grantId)
+      if (portalId !== undefined) portalOf.set(assignmentId, portalId)
+    }
+  }
+  const portalIds = [...new Set(portalOf.values())]
+  if (portalIds.length === 0) return out
+  const portals = (await q
+    .from('portals')
+    .where('gateway_id', gatewayId)
+    .whereIn('id', portalIds)
+    .select('id', 'network_perch_id')) as Array<{ id: number; network_perch_id: string }>
+  const perchIds = [...new Set(portals.map((p) => p.network_perch_id))]
+  const sections = perchIds.length
+    ? ((await q
+        .from('gateway_sections')
+        .where('gateway_id', gatewayId)
+        .where('config', 'network')
+        .where('section_type', 'interface')
+        .whereIn('perch_id', perchIds)
+        .whereNotNull('section_name')
+        .select('perch_id', 'section_name')) as Array<{
+        perch_id: string
+        section_name: string
+      }>)
+    : []
+  const nameOf = new Map(sections.map((s) => [s.perch_id, s.section_name]))
+  const networkOfPortal = new Map(
+    portals.map((p) => [Number(p.id), nameOf.get(p.network_perch_id) ?? null])
+  )
+  for (const [assignmentId, portalId] of portalOf) {
+    const network = networkOfPortal.get(portalId)
+    if (network) out.set(assignmentId, network)
+  }
+  return out
+}
+
+/**
  * Everything `planQos` needs for one gateway, read from the tables. The
  * network list is left out until the config plane models networks (M5);
- * the planner then accepts any valid network name.
+ * the planner then accepts any valid network name. Guest portal devices
+ * carry their portal's network (`within`): they stay inside its default.
  */
 export async function loadPlanInput(
   gatewayId: number,
@@ -281,10 +348,13 @@ export async function loadPlanInput(
     id: g.id,
     members: members.filter((m) => m.groupId === g.id).map((m) => m.mac),
   }))
+  const within = await portalNetworks(gatewayId, assignments, client)
   const planAssignments: PlanAssignment[] = assignments.map((a) => ({
     id: a.id,
     policyId: a.policyId,
-    target: targetOf(a),
+    target: within.has(a.id)
+      ? { type: 'device' as const, mac: a.mac!, within: within.get(a.id)! }
+      : targetOf(a),
     rate: rateFromColumns(a.downKbit, a.upKbit),
     quota:
       a.quotaBytes === null

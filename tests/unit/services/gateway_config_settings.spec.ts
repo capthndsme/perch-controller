@@ -14,6 +14,19 @@ test.group('gateway config settings | pure helpers', () => {
     assert.equal(normalizeGatewayConfigSettings({}).authoritativeRevertDelaySeconds, 90)
   })
 
+  test('normalise: the management window never goes below the router floor (300 s)', ({
+    assert,
+  }) => {
+    // Saved while the range still started at 60 s.
+    const stored = normalizeGatewayConfigSettings({ managementConfirmTimeoutSeconds: 120 })
+    assert.equal(stored.managementConfirmTimeoutSeconds, 300)
+    assert.equal(
+      normalizeGatewayConfigSettings({ managementConfirmTimeoutSeconds: 900 })
+        .managementConfirmTimeoutSeconds,
+      900
+    )
+  })
+
   test('local state path validation', ({ assert }) => {
     for (const ok of ['/etc/perch-collector/state', '/mnt/sda1/perch', '/overlay/x.db']) {
       assert.isTrue(isValidLocalStatePath(ok), ok)

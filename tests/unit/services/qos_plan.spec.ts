@@ -373,6 +373,54 @@ test.group('qos_plan | devices, groups and networks', () => {
     })
   })
 
+  test('a portal device stays inside its network: bucket kept, cap never above the network', ({
+    assert,
+  }) => {
+    // Guest network: 8/4 Mbit/s shared, 5/1 Mbit/s per device.
+    const guest = network(1, 'guest', { policyId: 2 })
+    const policies = [policy(2, { shared: rate(8000, 4000), each: rate(5000, 1000) })]
+    const within = (id: number, mac: string, fields: Partial<PlanAssignment> = {}) =>
+      device(id, mac, { target: { type: 'device', mac, within: 'guest' }, ...fields })
+    const p = plan({
+      policies,
+      assignments: [
+        guest,
+        // A voucher at 2 Mbit/s down, unlimited up: stays in the bucket, up capped by the network.
+        within(2, MAC1, { rate: rate(2000, 0) }),
+        // A quota only: the network's bucket and per-device caps.
+        within(3, MAC2, {
+          quota: { limitBytes: 1000, usedBytes: 0, onExhausted: 'block', throttle: null },
+        }),
+        // A voucher faster than the network allows per device.
+        within(4, MAC3, { rate: rate(20000, 20000) }),
+      ],
+      networks: ['lan', 'guest'],
+    })
+    const byMac = new Map(p.devices.map((d) => [d.mac, d]))
+    assert.include(byMac.get(MAC1)!, { bucket: 'b12', downKbit: 2000, upKbit: 1000 })
+    assert.include(byMac.get(MAC2)!, { bucket: 'b12', downKbit: 5000, upKbit: 1000 })
+    assert.include(byMac.get(MAC3)!, { bucket: 'b12', downKbit: 5000, upKbit: 1000 })
+    assert.deepEqual(codes(p), [])
+  })
+
+  test('within: a network without a default, or a device with its own bucket, is unchanged', ({
+    assert,
+  }) => {
+    const p = plan({
+      policies: [policy(2, { shared: rate(8000, 4000) }), policy(3, { shared: rate(1000, 1000) })],
+      assignments: [
+        network(1, 'guest', { policyId: 2 }),
+        device(2, MAC1, { target: { type: 'device', mac: MAC1, within: 'iot' }, rate: rate(2000, 0) }),
+        device(3, MAC2, { target: { type: 'device', mac: MAC2, within: 'guest' }, policyId: 3 }),
+        device(4, MAC3, { rate: rate(2000, 0) }),
+      ],
+    })
+    const byMac = new Map(p.devices.map((d) => [d.mac, d]))
+    assert.include(byMac.get(MAC1)!, { bucket: null, downKbit: 2000, upKbit: null })
+    assert.include(byMac.get(MAC2)!, { bucket: 'b13', downKbit: null, upKbit: null })
+    assert.include(byMac.get(MAC3)!, { bucket: null, downKbit: 2000, upKbit: null })
+  })
+
   test('decision 13: internet only unless the policy includes LAN traffic', ({ assert }) => {
     const p = plan({
       policies: [

@@ -1357,6 +1357,10 @@ written to `portal_events` as `shaping_quota_exhausted` (`grant_id` from
 `portal-grant:<id>`). Tests can install another implementation with
 `setPortalShaping` (`NoopPortalShaping`).
 
+A portal device stays inside its network's shaping (2026-09-24): the planner
+puts it in the bucket of the portal network's default and never lets its cap
+exceed that network's per-device cap (`docs/gateway/qos.md` section 3.2).
+
 ### 13.8 Key epoch rotation
 
 `POST /api/v1/portal/gateways/:gatewayId/rotate-key` (admin; 404

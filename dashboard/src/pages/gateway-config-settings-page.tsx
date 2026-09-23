@@ -29,7 +29,7 @@ const GROUPS: Group[] = [
         key: 'managementConfirmTimeoutSeconds',
         label: 'Confirm window, management path',
         unit: 's',
-        hint: 'Changes to the network Perch reaches the router through get their own, longer window.',
+        hint: 'Changes to the network Perch reaches the router through get their own, longer window (the router allows no less than 5 minutes).',
       },
       { key: 'queueExpiryHours', label: 'Queued change expires after', unit: 'h', hint: 'A change waiting for an offline gateway.' },
     ],

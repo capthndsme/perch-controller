@@ -169,6 +169,12 @@ the network default. Inactive assignments (expired, policy disabled or gone, not
 through. An assignment's own `rate` overrides the policy's `each`. Quotas ride on device assignments
 only.
 
+A guest portal device stays inside its portal network's default (`within` on the plan's device target,
+filled by `loadPlanInput` from the portal of the assignment's `sourceRef`): without a bucket of its own
+it sits in the network's bucket, and each direction's cap is the lower of the portal's and the network's
+per-device cap. Before 2026-09-24 such a device got a class at the root (or, with only a quota, no class
+at all) and ran outside the network's bucket.
+
 ### 3.3 Nested buckets (decision 16, amendment section 5)
 
 `qos_policies.parent_policy_id` puts a policy's bucket inside another's. Rules (errors leave the child
