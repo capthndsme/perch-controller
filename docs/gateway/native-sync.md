@@ -241,5 +241,5 @@ type SystemConfigView = { hostname: string | null; zonename: string | null; time
   imported two-way, the controller-name pin (T-N2), routes with the path guard and a LuCI route
   imported (T-R1, T-R2), system writes and a LuCI zone change flowing back (T-S1), feature
   blockers gating Authoritative Mode with a router edit then drift (4.6), and T-A1.
-- Lab tests of plan 2 section 7 for these features (T-N3, T-R1–R3, T-S1 on `plab-gw`) are not run
+- Lab tests of plan 2 section 7 for these features (T-N3, T-R1–R3, T-S1 on a lab router) are not run
   yet (the lab was taken by another task).
