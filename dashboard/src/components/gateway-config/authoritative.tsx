@@ -129,8 +129,8 @@ export function AuthoritativeDialog({
   const code = apiErrorCode(patch.error)
   const data = status.data
   const blockers = data?.blockers ?? []
-  const sectionBlockers = blockers.filter((b): b is SectionBlocker => 'config' in b)
-  const gatewayBlockers = blockers.filter((b) => !('config' in b))
+  const sectionBlockers = blockers.filter((b): b is SectionBlocker => 'perchId' in b)
+  const gatewayBlockers = blockers.filter((b) => !('perchId' in b))
   const inSync = data?.inSync === true && !status.isFetching
 
   async function enable() {
@@ -203,8 +203,8 @@ export function AuthoritativeDialog({
                     LuCI first.
                   </p>
                 ) : null}
-                {gatewayBlockers.map((b) => (
-                  <p key={b.kind} className="flex flex-wrap items-center gap-2 rounded-md border border-border px-2.5 py-2">
+                {gatewayBlockers.map((b, i) => (
+                  <p key={`${b.kind}.${i}`} className="flex flex-wrap items-center gap-2 rounded-md border border-border px-2.5 py-2">
                     {blockerText(b)}
                     {b.kind === 'enforcement_suspended' ? (
                       <Button size="xs" variant="outline" onClick={() => resume.mutate()} disabled={resume.isPending}>

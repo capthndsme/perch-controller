@@ -302,6 +302,23 @@ export type SyncBlocker =
       section: string
       diff: ConfigDiffEntry
     }
+  | {
+      /** An ordered type out of line (docs/gateway/firewall.md section 3). */
+      kind: 'order'
+      config: string
+      type: string
+      status: string
+      router: string[]
+      desired: string[]
+    }
+  | {
+      /** A feature's own "in sync" check (docs/gateway/native-sync.md section 6). */
+      kind: 'feature'
+      feature: string
+      objectId: string | null
+      code: string
+      message: string
+    }
 
 export type SyncStatus = {
   inSync: boolean

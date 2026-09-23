@@ -370,7 +370,24 @@ export function blockerText(blocker: SyncBlocker): string {
       return 'The router’s version differs from Perch’s.'
     case 'unimported_section':
       return 'A router section Perch has not taken into its ledger yet.'
+    case 'order':
+      return `The order of ${blocker.config} ${blocker.type} sections differs between the router and Perch.`
+    case 'feature':
+      return `${FEATURE_LABEL[blocker.feature] ?? blocker.feature}: ${blocker.message}`
   }
+}
+
+/** Feature names of the "in sync" checks (docs/gateway/native-sync.md section 6). */
+const FEATURE_LABEL: Record<string, string> = {
+  system: 'System',
+  routes: 'Routing',
+  dns_settings: 'DNS',
+  dns_records: 'DNS records',
+  dhcp_hosts: 'DHCP reservations',
+  dhcp_pools: 'DHCP pools',
+  dhcp_tags: 'DHCP tags',
+  networks: 'Networks',
+  firewall: 'Firewall',
 }
 
 // ── The gateway at a glance ─────────────────────────────────────────────────
