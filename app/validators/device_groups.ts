@@ -66,4 +66,15 @@ export const deviceGroupSettingsValidator = vine.compile(
   })
 )
 
+/** A port name (`wan`, `lan1`, `eth0.2`), null = the AP detects it. */
+export const apTrunkValidator = vine.compile(
+  vine.object({
+    trunk: vine
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9._@-]{1,15}$/)
+      .nullable(),
+  })
+)
+
 export const deviceGroupOfQueryValidator = vine.compile(vine.object({ gatewayId: id().optional() }))

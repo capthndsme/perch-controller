@@ -71,6 +71,8 @@ out more than once). A group needs a network with a VLAN id to have keys.
 | GET | `/device-groups/:id/keys/:keyId/passphrase` | `{passphrase}` (admin) |
 | DELETE | `/device-groups/:id/keys/:keyId` | 204 |
 | GET/PATCH | `/settings/device-groups` | `{ssids: string[], confirmSeconds}` |
+| GET | `/device-groups/aps` | per AP: `{apId, name, online, supported, state, revision, appliedRevision, trunkPort, trunkOverride, converted, error, stations[], reportedAt}` |
+| PATCH | `/device-groups/aps/:apId` | `{trunk: string \| null}`: the port towards the gateway (null = the AP detects it) |
 | GET | `/devices/:mac/group?gatewayId=` | the device's group (bound or on the network) or null |
 
 `DeviceGroup`:
@@ -81,7 +83,7 @@ out more than once). A group needs a network with a VLAN id to have keys.
   qos: { assignmentId, policyId, rate: {downKbit, upKbit} | null, via: 'group' | 'network' } | null,
   internet: boolean, portalBypass: boolean,
   counts: { bound, onNetwork, keys },
-  firewall: { applied: boolean | null, issue: string | null },
+  firewall: { state: 'none' | 'pending' | 'applied' | 'conflict' },
   createdAt, updatedAt }
 ```
 
@@ -106,12 +108,15 @@ inside it like every portal device (qos.md 3.2).
 `internet: false` renders, through the config plane (firewall domain):
 
 - a group with a network: one REJECT rule per WAN zone, `perch_g<id>_<zone>`, matching the
-  network's IPv4 and IPv6 prefixes (`src_ip`);
+  network's zone when that zone holds the network alone (IPv4 and IPv6), else its IPv4
+  prefixes (`src_ip`);
 - a group without one: an ipset `perch_g<id>` (`match src_mac`, the bound MACs) and the same
   rules with `ipset perch_g<id>`.
 
 The rules go first among the rules toward WAN zones (like the per-device WAN block), and
-the members' connections are flushed after the apply. `internet: true` removes them.
+the bound members' connections are flushed after the apply. `internet: true` removes them.
+A per-gateway job reconciles every group's sections after a change, debounced, and retries
+every 3 s while another apply holds the gateway (`pending_apply`, `apply_in_flight`).
 
 ## 6. Guest portal
 
@@ -167,3 +172,17 @@ On the AP (`internal/groups` of perch-apd):
 
 `ssids` (the SSIDs group keys and bindings apply to; empty = none), `confirmSeconds`
 (30-600, default 120).
+
+## 9. Controller side of the access points (`ap_groups.ts`)
+
+Every agent that offers `wifi_groups` gets the same desired state (the settings' SSIDs, the
+VLAN of every group with a network, a station per key, one binding station per group with
+bound members), fingerprinted; a new fingerprint is the AP's next revision. On every agent
+connect (after `system.info`), on changes (debounced 300 ms) and every two minutes: `groups.state`
+first (a pending revision this side sent is confirmed at once: the agent answered), then
+`groups.apply` when out of line, and 15 s after a `pending_confirm` a `ping` and `groups.confirm`
+(no answer: the reconnect confirms, or the AP rolls back). Devices bound by a portal sign-in
+are kicked (`client.kick`) on each AP once it holds the binding. `ap_group_states.state`:
+`idle`, `sending`, `pending_confirm`, `applied`, `failed`, `rolled_back`, `waiting`, `offline`,
+`unsupported`.
+

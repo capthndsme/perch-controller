@@ -1,3 +1,4 @@
+import { onApAgentReady } from '#services/ap_groups'
 import WifiAccessPoint from '#models/wifi_access_point'
 import type { AgentEndpoint } from '#services/agent_gateway'
 import hub, { type AgentConnection, AgentOfflineError } from '#services/ap_agent_hub'
@@ -134,6 +135,8 @@ async function refreshSystemInfo(apId: number, agentId: string): Promise<void> {
     const info = await hub.request<SystemInfoResult>(apId, 'system.info')
     if (info && typeof info === 'object' && !Array.isArray(info)) {
       await recordSystemInfo(apId, info, agentId)
+      // Device groups on the AP (docs/gateway/device-groups.md section 7).
+      onApAgentReady(apId)
     }
   } catch (error) {
     if (error instanceof AgentOfflineError) {

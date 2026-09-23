@@ -19,9 +19,11 @@ import {
   updateDeviceGroupSettings,
 } from '#services/device_group_settings'
 import { planeRefusal } from '#controllers/gateways_controller'
+import { listApGroupStates, setApTrunk } from '#services/ap_groups'
 import { GatewayPlaneError } from '#services/gateway_config/errors'
 import {
   addMemberValidator,
+  apTrunkValidator,
   createDeviceGroupValidator,
   createKeyValidator,
   deviceGroupOfQueryValidator,
@@ -176,6 +178,27 @@ export default class DeviceGroupsController {
       return { data: await deviceGroupOf(String(params.mac), gatewayId) }
     } catch (error) {
       return refusal(response, error)
+    }
+  }
+
+  /** GET /api/v1/device-groups/aps: what each access point holds. */
+  async aps() {
+    return { data: await listApGroupStates() }
+  }
+
+  /** PATCH /api/v1/device-groups/aps/:apId `{trunk}` */
+  async updateAp({ params, request, response }: HttpContext) {
+    const { trunk } = await request.validateUsing(apTrunkValidator)
+    try {
+      return { data: await setApTrunk(Number(params.apId), trunk ?? null) }
+    } catch (error) {
+      if (error instanceof Error && error.message === 'ap_not_found') {
+        return response.notFound({
+          error: 'ap_not_found',
+          message: 'There is no such access point.',
+        })
+      }
+      throw error
     }
   }
 

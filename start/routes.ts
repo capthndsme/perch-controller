@@ -668,6 +668,7 @@ router
     router
       .group(() => {
         router.get('', [DeviceGroupsController, 'index']).as('index')
+        router.get('aps', [DeviceGroupsController, 'aps']).as('aps')
         router
           .get(':id', [DeviceGroupsController, 'show'])
           .as('show')
@@ -675,6 +676,10 @@ router
         router
           .group(() => {
             router.post('', [DeviceGroupsController, 'store']).as('store')
+            router
+              .patch('aps/:apId', [DeviceGroupsController, 'updateAp'])
+              .as('aps.update')
+              .where('apId', router.matchers.number())
             router
               .patch(':id', [DeviceGroupsController, 'update'])
               .as('update')

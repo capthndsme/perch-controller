@@ -5,6 +5,7 @@ import Gateway from '#models/gateway'
 import QosAssignment from '#models/qos_assignment'
 import QosPolicy from '#models/qos_policy'
 import SystemSetting from '#models/system_setting'
+import { _resetApGroupsState, _setApGroupsTimings, requestApGroupsSync } from '#services/ap_groups'
 import { _resetDeviceGroupsState } from '#services/device_groups'
 import { resetDeviceLabelCacheForTesting } from '#services/device_labels'
 import { _resetCollectorAgentState } from '#services/collector_agent'
@@ -18,7 +19,13 @@ import { _resetNetworkAccountingState } from '#services/gateway_network_accounti
 import { setQosPlaneWriter, StubQosPlaneWriter } from '#services/qos_plane'
 import { _resetQosSync, setQosSyncTiming } from '#services/qos_sync'
 import { setSqmPlaneWriter, StubSqmPlaneWriter } from '#services/sqm_plane'
-import { eventually, seedSetupComplete } from '#tests/helpers/ap_agent'
+import {
+  DEFAULT_SYSTEM_INFO,
+  eventually,
+  FakeAgent,
+  seedAgentAp,
+  seedSetupComplete,
+} from '#tests/helpers/ap_agent'
 import { TEST_API_KEY, TEST_INSTANCE_ID } from '#tests/helpers/collector_agent'
 import { FakeGateway, type Section } from '#tests/helpers/fake_gateway'
 import testUtils from '@adonisjs/core/services/test_utils'
@@ -121,6 +128,7 @@ function routerConfigs(): Record<string, Section[]> {
 }
 
 let gateways: FakeGateway[] = []
+let agents: FakeAgent[] = []
 
 async function resetAll() {
   const teardown = await testUtils.db().truncate()
@@ -136,6 +144,8 @@ async function resetAll() {
   setSqmPlaneWriter(new StubSqmPlaneWriter())
   resetDeviceLabelCacheForTesting()
   _resetDeviceGroupsState()
+  _resetApGroupsState()
+  _setApGroupsTimings({ debounceMs: 10, confirmDelayMs: 50 })
 }
 
 async function setup(client: any) {
@@ -187,6 +197,9 @@ test.group('device groups: REST', (group) => {
   })
   group.each.teardown(async () => {
     _resetDeviceGroupsState()
+    _resetApGroupsState()
+    for (const a of agents) await a.close()
+    agents = []
     for (const gw of gateways) await gw.destroy()
     gateways = []
     await new Promise((r) => setTimeout(r, 100))
@@ -460,5 +473,113 @@ test.group('device groups: REST', (group) => {
       .bearerToken(env.adminToken)
       .json({ ssids: ['Apartment', 'Apartment'], confirmSeconds: 90 })
     assert.deepEqual(put.body().data.settings, { ssids: ['Apartment'], confirmSeconds: 90 })
+  })
+
+  test("access points: the groups' keys, bindings and VLANs; confirm; kicks after a binding", async ({
+    client,
+    assert,
+  }) => {
+    const env = await setup(client)
+    await client
+      .patch('/api/v1/settings/device-groups')
+      .bearerToken(env.adminToken)
+      .json({ ssids: ['Apartment'], confirmSeconds: 60 })
+    const unitRes = await client
+      .post('/api/v1/device-groups')
+      .bearerToken(env.adminToken)
+      .json({ gatewayId: env.gatewayId, name: 'Unit 101', networkPerchId: env.unitPerchId })
+    const unit = unitRes.body().data
+    const keyRes = await client
+      .post(`/api/v1/device-groups/${unit.id}/keys`)
+      .bearerToken(env.adminToken)
+      .json({ label: 'Tenant', passphrase: 'unit-101-passphrase' })
+    keyRes.assertStatus(201)
+    const bindRes = await client
+      .post(`/api/v1/device-groups/${unit.id}/members`)
+      .bearerToken(env.adminToken)
+      .json({ mac: KID })
+    bindRes.assertStatus(201)
+
+    let applied = 0
+    const { ap, agentId, agentSecret } = await seedAgentAp({ name: 'ap-hall' })
+    const agent = await FakeAgent.connect({
+      agentId,
+      agentSecret,
+      handlers: {
+        'system.info': () => ({
+          ...DEFAULT_SYSTEM_INFO,
+          capabilities: [...DEFAULT_SYSTEM_INFO.capabilities, 'wifi_groups'],
+        }),
+        'groups.state': () => ({
+          appliedRevision: applied,
+          pending: null,
+          trunkPort: 'wan',
+          stations: [],
+        }),
+        'groups.apply': (p) => ({
+          revision: p.revision,
+          state: 'pending_confirm',
+          deadline: '2026-09-24T12:02:00Z',
+          trunkPort: 'wan',
+          converted: false,
+          managed: ['default_radio0'],
+          issues: [],
+        }),
+        'groups.confirm': (p) => {
+          applied = Number(p.revision)
+          return { revision: p.revision, state: 'applied' }
+        },
+        'client.kick': (p) => ({ mac: p.mac, ifname: 'phy0-ap0', banTimeMs: 0 }),
+      },
+    })
+    agents.push(agent)
+    const apply = await agent.waitFor('groups.apply', 5000)
+    assert.deepEqual(apply.params, {
+      confirmSeconds: 60,
+      ssids: ['Apartment'],
+      vlans: [{ vid: 101 }],
+      stations: [
+        { key: 'unit-101-passphrase', vid: 101 },
+        { vid: 101, macs: [KID] },
+      ],
+      trunk: 'auto',
+      revision: 1,
+    })
+    await agent.waitFor('groups.confirm', 5000)
+    const states = await eventually(
+      async () => {
+        const res = await client.get('/api/v1/device-groups/aps').bearerToken(env.operatorToken)
+        return res.body().data
+      },
+      (list: any[]) => list[0]?.state === 'applied',
+      5000
+    )
+    assert.include(states[0], {
+      apId: ap.id,
+      supported: true,
+      revision: 1,
+      appliedRevision: 1,
+      trunkPort: 'wan',
+    })
+
+    // A portal binding: the AP is already in line, the device is kicked.
+    requestApGroupsSync('portal binding', { kick: [KID] })
+    const kicked = await agent.waitFor('client.kick', 5000)
+    assert.deepEqual(kicked.params, { mac: KID, banTimeMs: 0 })
+    // Nothing changed: no second apply.
+    assert.lengthOf(
+      agent.calls.filter((c) => c.method === 'groups.apply'),
+      1
+    )
+
+    // A trunk chosen by hand is a new state.
+    const trunk = await client
+      .patch(`/api/v1/device-groups/aps/${ap.id}`)
+      .bearerToken(env.adminToken)
+      .json({ trunk: 'lan4' })
+    trunk.assertStatus(200)
+    const second = await agent.waitForCount('groups.apply', 2, 5000)
+    assert.equal(second[1].params.trunk, 'lan4')
+    assert.equal(second[1].params.revision, 2)
   })
 })

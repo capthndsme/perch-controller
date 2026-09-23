@@ -8,7 +8,7 @@ import { BaseModel, column } from '@adonisjs/lucid/orm'
 import { DateTime } from 'luxon'
 
 export class ApGroupStateSchema extends BaseModel {
-  static $columns = ['apId', 'appliedRevision', 'converted', 'error', 'fingerprint', 'reportedAt', 'revision', 'state', 'trunkPort', 'updatedAt'] as const
+  static $columns = ['apId', 'appliedRevision', 'converted', 'error', 'fingerprint', 'reportedAt', 'revision', 'state', 'trunkOverride', 'trunkPort', 'updatedAt'] as const
   $columns = ApGroupStateSchema.$columns
   @column({ isPrimary: true })
   declare apId: number
@@ -26,6 +26,8 @@ export class ApGroupStateSchema extends BaseModel {
   declare revision: number
   @column()
   declare state: string
+  @column()
+  declare trunkOverride: string | null
   @column()
   declare trunkPort: string | null
   @column.dateTime({ autoCreate: true, autoUpdate: true })

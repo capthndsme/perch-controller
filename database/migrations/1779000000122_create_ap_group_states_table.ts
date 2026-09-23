@@ -27,6 +27,8 @@ export default class extends BaseSchema {
       table.string('state', 16).notNullable().defaultTo('idle')
       table.string('error', 500).nullable()
       table.string('trunk_port', 32).nullable()
+      // An admin's choice of trunk port (null = the AP detects it).
+      table.string('trunk_override', 15).nullable()
       table.boolean('converted').notNullable().defaultTo(false)
       table.text('stations').nullable()
       table.datetime('reported_at').nullable()
