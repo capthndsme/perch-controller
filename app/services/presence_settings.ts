@@ -23,6 +23,8 @@ export const PRESENCE_LIMITS: Readonly<PresenceLimits> = {
   apStaleMinSeconds: { min: 10, max: 600 },
   // The latest native bucket is already one interval old when it is written.
   nowRateIntervals: { min: 2, max: 20 },
+  // A switch: 1 = the gateway's sightings count as traffic (default), 0 = off.
+  gatewaySightings: { min: 0, max: 1 },
 }
 
 const KEYS = Object.keys(PRESENCE_DEFAULTS) as Array<keyof PresenceThresholds>

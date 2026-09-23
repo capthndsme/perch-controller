@@ -10,6 +10,7 @@ import {
   queryDevicePresence,
   queryLatestWifiContext,
   queryTrafficSeenAt,
+  queryGatewaySeenAt,
 } from '#services/device_presence_query'
 import { getHostnameMatches } from '#services/hostname_enrichment'
 import { loadDeviceAttachments } from '#services/infra_topology'
@@ -386,19 +387,21 @@ export default class DevicesController {
     // they are read per request, never from the cached rows above (a past
     // window's rows are kept for hours).
     const macs = rows.map((row) => row.mac)
-    const [wifiByMac, trafficSeenAt, hostnameMatches, labelsByMac, placements] = await Promise.all([
-      queryLatestWifiContext(macs, thresholds),
-      queryTrafficSeenAt(macs),
-      getHostnameMatches(
-        rows.map((row) => ({
-          mac: row.mac,
-          primaryIp: row.primaryIp,
-          ips: parseIps(row.ips),
-        }))
-      ),
-      getDeviceLabels(macs),
-      loadDeviceAttachments(macs, thresholds),
-    ])
+    const [wifiByMac, trafficSeenAt, hostnameMatches, labelsByMac, placements, gatewaySeen] =
+      await Promise.all([
+        queryLatestWifiContext(macs, thresholds),
+        queryTrafficSeenAt(macs),
+        getHostnameMatches(
+          rows.map((row) => ({
+            mac: row.mac,
+            primaryIp: row.primaryIp,
+            ips: parseIps(row.ips),
+          }))
+        ),
+        getDeviceLabels(macs),
+        loadDeviceAttachments(macs, thresholds),
+        queryGatewaySeenAt(macs, thresholds),
+      ])
     const rowsWithHostnames = rows.map((row, i) => {
       const match = hostnameMatches[i]
       const wifi = wifiByMac.get(row.mac.toLowerCase())
@@ -408,6 +411,7 @@ export default class DevicesController {
         {
           wifi: wifi ? { connected: wifi.connected, heardAt: wifi.heardAt } : null,
           trafficAt: trafficSeenAt.get(`${row.collectorId}:${row.mac.toLowerCase()}`) ?? null,
+          gatewaySeenAt: gatewaySeen.get(row.mac.toLowerCase()) ?? null,
           ethernet: label?.connection === 'ethernet',
           onMap: placement?.onMap ?? null,
         },

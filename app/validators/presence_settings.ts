@@ -17,5 +17,6 @@ export const updatePresenceSettingsValidator = vine.compile(
     apStaleIntervals: threshold('apStaleIntervals'),
     apStaleMinSeconds: threshold('apStaleMinSeconds'),
     nowRateIntervals: threshold('nowRateIntervals'),
+    gatewaySightings: threshold('gatewaySightings'),
   })
 )
