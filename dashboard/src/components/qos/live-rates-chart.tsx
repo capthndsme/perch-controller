@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils'
 import { useMemo, useState } from 'react'
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts'
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart'
@@ -99,7 +100,11 @@ export function LiveRatesChart({ samples, wan, policies }: Props) {
               : 'Collecting: the chart fills in every 5 seconds.'}
         </p>
       ) : (
-        <ChartContainer config={config} className="aspect-auto h-[220px] w-full">
+        <ChartContainer
+          config={config}
+          // Room for a wrapped legend: at phone width 8 series take three rows.
+          className={cn('aspect-auto w-full', keys.length > 4 ? 'h-[280px]' : 'h-[220px]')}
+        >
           <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis dataKey="t" type="number" scale="time" domain={['dataMin', 'dataMax']} tickFormatter={timeLabel} tickLine={false} axisLine={false} minTickGap={48} />
@@ -133,7 +138,7 @@ export function LiveRatesChart({ samples, wan, policies }: Props) {
                 connectNulls={false}
               />
             ))}
-            {keys.length > 1 ? <ChartLegend content={<ChartLegendContent />} /> : null}
+            {keys.length > 1 ? <ChartLegend content={<ChartLegendContent className="flex-wrap gap-x-3 gap-y-1 px-1" />} /> : null}
           </LineChart>
         </ChartContainer>
       )}
