@@ -39,8 +39,20 @@ export type PortalVouchersParams = {
   nonce: string
   keyEpoch: number
   vouchers: Signed<WireOfflineVoucher>[]
+  /**
+   * The list is sent in parts of at most `VOUCHERS_PER_MESSAGE` (the kit's
+   * frame is 4 MiB). Part 1 replaces the router's list, later parts add to
+   * it (`append`, signed as the envelope's `reason: 'append'`). `part` /
+   * `parts` are informational (1-based).
+   */
+  append: boolean
+  part: number
+  parts: number
   sig: string
 }
+
+/** A signed offline voucher is ~0.6 KB of JSON: 4000 stay well under 4 MiB. */
+export const VOUCHERS_PER_MESSAGE = 4000
 
 export type PortalDeauthorizeParams = {
   grantIds: number[]
@@ -70,8 +82,14 @@ export function bindInsertedGrantIds(
   }
 }
 
+/** What `portal.authorize` carries: a full desired set, or a delta (`full: false`). */
+export type AuthorizeSet = Pick<
+  DesiredPortalState,
+  'gatewayId' | 'serverNow' | 'ackedEventSeq' | 'groups' | 'grants' | 'revertExternals'
+> & { full: boolean }
+
 export function buildAuthorizeParams(
-  desired: DesiredPortalState,
+  desired: AuthorizeSet,
   keys: PortalGatewayKeys,
   nonce: string = newNonce()
 ): PortalAuthorizeParams {
@@ -101,11 +119,13 @@ export function buildAuthorizeParams(
 }
 
 export function buildVouchersParams(
-  desired: DesiredPortalState,
+  desired: Pick<DesiredPortalState, 'serverNow' | 'offlineVouchers'>,
   keys: PortalGatewayKeys,
-  nonce: string = newNonce()
+  nonce: string = newNonce(),
+  chunk: { part: number; parts: number } = { part: 1, parts: 1 }
 ): PortalVouchersParams {
   const enabled = desired.offlineVouchers !== null
+  const append = chunk.part > 1
   const vouchers = (desired.offlineVouchers ?? []).map((v) => ({
     ...v,
     sig: signOfflineVoucher(keys, v),
@@ -116,8 +136,51 @@ export function buildVouchersParams(
     serverNow: desired.serverNow,
     nonce,
     itemSignatures: vouchers.map((v) => v.sig),
+    reason: append ? 'append' : null,
   })
-  return { enabled, serverNow: desired.serverNow, nonce, keyEpoch: keys.epoch, vouchers, sig }
+  return {
+    enabled,
+    serverNow: desired.serverNow,
+    nonce,
+    keyEpoch: keys.epoch,
+    vouchers,
+    append,
+    part: chunk.part,
+    parts: chunk.parts,
+    sig,
+  }
+}
+
+/**
+ * The offline list as `portal.vouchers` messages of at most `perMessage`
+ * vouchers each (at least one message: an empty or disabled list still
+ * replaces what the router holds). Send them in order; a failed part leaves
+ * the router with the parts before it (the most important vouchers: active
+ * first, newest batches first), and the next sync sends the whole list.
+ */
+export function buildVouchersMessages(
+  desired: Pick<DesiredPortalState, 'serverNow' | 'offlineVouchers'>,
+  keys: PortalGatewayKeys,
+  perMessage: number = VOUCHERS_PER_MESSAGE
+): PortalVouchersParams[] {
+  const list = desired.offlineVouchers
+  if (list === null || list.length <= perMessage) return [buildVouchersParams(desired, keys)]
+  const parts = Math.ceil(list.length / perMessage)
+  const out: PortalVouchersParams[] = []
+  for (let i = 0; i < parts; i++) {
+    out.push(
+      buildVouchersParams(
+        {
+          serverNow: desired.serverNow,
+          offlineVouchers: list.slice(i * perMessage, (i + 1) * perMessage),
+        },
+        keys,
+        newNonce(),
+        { part: i + 1, parts }
+      )
+    )
+  }
+  return out
 }
 
 export function buildDeauthorizeParams(

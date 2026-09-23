@@ -11,6 +11,7 @@ import {
   bindInsertedGrantIds,
   buildAuthorizeParams,
   buildDeauthorizeParams,
+  buildVouchersMessages,
   buildVouchersParams,
 } from '#services/portal/messages'
 import type { DesiredPortalState } from '#services/portal/reconcile'
@@ -79,6 +80,7 @@ function desired(patch: Partial<DesiredPortalState> = {}): DesiredPortalState {
         timeUsedSeconds: 0,
         bytesUsed: 0,
         revision: 1,
+        firstUsedAt: null,
       },
     ],
     ...patch,
@@ -175,6 +177,50 @@ test.group('portal messages', () => {
         [42, null],
         [77, 'o1'],
       ]
+    )
+  })
+
+  test('a long offline list goes out in parts; later parts append', ({ assert }) => {
+    const [v] = desired().offlineVouchers!
+    const list = Array.from({ length: 5 }, (_, i) => ({
+      ...v,
+      voucherId: 100 + i,
+      groupKey: `v:${100 + i}`,
+    }))
+    const messages = buildVouchersMessages(
+      { serverNow: 1_790_000_000_000, offlineVouchers: list },
+      keys,
+      2
+    )
+    assert.deepEqual(
+      messages.map((m) => [m.part, m.parts, m.append, m.vouchers.length]),
+      [
+        [1, 3, false, 2],
+        [2, 3, true, 2],
+        [3, 3, true, 1],
+      ]
+    )
+    for (const m of messages) {
+      assert.equal(
+        m.sig,
+        signEnvelope(keys, {
+          kind: 'vouchers',
+          full: true,
+          serverNow: m.serverNow,
+          nonce: m.nonce,
+          itemSignatures: m.vouchers.map((x) => x.sig),
+          reason: m.append ? 'append' : null,
+        })
+      )
+    }
+    // Distinct nonces: the router remembers them.
+    assert.equal(new Set(messages.map((m) => m.nonce)).size, 3)
+    // Short and disabled lists stay one replacing message.
+    assert.lengthOf(buildVouchersMessages(desired(), keys, 2), 1)
+    const off = buildVouchersMessages(desired({ offlineVouchers: null }), keys, 2)
+    assert.deepEqual(
+      off.map((m) => [m.enabled, m.append, m.part, m.parts]),
+      [[false, false, 1, 1]]
     )
   })
 })

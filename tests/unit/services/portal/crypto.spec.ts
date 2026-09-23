@@ -72,6 +72,7 @@ function voucher(keys = deriveGatewayKeys(APP_KEY, 7, 1)): WireOfflineVoucher {
     timeUsedSeconds: 0,
     bytesUsed: 0,
     revision: 1,
+    firstUsedAt: null,
   }
 }
 
@@ -135,11 +136,15 @@ test.group('portal crypto: pinned vectors', () => {
   test('offline voucher record', ({ assert }) => {
     assert.equal(
       canonicalOfflineVoucher(keys, voucher(keys)),
-      'perch-portal-voucher-v1\n7\n1\n17\n0026473bc23eeae443961e14eb2db086f0870607cedb8ea0225eca9106112af6\n3\nv:17\nactive_time\nfirst_use\n7200\n\n5000\n1000\n2\n1791000000000\n\n0\n0\n1'
+      'perch-portal-voucher-v1\n7\n1\n17\n0026473bc23eeae443961e14eb2db086f0870607cedb8ea0225eca9106112af6\n3\nv:17\nactive_time\nfirst_use\n7200\n\n5000\n1000\n2\n1791000000000\n\n0\n0\n1\n'
     )
     assert.equal(
       signOfflineVoucher(keys, voucher(keys)),
-      '8_FWs60NXD4EoTssIGvOlJPTWKhemRFJSiNjoYKjVz8'
+      'fF58SkU0g5C47axcdZN2dLM0sGtvRKWO0ksDlD1kaY8'
+    )
+    assert.equal(
+      signOfflineVoucher(keys, { ...voucher(keys), firstUsedAt: 1790000000000 }),
+      'AMBsGy99v8xLEJ_uEq9C2LFi2cVgrIzUBYewJLuzLMo'
     )
   })
 

@@ -1081,5 +1081,6 @@ export function buildOfflineVouchers(
     timeUsedSeconds: f.usage.timeUsedSeconds,
     bytesUsed: f.usage.bytesUsed,
     revision: wv.set.revision ?? wv.v.revision,
+    firstUsedAt: f.firstUsedAt,
   }))
 }

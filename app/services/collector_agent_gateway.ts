@@ -21,6 +21,7 @@ import {
   recordAnnounce,
 } from '#services/collector_announce'
 import { recordAgentAuthFailure } from '#services/ap_agent_rate_limit'
+import { attachPortalAgent, onPortalHello, onPortalSessionClosed } from '#services/portal_agent'
 import { INSTANCE_ID_REGEX, collectorHelloValidator } from '#validators/collectors'
 import logger from '@adonisjs/core/services/logger'
 import db from '@adonisjs/lucid/services/db'
@@ -100,6 +101,8 @@ export function collectorAgentEndpoint(): AgentEndpoint<CollectorPrincipal> {
       collectorHub.onNotification('collector.push', async (collectorId, params) => {
         await handleCollectorPush(collectorId, params)
       })
+      // The guest portal (docs/gateway/portal.md section 13).
+      attachPortalAgent(collectorHub)
     },
 
     async authenticate(request, { address }) {
@@ -215,7 +218,10 @@ export function collectorAgentEndpoint(): AgentEndpoint<CollectorPrincipal> {
         clearTimeout(helloTimer)
         if (!session) return
         const wasCurrent = collectorHub.unregister(session)
-        if (wasCurrent) forgetSessionKey(session.id)
+        if (wasCurrent) {
+          forgetSessionKey(session.id)
+          onPortalSessionClosed(session.id)
+        }
         logger.info(
           { collectorId: session.id, code },
           'collector_agent_gateway: collector disconnected'
@@ -371,5 +377,18 @@ async function handleHello(
     { collectorId: row.id, lifecycle: outcome.lifecycle, address },
     'collector_agent_gateway: collector connected'
   )
-  if (outcome.lifecycle === 'adopted') void syncCollectorProtocols(row.id)
+  if (outcome.lifecycle === 'adopted') {
+    void syncCollectorProtocols(row.id)
+    // Capability tracking and the portal connect sequence (portal.md 13.2).
+    const helloParams = (frame.params ?? {}) as { portal?: unknown }
+    void onPortalHello(row.id, {
+      capabilities: hello.capabilities,
+      portal: helloParams.portal,
+    }).catch((error) =>
+      logger.error(
+        { collectorId: row.id, err: error },
+        'collector_agent_gateway: portal hello failed'
+      )
+    )
+  }
 }
