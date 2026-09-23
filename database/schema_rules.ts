@@ -73,5 +73,10 @@ export default {
     portal_outbox: {
       skipColumns: ['grant_ids'],
     },
+    // Collector socket (migration 077): the hello's portal object and the
+    // last portal.configure result.
+    portal_gateway_states: {
+      skipColumns: ['capabilities', 'router_status'],
+    },
   },
 } satisfies SchemaRules

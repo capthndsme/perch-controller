@@ -42,9 +42,6 @@ test.group('portal | portals', (group) => {
       gatewayId: world.gatewayId,
       name: 'Guest Wi-Fi',
       templateId: world.builtinTemplateId,
-      enforcement: 'opennds',
-      instance: null,
-      native: null,
       cspConnectSrc: ['http://192.168.20.5:8080', 'ws://coinbox.example.com'],
       privacyNotice: 'We keep your MAC address for 30 days.',
       methods: { voucher: true, password: true },
@@ -64,8 +61,9 @@ test.group('portal | portals', (group) => {
       portalCapable: null,
     })
     assert.deepInclude(portal.status, {
-      openNds: 'unknown',
-      fas: 'unknown',
+      state: 'unknown',
+      device: null,
+      counting: false,
       revision: 1,
       appliedRevision: null,
       delivery: 'pending',

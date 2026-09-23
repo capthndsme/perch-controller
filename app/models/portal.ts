@@ -1,17 +1,22 @@
 import { PortalSchema } from '#database/schema'
 import { jsonColumn } from '#models/json_column'
 
-export const PORTAL_ENFORCEMENTS = ['opennds', 'perch_nft'] as const
-export type PortalEnforcement = (typeof PORTAL_ENFORCEMENTS)[number]
-
 export type PortalMethods = { voucher: boolean; password: boolean }
 
-/** Last `portal.configure` result (docs/gateway/portal.md section 6). */
+/**
+ * This portal's part of the last `portal.configure` result
+ * (docs/gateway/portal.md section 13.3). Perch's own nftables enforcement
+ * (decision 27): `state` active | disabled | waiting_device | error;
+ * `unknown` before the router answered.
+ */
 export type PortalStatus = {
   revision: number
   templateSha256: string | null
-  openNds: { state: 'running' | 'stopped' | 'missing'; version: string | null }
-  fas: 'ok' | 'misconfigured'
+  state: 'active' | 'disabled' | 'waiting_device' | 'error' | 'unknown'
+  /** The device the portal is enforced on (e.g. `br-guest`). */
+  device: string | null
+  /** Per-MAC byte counting works on it. */
+  counting: boolean
   issues: string[]
   listen: string | null
   at: string

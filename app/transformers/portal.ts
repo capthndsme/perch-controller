@@ -49,17 +49,15 @@ export type PortalView = {
   name: string
   gateway: PortalGatewayRef | null
   network: PortalNetworkRef
-  enforcement: string
-  instance: string | null
   methods: { voucher: boolean; password: boolean }
   templateId: number | null
   cspConnectSrc: string[]
   privacyNotice: string | null
-  /** openNDS settings are native config, owned by the config plane: not served here yet. */
-  native: null
   status: {
-    openNds: 'running' | 'stopped' | 'missing' | 'unknown'
-    fas: 'ok' | 'misconfigured' | 'unknown'
+    /** Perch nftables enforcement on the router (decision 27); unknown before it answered. */
+    state: 'active' | 'disabled' | 'waiting_device' | 'error' | 'unknown'
+    device: string | null
+    counting: boolean
     issues: string[]
     listen: string | null
     revision: number
@@ -89,8 +87,6 @@ export function portalView(
     name: p.name,
     gateway: refs.gateway,
     network: refs.network,
-    enforcement: p.enforcement,
-    instance: p.instance,
     methods: {
       voucher: Boolean(p.methods?.voucher),
       password: Boolean(p.methods?.password),
@@ -98,10 +94,10 @@ export function portalView(
     templateId: p.templateId,
     cspConnectSrc: p.cspConnectSrc ?? [],
     privacyNotice: p.privacyNotice,
-    native: null,
     status: {
-      openNds: status?.openNds?.state ?? 'unknown',
-      fas: status?.fas ?? 'unknown',
+      state: status?.state ?? 'unknown',
+      device: status?.device ?? null,
+      counting: status?.counting ?? false,
       issues: status?.issues ?? [],
       listen: status?.listen ?? null,
       revision: p.revision,
