@@ -1,4 +1,5 @@
 import Collector from '#models/collector'
+import { gatewayForCollector, resolveGateway } from '#services/gateway_config/gateway_registry'
 import collectorHub from '#services/collector_agent_hub'
 import { sessionCapabilities } from '#services/collector_agent'
 import { getDeviceLabels } from '#services/device_labels'
@@ -45,23 +46,18 @@ const ISO = `'%Y-%m-%dT%H:%i:%sZ'`
 // ── the gateway behind `:gatewayId` ────────────────────────────────────────
 
 /**
- * `:gatewayId` is `collectors.id` of an adopted collector that reports
- * gateway stats or any observation (plan-2 section 5). Null → 404
- * `gateway_not_found`. The config plane's `gateways` table (plan 1) may later
- * carry its own ids: this is the one place that maps them.
+ * `:gatewayId` is `gateways.id` (the config plane's row, one per adopted
+ * gateway collector; `resolveGateway` in gateway_registry.ts). The mirrors
+ * are keyed by the collector the gateway is bound to, so this returns that
+ * collector: null (→ 404 `gateway_not_found`) for an unknown or detached
+ * gateway, or one whose collector is not adopted.
  */
 export async function resolveObservedGateway(gatewayId: unknown): Promise<Collector | null> {
-  const id = Number(gatewayId)
-  if (!Number.isInteger(id) || id <= 0) return null
-  const collector = await Collector.find(id)
+  const gateway = await resolveGateway(gatewayId)
+  if (!gateway || gateway.collectorId === null) return null
+  const collector = await Collector.find(gateway.collectorId)
   if (!collector || collector.lifecycle !== 'adopted') return null
-  if (collector.lastStatus?.gateway) return collector
-  const rows = rawRows<{ n: number }>(
-    await db.rawQuery('SELECT 1 AS n FROM gateway_observations WHERE collector_id = ? LIMIT 1', [
-      id,
-    ])
-  )
-  return rows.length > 0 ? collector : null
+  return collector
 }
 
 // ── parts ──────────────────────────────────────────────────────────────────
@@ -662,8 +658,8 @@ export async function readWireguard(collectorId: number) {
 
 // ── overview ───────────────────────────────────────────────────────────────
 
-/** GET /gateways/:gatewayId/observation */
-export async function readObservationOverview(collector: Collector) {
+/** GET /gateways/:gatewayId/observation (`gatewayId` = `gateways.id`). */
+export async function readObservationOverview(collector: Collector, gatewayId: number) {
   const parts = await readParts(collector.id)
   const session = collectorHub.session(collector.id)
   const system = parts.get('system')?.payload ? normalizeSystem(parts.get('system')!.payload) : null
@@ -677,7 +673,8 @@ export async function readObservationOverview(collector: Collector) {
     return out
   }
   return {
-    gatewayId: collector.id,
+    gatewayId,
+    collectorId: collector.id,
     name: collector.name,
     online: session !== null,
     secure: session?.secure ?? null,
@@ -707,7 +704,8 @@ export async function readObservationOverview(collector: Collector) {
 
 /**
  * GET /devices/:mac/network: what the gateway knows of one device. The
- * gateway is the adopted collector that listed the MAC most recently.
+ * gateway is the adopted collector that listed the MAC most recently;
+ * `gatewayId` is its `gateways.id` (null without a gateway row).
  * `reservation`, `dnsName` and `wanBlocked` belong to the config plane and
  * read null until it exists.
  */
@@ -728,6 +726,7 @@ export async function readDeviceNetwork(mac: string) {
   if (!row) {
     return {
       gatewayId: null,
+      collectorId: null,
       lease: null,
       reservation: null,
       dnsName: null,
@@ -750,8 +749,10 @@ export async function readDeviceNetwork(mac: string) {
   const lease = truthy(row.dhcpPresent)
     ? (leasesOf(row, device).find((l) => l.family === 4) ?? null)
     : null
+  const gateway = await gatewayForCollector(Number(row.collectorId))
   return {
-    gatewayId: Number(row.collectorId),
+    gatewayId: gateway?.id ?? null,
+    collectorId: Number(row.collectorId),
     lease,
     reservation: null,
     dnsName: null,

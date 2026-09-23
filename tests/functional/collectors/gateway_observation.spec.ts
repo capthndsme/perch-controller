@@ -232,6 +232,17 @@ async function seedSocketCollector(fields: Partial<Collector> = {}) {
   } as Partial<Collector>)
 }
 
+/**
+ * The config plane's gateway row for a collector (`:gatewayId` = `gateways.id`).
+ * A detached row comes first so gateway ids never equal collector ids here.
+ */
+async function seedGatewayRow(collectorId: number): Promise<{ id: number; detachedId: number }> {
+  const now = DateTime.utc().toSQL({ includeOffset: false })
+  const [detachedId] = await db.table('gateways').insert({ collector_id: null, created_at: now })
+  const [id] = await db.table('gateways').insert({ collector_id: collectorId, created_at: now })
+  return { id: Number(id), detachedId: Number(detachedId) }
+}
+
 /** POST responses are typed `unknown` by the route registry; read them loosely. */
 function body(response: { body(): unknown }): Record<string, any> {
   return response.body() as Record<string, any>
@@ -721,12 +732,11 @@ test.group('gateway observation | REST', (group) => {
   }) => {
     const { operatorToken } = await seedSetupComplete()
     const row = await seedSocketCollector()
+    const gw = await seedGatewayRow(row.id)
     await seedIdentity(row.id, C1, '192.168.10.21', 1)
     await recordGatewayObservationSerial(row.id, fullObservation())
 
-    const all = await client
-      .get(`/api/v1/gateways/${row.id}/dhcp/leases`)
-      .bearerToken(operatorToken)
+    const all = await client.get(`/api/v1/gateways/${gw.id}/dhcp/leases`).bearerToken(operatorToken)
     all.assertStatus(200)
     const data = all.body().data
     assert.isFalse(data.stale)
@@ -751,7 +761,7 @@ test.group('gateway observation | REST', (group) => {
     assert.isNull(data.leases[2].device, 'the guest client has no traffic data')
 
     const guest = await client
-      .get(`/api/v1/gateways/${row.id}/dhcp/leases?network=guest`)
+      .get(`/api/v1/gateways/${gw.id}/dhcp/leases?network=guest`)
       .bearerToken(operatorToken)
     assert.deepEqual(
       guest.body().data.leases.map((l: { mac: string }) => l.mac),
@@ -762,10 +772,11 @@ test.group('gateway observation | REST', (group) => {
   test('neighbours, interfaces, UPnP, WAN status for any user', async ({ client, assert }) => {
     const { operatorToken } = await seedSetupComplete()
     const row = await seedSocketCollector()
+    const gw = await seedGatewayRow(row.id)
     await recordGatewayObservationSerial(row.id, fullObservation())
 
     const neighborsRes = await client
-      .get(`/api/v1/gateways/${row.id}/neighbors`)
+      .get(`/api/v1/gateways/${gw.id}/neighbors`)
       .bearerToken(operatorToken)
     neighborsRes.assertStatus(200)
     const c1 = neighborsRes.body().data.neighbors.find((n: { mac: string }) => n.mac === C1)
@@ -779,14 +790,14 @@ test.group('gateway observation | REST', (group) => {
     })
 
     const ifaces = await client
-      .get(`/api/v1/gateways/${row.id}/interfaces`)
+      .get(`/api/v1/gateways/${gw.id}/interfaces`)
       .bearerToken(operatorToken)
     assert.deepEqual(
       ifaces.body().data.interfaces.map((i: { network: string }) => i.network),
       ['guest', 'lan', 'wan', 'wanb']
     )
 
-    const upnpRes = await client.get(`/api/v1/gateways/${row.id}/upnp`).bearerToken(operatorToken)
+    const upnpRes = await client.get(`/api/v1/gateways/${gw.id}/upnp`).bearerToken(operatorToken)
     upnpRes.assertStatus(200)
     assert.include(upnpRes.body().data, { enabled: true, installed: true, running: true })
     assert.deepInclude(upnpRes.body().data.mappings[0], {
@@ -800,7 +811,7 @@ test.group('gateway observation | REST', (group) => {
     })
     assert.lengthOf(upnpRes.body().data.events, 2)
 
-    const wan = await client.get(`/api/v1/gateways/${row.id}/wan-status`).bearerToken(operatorToken)
+    const wan = await client.get(`/api/v1/gateways/${gw.id}/wan-status`).bearerToken(operatorToken)
     wan.assertStatus(200)
     const w = wan.body().data
     assert.deepEqual(w.defaultRoutes, ['eth1', 'eth2'], 'lowest metric first')
@@ -829,16 +840,17 @@ test.group('gateway observation | REST', (group) => {
   }) => {
     const { adminToken, operatorToken } = await seedSetupComplete()
     const row = await seedSocketCollector()
+    const gw = await seedGatewayRow(row.id)
     await recordGatewayObservationSerial(row.id, fullObservation())
 
-    const denied = await client.get(`/api/v1/gateways/${row.id}/system`).bearerToken(operatorToken)
+    const denied = await client.get(`/api/v1/gateways/${gw.id}/system`).bearerToken(operatorToken)
     denied.assertStatus(403)
     const wgDenied = await client
-      .get(`/api/v1/gateways/${row.id}/wireguard`)
+      .get(`/api/v1/gateways/${gw.id}/wireguard`)
       .bearerToken(operatorToken)
     wgDenied.assertStatus(403)
 
-    const system = await client.get(`/api/v1/gateways/${row.id}/system`).bearerToken(adminToken)
+    const system = await client.get(`/api/v1/gateways/${gw.id}/system`).bearerToken(adminToken)
     system.assertStatus(200)
     const s = system.body().data
     assert.include(s, {
@@ -866,7 +878,7 @@ test.group('gateway observation | REST', (group) => {
     assert.equal(feature('mwan3').installed, true)
     assert.isNull(feature('sqm').installed, 'no package list: unknown')
 
-    const wg = await client.get(`/api/v1/gateways/${row.id}/wireguard`).bearerToken(adminToken)
+    const wg = await client.get(`/api/v1/gateways/${gw.id}/wireguard`).bearerToken(adminToken)
     wg.assertStatus(200)
     assert.equal(wg.body().data.interfaces[0].peers[0].endpoint, '203.0.113.50:51820')
     assert.notProperty(wg.body().data.interfaces[0], 'privateKey')
@@ -875,23 +887,30 @@ test.group('gateway observation | REST', (group) => {
   test('overview: parts, capabilities while online; 404 and 401', async ({ client, assert }) => {
     const { operatorToken } = await seedSetupComplete()
     const row = await seedSocketCollector()
+    const gw = await seedGatewayRow(row.id)
     const collector = await FakeCollector.connect()
     await collector.hello({ capabilities: ['gateway_stats', 'observe.dhcp'] })
     await collector.waitFor('agent.configure')
     await recordGatewayObservationSerial(row.id, { dhcp: dhcp() })
 
     const overview = await client
-      .get(`/api/v1/gateways/${row.id}/observation`)
+      .get(`/api/v1/gateways/${gw.id}/observation`)
       .bearerToken(operatorToken)
     overview.assertStatus(200)
     const o = overview.body().data
-    assert.include(o, { gatewayId: row.id, name: 'gateway', online: true, transport: 'agent' })
+    assert.include(o, {
+      gatewayId: gw.id,
+      collectorId: row.id,
+      name: 'gateway',
+      online: true,
+      transport: 'agent',
+    })
     assert.deepEqual(o.capabilities, ['gateway_stats', 'observe.dhcp'])
     assert.deepInclude(o.parts.dhcp.counts, { leases4: 3, rows: 4 })
     await collector.close()
 
     const offline = await client
-      .get(`/api/v1/gateways/${row.id}/observation`)
+      .get(`/api/v1/gateways/${gw.id}/observation`)
       .bearerToken(operatorToken)
     assert.isNull(offline.body().data.capabilities)
 
@@ -899,14 +918,20 @@ test.group('gateway observation | REST', (group) => {
     missing.assertStatus(404)
     assert.equal(missing.body().error, 'gateway_not_found')
 
-    // The seeded poll collector reports nothing: not a gateway.
-    const plain = await Collector.findByOrFail('name', 'localhost')
-    const notGateway = await client
-      .get(`/api/v1/gateways/${plain.id}/upnp`)
+    // A gateway row without a collector (detached), and a collector id
+    // that is not a gateway id: both 404.
+    const detached = await client
+      .get(`/api/v1/gateways/${gw.detachedId}/upnp`)
       .bearerToken(operatorToken)
-    notGateway.assertStatus(404)
+    detached.assertStatus(404)
+    const plain = await Collector.findByOrFail('name', 'localhost')
+    assert.notEqual(plain.id, gw.id)
+    await Collector.query().where('id', row.id).update({ lifecycle: 'pending' })
+    const notAdopted = await client.get(`/api/v1/gateways/${gw.id}/upnp`).bearerToken(operatorToken)
+    notAdopted.assertStatus(404)
+    await Collector.query().where('id', row.id).update({ lifecycle: 'adopted' })
 
-    const anonymous = await client.get(`/api/v1/gateways/${row.id}/dhcp/leases`)
+    const anonymous = await client.get(`/api/v1/gateways/${gw.id}/dhcp/leases`)
     anonymous.assertStatus(401)
   })
 
@@ -916,12 +941,14 @@ test.group('gateway observation | REST', (group) => {
   }) => {
     const { operatorToken } = await seedSetupComplete()
     const row = await seedSocketCollector()
+    const gw = await seedGatewayRow(row.id)
     await recordGatewayObservationSerial(row.id, fullObservation())
 
     const response = await client.get(`/api/v1/devices/${C1}/network`).bearerToken(operatorToken)
     response.assertStatus(200)
     const d = response.body().data
-    assert.equal(d.gatewayId, row.id)
+    assert.equal(d.gatewayId, gw.id)
+    assert.equal(d.collectorId, row.id)
     assert.include(d.lease, { ip: '192.168.10.21', network: 'lan', hostname: 'c1' })
     assert.isNull(d.reservation)
     assert.isNull(d.dnsName)
@@ -946,8 +973,9 @@ test.group('gateway observation | REST', (group) => {
   }) => {
     const { adminToken, operatorToken } = await seedSetupComplete()
     const row = await seedSocketCollector()
+    const gw = await seedGatewayRow(row.id)
     await recordGatewayObservationSerial(row.id, { dhcp: dhcp() })
-    const url = `/api/v1/gateways/${row.id}/observe`
+    const url = `/api/v1/gateways/${gw.id}/observe`
 
     const offline = await client.post(url).bearerToken(adminToken).json({})
     offline.assertStatus(409)
@@ -1019,6 +1047,7 @@ test.group('gateway observation | REST', (group) => {
   }) => {
     const { adminToken, operatorToken } = await seedSetupComplete()
     const row = await seedSocketCollector()
+    const gw = await seedGatewayRow(row.id)
     const archive = gzipSync(Buffer.from('etc/config/network contents'))
     const sha = createHash('sha256').update(archive).digest('hex')
     // perch-collector's answer (its CONFIG.md, "Backups").
@@ -1046,7 +1075,7 @@ test.group('gateway observation | REST', (group) => {
     })
     await collector.hello({ capabilities: ['gateway_stats', 'gateway.backup'] })
     await collector.waitFor('agent.configure')
-    const url = `/api/v1/gateways/${row.id}/backups`
+    const url = `/api/v1/gateways/${gw.id}/backups`
 
     const denied = await client.post(url).bearerToken(operatorToken).json({})
     denied.assertStatus(403)

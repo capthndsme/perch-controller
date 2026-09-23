@@ -1748,7 +1748,10 @@ export type GatewayPartInfo = {
 
 /** `GET /api/v1/gateways/:gatewayId/observation` */
 export type GatewayObservationOverview = {
+  /** `gateways.id` (the config plane's row). */
   gatewayId: number
+  /** The Gateway agent's collector. */
+  collectorId: number
   name: string
   /** A socket session is open (a polled collector reads false). */
   online: boolean
@@ -1971,8 +1974,10 @@ export type CreateGatewayBackupPayload = { note?: string; redact?: boolean }
 
 /** `GET /api/v1/devices/:mac/network`: what the gateway knows of one device. */
 export type DeviceNetworkResponse = {
-  /** null = no gateway lists this MAC. */
+  /** `gateways.id` of the gateway that lists this MAC; null = none (or no gateway row yet). */
   gatewayId: number | null
+  /** The collector of that gateway; null = no gateway lists this MAC (older controllers omit it). */
+  collectorId?: number | null
   lease: DhcpLease | null
   /** Config plane; null for now. */
   reservation: null

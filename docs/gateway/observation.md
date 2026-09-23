@@ -190,11 +190,12 @@ All under `/api/v1`, `{ data }` envelope, errors `{ error, message }`. *user* = 
 requirePasswordChange` (any signed-in user); *admin* adds `requireAdmin` (403
 `admin_required`). Anonymous = 401.
 
-`:gatewayId` = `collectors.id` of an **adopted** collector that reports gateway stats
-(`last_status.gateway`) or has any observation (plan 2 section 5). Otherwise 404
-`gateway_not_found`. The mapping lives in one function, `resolveObservedGateway`
-(`gateway_observation_read.ts`), so the config plane's `gateways` ids (plan 1) can take
-over there. `stale` = the part's last report is older than 1800 s (three full-resend
+`:gatewayId` = `gateways.id`, the config plane's row of the gateway (config-plane.md; one per
+adopted gateway collector, created on its hello or by `GET /gateways`), bound to an **adopted**
+collector. Otherwise (unknown, detached, collector not adopted) 404 `gateway_not_found`. The
+mirrors stay keyed by the collector; the mapping lives in one function,
+`resolveObservedGateway` (`gateway_observation_read.ts`, over `resolveGateway`). Until the
+integration (2026-09-23) `:gatewayId` was the collector id. `stale` = the part's last report is older than 1800 s (three full-resend
 intervals).
 
 ```ts
@@ -224,7 +225,7 @@ type BackupSummary = { id: number; createdAt: string; size: number; sha256: stri
 
 | Method + path | Auth | Request | Response `data` |
 |---|---|---|---|
-| GET `/gateways/:gatewayId/observation` | user | – | `{ gatewayId, name, online, secure: boolean \| null, transport, capabilities: string[] \| null, hostname, release, flowOffloadingHw, parts: { [kind]: { observedAt, changedAt, secondsSinceReport, stale, counts: object \| null } } }` |
+| GET `/gateways/:gatewayId/observation` | user | – | `{ gatewayId, collectorId, name, online, secure: boolean \| null, transport, capabilities: string[] \| null, hostname, release, flowOffloadingHw, parts: { [kind]: { observedAt, changedAt, secondsSinceReport, stale, counts: object \| null } } }` |
 | GET `/gateways/:gatewayId/dhcp/leases` | user | `?network=` | `{ observedAt: string \| null, stale: boolean, leases: DhcpLease[] }` (IPv4 by address, then one IPv6 entry per address; static hosts without a lease are not leases) |
 | GET `/gateways/:gatewayId/neighbors` | user | `?network=` | `{ observedAt, stale, neighbors: GatewayNeighbor[] }` |
 | GET `/gateways/:gatewayId/interfaces` | user | – | `{ observedAt, stale, interfaces: ObservedInterface[] }` |
@@ -236,7 +237,7 @@ type BackupSummary = { id: number; createdAt: string; size: number; sha256: stri
 | GET `/gateways/:gatewayId/backups` | admin | – | `BackupSummary[]`, newest first (never the content) |
 | POST `/gateways/:gatewayId/backups` | admin | `{ note?: string (≤ 200), redact?: boolean (default true) }` | 201 `BackupSummary`. Errors: 409 `gateway_offline`, 409 `gateway_capability_missing {capability: 'gateway.backup'}`, 409 `backup_redaction_required`, 504 `agent_timeout`, 502 `backup_failed`, 413 `backup_too_large` |
 | GET `/gateways/:gatewayId/backups/:backupId/download` | admin | – | `application/gzip` attachment (`X-Content-SHA256`), the one non-`{data}` route. 404 `backup_not_found` |
-| GET `/devices/:mac/network` | user | – | `{ gatewayId: number \| null, lease: DhcpLease \| null, reservation: null, dnsName: null, wanBlocked: null /* config plane */, neighbor: { ipv4, ipv6, ifname, reachable, seenAt } \| null, network: string \| null, seenAt: string \| null, upnp: UpnpMapping[] }`. 400 `invalid_mac` |
+| GET `/devices/:mac/network` | user | – | `{ gatewayId: number \| null /* gateways.id */, collectorId: number \| null, lease: DhcpLease \| null, reservation: null, dnsName: null, wanBlocked: null /* config plane */, neighbor: { ipv4, ipv6, ifname, reachable, seenAt } \| null, network: string \| null, seenAt: string \| null, upnp: UpnpMapping[] }`. 400 `invalid_mac` |
 | GET / PATCH `/settings/gateway-observations` | admin | PATCH any subset of section 6's keys | `{ settings, defaults, limits }`; 422 out of range |
 | GET / PATCH `/settings/presence` | admin | adds `gatewaySightings: 0 \| 1` | unchanged shape, one more key |
 

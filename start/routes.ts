@@ -448,7 +448,7 @@ router
     /**
      * The gateway's observed runtime state (docs/gateway/observation.md
      * section 7; plan-2-native-sync.md section 5, read part). `:gatewayId` is
-     * the collector id of the Gateway agent. Leases, neighbours, interfaces,
+     * `gateways.id` (the config plane's row of the Gateway agent). Leases, neighbours, interfaces,
      * UPnP and WAN status are for any signed-in user; the rest is admin-only.
      */
     router

@@ -46,8 +46,8 @@ type Ctx = HttpContext
 
 /**
  * The observation channel's REST API (docs/gateway/observation.md section 7;
- * plan-2-native-sync.md section 5, read-only parts). `:gatewayId` is the
- * collector id of an adopted collector on the router (404
+ * plan-2-native-sync.md section 5, read-only parts). `:gatewayId` is
+ * `gateways.id`, bound to an adopted collector on the router (404
  * `gateway_not_found` otherwise). Reads of runtime state are open to every
  * signed-in user; the system view, WireGuard, backups, on-demand refresh and
  * the retention settings are admin-only (the routes add `requireAdmin`).
@@ -80,7 +80,7 @@ export default class GatewayObservationsController {
   async overview(ctx: Ctx) {
     const collector = await this.gateway(ctx)
     if (!collector) return
-    return ctx.serialize(await readObservationOverview(collector))
+    return ctx.serialize(await readObservationOverview(collector, Number(ctx.params.gatewayId)))
   }
 
   /** GET /gateways/:gatewayId/dhcp/leases?network= */

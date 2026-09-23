@@ -17,6 +17,9 @@ export function DeviceNetworkCard({ mac }: { mac: string | undefined }) {
   const query = useDeviceNetwork(mac)
   const data = query.data
   const gatewayLink = data?.gatewayId ? `/gateway?gateway=${data.gatewayId}` : '/gateway'
+  // The gateway knows the device (its collector listed it); `gatewayId` is
+  // the config plane's row and may be missing while `collectorId` is set.
+  const known = data ? (data.collectorId ?? data.gatewayId) !== null : false
   // A controller without the observation channel answers 404 on this route.
   const unsupported = query.error instanceof ApiError && query.error.status === 404
 
@@ -24,10 +27,10 @@ export function DeviceNetworkCard({ mac }: { mac: string | undefined }) {
     <Panel
       title="Network"
       description={
-        data && data.gatewayId !== null ? 'What the gateway reports for this device.' : undefined
+        known ? 'What the gateway reports for this device.' : undefined
       }
       actions={
-        data && data.gatewayId !== null ? (
+        known && data?.gatewayId ? (
           <Link to={gatewayLink} className="text-xs text-brand hover:underline">
             Gateway →
           </Link>
@@ -40,7 +43,7 @@ export function DeviceNetworkCard({ mac }: { mac: string | undefined }) {
         <p className="text-xs text-muted-foreground">This controller does not read the gateway's state yet.</p>
       ) : query.error ? (
         <p className="text-xs text-destructive">{query.error.message}</p>
-      ) : !data || data.gatewayId === null ? (
+      ) : !data || !known ? (
         <p className="text-xs text-muted-foreground">
           The gateway lists no lease or neighbour entry for this device. A device on a network the
           router does not serve, or a Gateway agent that does not report leases and neighbours yet,

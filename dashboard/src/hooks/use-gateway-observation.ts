@@ -14,7 +14,6 @@ import type {
   GatewaySystem,
   GatewayUpnpResponse,
   GatewayWanStatus,
-  RouterResponse,
 } from '@/types/api'
 
 /**
@@ -40,19 +39,25 @@ function retryUnlessDefinite(count: number, error: Error): boolean {
   return count < 2
 }
 
+/** The parts of a `GET /api/v1/gateways` row the default pick needs. */
+type GatewayListRow = { id: number; collectorId: number | null; online: boolean }
+
 /**
  * The gateway the Gateway page shows when the URL names none. `:gatewayId`
- * is today the collector id of the Gateway agent, and `/api/v1/router`'s
- * `source` names that collector (docs/gateway/observation.md §7). When the
- * config plane's `gateways` table takes over the ids, the `select` below is
- * the one line to switch (to its own list endpoint). `null` = no collector
- * reports gateway stats.
+ * is `gateways.id`, the config plane's row (docs/gateway/observation.md §7):
+ * the first gateway bound to a collector, an online one first. `null` = no
+ * gateway yet (no adopted collector on a router).
  */
+export function pickDefaultGateway(rows: GatewayListRow[]): number | null {
+  const bound = rows.filter((g) => g.collectorId !== null)
+  return (bound.find((g) => g.online) ?? bound[0])?.id ?? null
+}
+
 export function useDefaultGatewayId() {
   return useQuery({
     queryKey: [...gatewayQueryKey, 'default-id'] as const,
-    queryFn: () => apiFetch<RouterResponse>('/api/v1/router?range=5m&resolution=1m'),
-    select: (router): number | null => router.source?.collectorId ?? null,
+    queryFn: () => apiFetch<GatewayListRow[]>('/api/v1/gateways'),
+    select: pickDefaultGateway,
     staleTime: 60_000,
     refetchInterval: 60_000,
   })
