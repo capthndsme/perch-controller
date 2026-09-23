@@ -136,7 +136,10 @@ controller drives it. Code: `gateway_plane.ts` (socket hooks),
   The agent needs mode `managed` on the session before an apply or install.
 - **Notifications.** `gateway.config.changed`: a router edit is read and merged
   with its author (`{kind, user?, via}`); `origin: "perch"` only moves the
-  observed hashes. `gateway.config.result`: an apply's outcome (6.3), acked,
+  observed hashes, and only when it is what its apply wrote (the apply is
+  still open, or every changed config's hash is the one the apply's outcome
+  recorded); otherwise the configs are read (a collector that mislabelled a
+  router edit as its own echo). `gateway.config.result`: an apply's outcome (6.3), acked,
   then a read. `gateway.pair.state`: 4.4. Every accepted `collector.push` is
   the agent half of a confirm (6.2).
 
