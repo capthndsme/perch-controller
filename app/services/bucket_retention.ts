@@ -16,7 +16,8 @@ import { DateTime } from 'luxon'
  *   peer hourly      hour_start     90 d   (PEER_HOURLY_RETENTION_DAYS)
  *   service hourly   hour_start     365 d  (SERVICE_HOURLY_RETENTION_DAYS)
  *   service 5m       slot_start     14 d   (SERVICE_5M_RETENTION_DAYS)
- *   router samples   recorded_at    90 d   (ROUTER_SAMPLE_RETENTION_DAYS)
+ *   router samples   recorded_at    90 d   (ROUTER_SAMPLE_RETENTION_DAYS; also the
+ *                                          per-network gateway samples)
  *   destination hourly hour_start   365 d  (DESTINATION_HOURLY_RETENTION_DAYS)
  *   5-minute         slot_start     730 d  (BUCKET_5M_RETENTION_DAYS)
  *   hourly           hour_start     730 d  (BUCKET_HOURLY_RETENTION_DAYS)
@@ -278,7 +279,11 @@ export async function pruneOldBuckets(
       timeColumn: 'slot_start',
       cutoff: cutoffFor(service5mDays),
     },
-    { tables: ['router_samples'], timeColumn: 'recorded_at', cutoff: cutoffFor(routerSampleDays) },
+    {
+      tables: ['router_samples', 'gateway_network_samples'],
+      timeColumn: 'recorded_at',
+      cutoff: cutoffFor(routerSampleDays),
+    },
     {
       tables: ['device_destination_buckets_hourly'],
       timeColumn: 'hour_start',
