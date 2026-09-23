@@ -64,6 +64,10 @@ export const pages = {
   settingsGatewayConfig: lazyPage(() =>
     import('@/pages/gateway-config-settings-page').then((m) => m.GatewayConfigSettingsPage),
   ),
+  gatewayDhcp: lazyPage(() => import('@/pages/gateway-dhcp-page').then((m) => m.GatewayDhcpPage)),
+  gatewayDns: lazyPage(() => import('@/pages/gateway-dns-page').then((m) => m.GatewayDnsPage)),
+  gatewayRouting: lazyPage(() => import('@/pages/gateway-routing-page').then((m) => m.GatewayRoutingPage)),
+  gatewaySystem: lazyPage(() => import('@/pages/gateway-system-page').then((m) => m.GatewaySystemPage)),
   notFound: lazyPage(() => import('@/pages/not-found-page').then((m) => m.NotFoundPage)),
 }
 

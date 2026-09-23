@@ -1928,9 +1928,10 @@ export type GatewayFeatureDecision = 'observe' | 'manage' | 'never' | 'later'
 export type GatewaySystem = {
   observedAt: string | null
   hostname: string | null
-  timezone: null
-  zonename: null
-  ntp: null
+  /** From the config plane's `system` section (null without one). */
+  timezone: string | null
+  zonename: string | null
+  ntp: { enabled: boolean; server: boolean; servers: string[] } | null
   board: string | null
   boardName: string | null
   model: string | null
@@ -1946,6 +1947,8 @@ export type GatewaySystem = {
   packages: { name: string; version: string }[] | null
   upgradable: { name: string; version: string }[] | null
   features: { name: string; installed: boolean | null; decision: GatewayFeatureDecision }[]
+  /** The config plane's `system` section (docs/gateway/native-sync.md); null when the gateway has none. */
+  config?: import('@/types/gateway-native').SystemConfig | null
 }
 
 export type GatewayObservePartResult = 'written' | 'unchanged' | 'invalid' | 'failed'
