@@ -222,6 +222,7 @@ export type GrantInsert = GrantFields & {
 export type GrantUpdate = { id: number; set: Partial<GrantFields> }
 
 export type SessionOpen = {
+  op: 'open'
   grant: GrantRef
   portalId: number
   mac: string
@@ -233,6 +234,7 @@ export type SessionOpen = {
 }
 
 export type SessionClose = {
+  op: 'close'
   grant: GrantRef
   endedAt: number
   endReason: string
@@ -248,11 +250,14 @@ export type VoucherUpdate = {
     firstUsedAt: number
     startsAt: number
     expiresAt: number
-    timeUsedSeconds: number
-    bytesUsed: number
     exhaustedAt: number
     revision: number
   }>
+  /**
+   * Usage to add to the stored totals (the counter deltas of its grants).
+   * Deltas, not absolute values, so a concurrent writer never loses counts.
+   */
+  add: { timeUsedSeconds: number; bytesUsed: number }
 }
 
 export type PortalEventType =
@@ -278,8 +283,8 @@ export type PortalDbChanges = {
   ackedEventSeq: number
   grantInserts: GrantInsert[]
   grantUpdates: GrantUpdate[]
-  sessionOpens: SessionOpen[]
-  sessionCloses: SessionClose[]
+  /** Session rows to open and close, in the order they happened. */
+  sessions: Array<SessionOpen | SessionClose>
   voucherUpdates: VoucherUpdate[]
   events: PortalEventRow[]
 }
@@ -331,6 +336,7 @@ type WorkGrant = {
 export type WorkVoucher = {
   v: ServerVoucher
   set: VoucherUpdate['set']
+  add: VoucherUpdate['add']
 }
 
 function grantFieldsOf(w: WorkGrant): GrantFields {
@@ -389,8 +395,7 @@ export function reconcile(
   const enabledPortals = new Set(server.portals.filter((p) => p.enabled).map((p) => p.id))
 
   const events: PortalEventRow[] = []
-  const sessionOpens: SessionOpen[] = []
-  const sessionCloses: SessionClose[] = []
+  const sessions: Array<SessionOpen | SessionClose> = []
   const grantInserts = new Map<string, WorkGrant>()
 
   // --- index ------------------------------------------------------------
@@ -420,7 +425,9 @@ export function reconcile(
     if (g.localRef) byLocalRef.set(g.localRef, w)
   }
   const vouchers = new Map<number, WorkVoucher>()
-  for (const v of server.vouchers) vouchers.set(v.id, { v, set: {} })
+  for (const v of server.vouchers) {
+    vouchers.set(v.id, { v, set: {}, add: { timeUsedSeconds: 0, bytesUsed: 0 } })
+  }
   const groups = new Map<string, ServerGroup>()
   for (const g of server.groups) groups.set(g.groupKey, g)
 
@@ -437,7 +444,8 @@ export function reconcile(
     if (!t.changed) return true
     w.lc = t.grant
     if (t.session === 'open') {
-      sessionOpens.push({
+      sessions.push({
+        op: 'open',
         grant: w.ref,
         portalId: w.portalId,
         mac: w.mac,
@@ -447,7 +455,8 @@ export function reconcile(
         startBytesDown: w.usage.bytesDown,
       })
     } else if (t.session === 'close') {
-      sessionCloses.push({
+      sessions.push({
+        op: 'close',
         grant: w.ref,
         endedAt: at,
         endReason: sessionReason ?? t.grant.endReason ?? t.grant.state,
@@ -479,10 +488,8 @@ export function reconcile(
     if (w.voucherId !== null) {
       const wv = vouchers.get(w.voucherId)
       if (wv) {
-        const bytes = (wv.set.bytesUsed ?? wv.v.usage.bytesUsed) + delta.dUp + delta.dDown
-        const time = (wv.set.timeUsedSeconds ?? wv.v.usage.timeUsedSeconds) + delta.dTime
-        if (delta.dUp + delta.dDown > 0) wv.set.bytesUsed = bytes
-        if (delta.dTime > 0) wv.set.timeUsedSeconds = time
+        wv.add.bytesUsed += delta.dUp + delta.dDown
+        wv.add.timeUsedSeconds += delta.dTime
       }
     }
     return delta
@@ -716,7 +723,8 @@ export function reconcile(
     if (w.lc.delivery === 'applied') {
       w.lc = { ...w.lc, delivery: 'pending' }
       if (w.lc.state === 'active') {
-        sessionCloses.push({
+        sessions.push({
+          op: 'close',
           grant: w.ref,
           endedAt: now,
           endReason: 'lost',
@@ -745,8 +753,8 @@ export function reconcile(
     exhaustedAt: wv.set.exhaustedAt ?? wv.v.exhaustedAt,
     limits: { ...wv.v.limits, expiresAt: wv.set.expiresAt ?? wv.v.limits.expiresAt },
     usage: {
-      timeUsedSeconds: wv.set.timeUsedSeconds ?? wv.v.usage.timeUsedSeconds,
-      bytesUsed: wv.set.bytesUsed ?? wv.v.usage.bytesUsed,
+      timeUsedSeconds: wv.v.usage.timeUsedSeconds + wv.add.timeUsedSeconds,
+      bytesUsed: wv.v.usage.bytesUsed + wv.add.bytesUsed,
     },
   })
 
@@ -962,7 +970,9 @@ export function reconcile(
   }))
   const voucherUpdates: VoucherUpdate[] = []
   for (const wv of vouchers.values()) {
-    if (Object.keys(wv.set).length) voucherUpdates.push({ id: wv.v.id, set: wv.set })
+    if (Object.keys(wv.set).length || wv.add.bytesUsed || wv.add.timeUsedSeconds) {
+      voucherUpdates.push({ id: wv.v.id, set: wv.set, add: wv.add })
+    }
   }
 
   const ackedEventSeq = journalReset
@@ -974,8 +984,7 @@ export function reconcile(
       ackedEventSeq,
       grantInserts: inserts,
       grantUpdates,
-      sessionOpens,
-      sessionCloses,
+      sessions,
       voucherUpdates,
       events,
     },

@@ -123,6 +123,18 @@ function update(changes: PortalDbChanges, id: number) {
   return changes.grantUpdates.find((u) => u.id === id)?.set
 }
 
+function opens(c: PortalDbChanges) {
+  return c.sessions.filter((x) => x.op === 'open')
+}
+
+function closes(c: PortalDbChanges) {
+  return c.sessions.filter((x) => x.op === 'close')
+}
+
+function voucherAdd(changes: PortalDbChanges, id: number) {
+  return changes.voucherUpdates.find((u) => u.id === id)?.add
+}
+
 function voucherSet(changes: PortalDbChanges, id: number) {
   return changes.voucherUpdates.find((u) => u.id === id)?.set
 }
@@ -185,8 +197,8 @@ function applyChanges(s: ServerPortalState, c: PortalDbChanges, nextId = 1000): 
       startsAt: set.startsAt ?? v.startsAt,
       revision: set.revision ?? v.revision,
       usage: {
-        timeUsedSeconds: set.timeUsedSeconds ?? v.usage.timeUsedSeconds,
-        bytesUsed: set.bytesUsed ?? v.usage.bytesUsed,
+        timeUsedSeconds: v.usage.timeUsedSeconds + (voucherAdd(c, v.id)?.timeUsedSeconds ?? 0),
+        bytesUsed: v.usage.bytesUsed + (voucherAdd(c, v.id)?.bytesUsed ?? 0),
       },
       limits: { ...v.limits, expiresAt: set.expiresAt ?? v.limits.expiresAt },
     }
@@ -198,8 +210,7 @@ function isEmpty(c: PortalDbChanges) {
   return (
     c.grantInserts.length +
       c.grantUpdates.length +
-      c.sessionOpens.length +
-      c.sessionCloses.length +
+      c.sessions.length +
       c.voucherUpdates.length +
       c.events.length ===
     0
@@ -289,13 +300,13 @@ test.group('reconcile: delivery and usage', () => {
       ip: '192.168.20.10',
       lastSeenAt: NOW - 1000,
     })
-    assert.lengthOf(dbChanges.sessionOpens, 1)
-    assert.deepInclude(dbChanges.sessionOpens[0], {
+    assert.lengthOf(opens(dbChanges), 1)
+    assert.deepInclude(opens(dbChanges)[0], {
       grant: { id: 1 },
       startedAt: NOW,
       startBytesDown: 500,
     })
-    assert.equal(voucherSet(dbChanges, 10)?.bytesUsed, 500)
+    assert.deepEqual(voucherAdd(dbChanges, 10), { bytesUsed: 500, timeUsedSeconds: 0 })
   })
 
   test('an older revision on the router is not an acknowledgement', ({ assert }) => {
@@ -329,10 +340,8 @@ test.group('reconcile: delivery and usage', () => {
     )
     assert.deepInclude(update(dbChanges, 1), { bytesDown: 1500, timeUsedSeconds: 60 })
     assert.isUndefined(update(dbChanges, 1)?.bytesUp)
-    assert.deepEqual(voucherSet(dbChanges, 10), {
-      bytesUsed: 9000 + 500 + 100,
-      timeUsedSeconds: 510,
-    })
+    assert.deepEqual(voucherAdd(dbChanges, 10), { bytesUsed: 500 + 100, timeUsedSeconds: 10 })
+    assert.deepEqual(voucherSet(dbChanges, 10), {})
     // base = total − live grants (1: 100+1500 / 60 s, 2: 110 / 0 s)
     assert.deepInclude(desired.groups[0], {
       baseBytesUsed: 9600 - 1600 - 110,
@@ -344,7 +353,7 @@ test.group('reconcile: delivery and usage', () => {
     const s = state({ grants: [grant(1)], vouchers: [voucher(10)] })
     const { dbChanges } = reconcile(s, report({ grants: [usage(1, { state: 'paused' })] }), false)
     assert.equal(update(dbChanges, 1)?.state, 'paused')
-    assert.deepInclude(dbChanges.sessionCloses[0], {
+    assert.deepInclude(closes(dbChanges)[0], {
       grant: { id: 1 },
       endReason: 'idle',
       endedAt: NOW,
@@ -355,7 +364,7 @@ test.group('reconcile: delivery and usage', () => {
     const s = state({ grants: [grant(1, { bytesDown: 7 })], vouchers: [voucher(10)] })
     const { dbChanges, desired } = reconcile(s, report(), false)
     assert.deepInclude(update(dbChanges, 1), { delivery: 'pending', state: 'pending_device' })
-    assert.deepInclude(dbChanges.sessionCloses[0], { endReason: 'lost', bytesDown: 7 })
+    assert.deepInclude(closes(dbChanges)[0], { endReason: 'lost', bytesDown: 7 })
     assert.equal(dbChanges.events[0].type, 'grant_lost')
     assert.lengthOf(desired.grants, 1)
   })
@@ -470,8 +479,8 @@ test.group('reconcile: journal', () => {
     assert.equal(dbChanges.ackedEventSeq, 13)
     // paused then resumed: one close, one open, still active
     assert.isUndefined(update(dbChanges, 1)?.state)
-    assert.deepInclude(dbChanges.sessionCloses[0], { endedAt: NOW - 200, endReason: 'idle' })
-    assert.deepInclude(dbChanges.sessionOpens[0], { startedAt: NOW - 100 })
+    assert.deepInclude(closes(dbChanges)[0], { endedAt: NOW - 200, endReason: 'idle' })
+    assert.deepInclude(opens(dbChanges)[0], { startedAt: NOW - 100 })
   })
 
   test('grant_ended is a fact: reason, counters, no push', ({ assert }) => {
@@ -504,8 +513,8 @@ test.group('reconcile: journal', () => {
       endedAt: NOW - 5000,
       bytesDown: 900,
     })
-    assert.deepInclude(dbChanges.sessionCloses[0], { endReason: 'router_deauth', bytesDown: 900 })
-    assert.equal(voucherSet(dbChanges, 10)?.bytesUsed, 900)
+    assert.deepInclude(closes(dbChanges)[0], { endReason: 'router_deauth', bytesDown: 900 })
+    assert.equal(voucherAdd(dbChanges, 10)?.bytesUsed, 800)
     // router_deauth ends the grant, not the voucher
     assert.isUndefined(voucherSet(dbChanges, 10)?.exhaustedAt)
     assert.lengthOf(desired.grants, 0)
@@ -663,7 +672,8 @@ test.group('reconcile: server accounting', () => {
     )
     assert.equal(update(dbChanges, 1)?.endReason, 'quota')
     assert.equal(update(dbChanges, 2)?.endReason, 'quota')
-    assert.deepInclude(voucherSet(dbChanges, 10), { bytesUsed: 1050, exhaustedAt: NOW })
+    assert.deepInclude(voucherSet(dbChanges, 10), { exhaustedAt: NOW })
+    assert.equal(voucherAdd(dbChanges, 10)?.bytesUsed, 250)
   })
 
   test('active time: the charged budget ends it', ({ assert }) => {
@@ -939,10 +949,10 @@ test.group('reconcile: offline redemption (decision 20)', () => {
       firstUsedAt: NOW - 60_000,
       startsAt: NOW - 60_000,
       expiresAt: NOW - 60_000 + 7200_000,
-      bytesUsed: 1000,
       revision: 2,
     })
-    assert.deepInclude(dbChanges.sessionOpens[0], { grant: { localRef: 'o7-1' } })
+    assert.equal(voucherAdd(dbChanges, 12)?.bytesUsed, 1000)
+    assert.deepInclude(opens(dbChanges)[0], { grant: { localRef: 'o7-1' } })
     assert.deepEqual(desired.grants, [
       {
         grantId: null,
