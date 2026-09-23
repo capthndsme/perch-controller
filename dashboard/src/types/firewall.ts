@@ -1,13 +1,20 @@
 /**
  * The firewall of a managed gateway (metrics-be docs/gateway/firewall.md
  * section 6; the write envelope and the apply are config-plane.md sections
- * 10.1 and 10.3). Kept apart from `types/api.ts` and the config plane's own
- * types so parallel branches merge cleanly: the few config plane shapes used
- * here (`SectionStatus`, `Issue`, `GatewayApply`, the gateway row) are the
- * subsets this page reads.
+ * 10.1 and 10.3). The config plane shapes used here (section status, the
+ * apply, the gateway row) are the config plane's own types from
+ * `types/gateway-config.ts`, narrowed to what this page reads.
  */
 
-export type FwSectionStatus = 'in_sync' | 'ahead' | 'pending' | 'conflict' | 'drift' | 'reverting'
+import type {
+  ApplyError,
+  ApplyState,
+  Gateway,
+  GatewayApply,
+  SectionStatus,
+} from '@/types/gateway-config'
+
+export type FwSectionStatus = SectionStatus
 
 export type FirewallSync = {
   perchId: string
@@ -154,30 +161,15 @@ export type FirewallOverview = {
   issues: FirewallIssue[]
 }
 
-export type FwApplyState =
-  | 'queued'
-  | 'sending'
-  | 'pending_confirm'
-  | 'confirmed'
-  | 'rolled_back'
-  | 'failed'
-  | 'expired'
-  | 'cancelled'
+export type FwApplyState = ApplyState
 
 /** The subset of the config plane's `GatewayApply` this page shows. */
-export type FwApply = {
-  id: string
-  kind: 'apply' | 'revert' | 'adopt' | 'package'
-  state: FwApplyState
-  confirmMode: 'agent' | 'admin_and_agent'
-  confirmTimeoutSeconds: number
-  protected: boolean
-  deadlineAt: string | null
-  perchIds: string[]
-  configs: string[]
-}
+export type FwApply = Pick<
+  GatewayApply,
+  'id' | 'kind' | 'state' | 'confirmMode' | 'confirmTimeoutSeconds' | 'protected' | 'deadlineAt' | 'perchIds' | 'configs'
+>
 
-export type FwApplyError = { error: string; message: string }
+export type FwApplyError = NonNullable<ApplyError>
 
 /** The envelope every firewall write answers with. */
 export type FirewallWrite<T> = {
@@ -279,21 +271,7 @@ export type WanAccessWrite = {
 }
 
 /** The subset of the config plane's gateway row the firewall page needs. */
-export type FwGateway = {
-  id: number
-  name: string
-  online: boolean
-  mode: 'off' | 'observe' | 'managed'
-  authoritative: boolean
-  writable: boolean
-  writeBlockedReason:
-    | 'offline'
-    | 'no_capability'
-    | 'router_access'
-    | 'insecure_transport'
-    | 'not_paired'
-    | 'sign_key_unknown'
-    | null
+export type FwGateway = Pick<Gateway, 'id' | 'name' | 'online' | 'mode' | 'authoritative' | 'writable' | 'writeBlockedReason'> & {
   pendingApply: FwApply | null
-  managementPath?: { network: string | null; device: string; controllerAddress?: string } | null
+  managementPath?: Gateway['managementPath']
 }
