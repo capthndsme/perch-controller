@@ -178,7 +178,10 @@ export class FakeCollector {
     try {
       this.#reply({ id: call.id, result: await handler(call.params) })
     } catch (error) {
-      this.#reply({ id: call.id, error: { code: -32603, message: String(error) } })
+      // A handler may throw `rpcError(code, message)` to answer with that code.
+      const code = (error as { rpcCode?: number }).rpcCode ?? -32603
+      const text = error instanceof Error ? error.message : String(error)
+      this.#reply({ id: call.id, error: { code, message: text } })
     }
   }
 
@@ -186,6 +189,11 @@ export class FakeCollector {
     if (this.socket.readyState !== WebSocket.OPEN) return
     this.socket.send(JSON.stringify({ jsonrpc: '2.0', ...payload }))
   }
+}
+
+/** An error a fake handler throws to answer with JSON-RPC `code`. */
+export function rpcError(code: number, message: string): Error {
+  return Object.assign(new Error(message), { rpcCode: code })
 }
 
 /** Tries a handshake and reports the HTTP refusal instead of throwing. */

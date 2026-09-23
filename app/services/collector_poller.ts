@@ -19,6 +19,7 @@ import {
 import { upsertDeviceIdentities, type DeviceIdentityInput } from '#services/device_identity_writer'
 import { recordDhcpObservationSerial } from '#services/gateway_dhcp'
 import { recordAgentPorts } from '#services/infra_ports'
+import { recordQosReport } from '#services/qos_live'
 import { upsertProtocolCategories, type ProtocolCategoryInput } from '#services/protocol_categories'
 import { recordGatewaySample, type GatewayReport } from '#services/router_metrics'
 import logger from '@adonisjs/core/services/logger'
@@ -109,6 +110,8 @@ type SummaryResponse = {
   gateway?: GatewayReport | null
   /** Runtime observations of the router (docs/collector-agent.md 4.3); `dhcp` today. */
   observe?: { dhcp?: unknown } | null
+  /** Traffic shaping state of the router (docs/gateway/qos.md section 7), when it shapes. */
+  qos?: unknown
 }
 
 /**
@@ -128,6 +131,12 @@ export type CollectorSnapshot = {
    * traffic (which may be coalesced away), a poll right after the ingest.
    */
   observe?: { dhcp?: unknown } | null
+  /**
+   * The router's `qos` section (docs/gateway/qos.md section 7). Absent = not
+   * reported (never "no shaping"); recorded by `qos_live.ts` after the
+   * gateway sample, non-fatal.
+   */
+  qos?: unknown
 }
 
 /**
@@ -446,6 +455,7 @@ export async function fetchCollectorSnapshot(
     devices: devicesResp.devices,
     gateway: summary.gateway ?? null,
     observe: summary.observe ?? null,
+    ...(summary.qos !== undefined ? { qos: summary.qos } : {}),
   }
 }
 
@@ -811,6 +821,20 @@ async function ingest(
         )
       }
       if (gateway) gateway = withPortsReported(gateway, Array.isArray(ports))
+    }
+
+    // Traffic shaping (docs/gateway/qos.md section 7): live counters, quota
+    // usage, resends on a new epoch. Non-fatal like the ports; absent = not
+    // reported.
+    if (snapshot.qos !== undefined && snapshot.qos !== null) {
+      try {
+        await recordQosReport(collector.id, snapshot.qos, now)
+      } catch (qosErr) {
+        logger.warn(
+          { collectorId: collector.id, error: String(qosErr) },
+          'collector_poller: qos report failed (non-fatal)'
+        )
+      }
     }
 
     collector.lastSeenAt = now

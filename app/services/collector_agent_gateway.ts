@@ -21,6 +21,8 @@ import {
   recordAnnounce,
 } from '#services/collector_announce'
 import { recordAgentAuthFailure } from '#services/ap_agent_rate_limit'
+import { handleQosEvent } from '#services/qos_live'
+import { onCollectorConnected } from '#services/qos_sync'
 import { INSTANCE_ID_REGEX, collectorHelloValidator } from '#validators/collectors'
 import logger from '@adonisjs/core/services/logger'
 import db from '@adonisjs/lucid/services/db'
@@ -97,6 +99,10 @@ export function collectorAgentEndpoint(): AgentEndpoint<CollectorPrincipal> {
     },
 
     attach() {
+      // Traffic shaping events (docs/gateway/qos.md section 7.3).
+      collectorHub.onNotification('qos.event', async (collectorId, params) => {
+        await handleQosEvent(collectorId, params)
+      })
       collectorHub.onNotification('collector.push', async (collectorId, params) => {
         await handleCollectorPush(collectorId, params)
       })
@@ -372,4 +378,6 @@ async function handleHello(
     'collector_agent_gateway: collector connected'
   )
   if (outcome.lifecycle === 'adopted') void syncCollectorProtocols(row.id)
+  // A managed gateway's shaper: probe it and send the device entries.
+  if (outcome.lifecycle === 'adopted') void onCollectorConnected(row.id)
 }

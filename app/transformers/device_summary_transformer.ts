@@ -1,6 +1,7 @@
 import type { CollectorStatus } from '#models/collector'
 import type { DeviceAttachment } from '#services/infra_topology'
 import type { DevicePresence } from '#services/wifi_presence'
+import type { DeviceShaping } from '#services/qos_views'
 import { BaseTransformer } from '@adonisjs/core/transformers'
 
 /**
@@ -82,6 +83,11 @@ export type DeviceSummaryRow = {
   presence?: DevicePresence
   /** Where the network map puts the device, read per request; null when no node carries it. */
   attachment?: DeviceAttachment | null
+  /**
+   * How a managed gateway shapes the device (docs/gateway/qos.md section 7),
+   * read per request; null when no gateway caps it.
+   */
+  shaping?: DeviceShaping | null
 }
 
 /**
@@ -183,6 +189,7 @@ export default class DeviceSummaryTransformer extends BaseTransformer<DeviceSumm
       wifi: this.wifi(),
       presence: this.resource.presence ?? { status: 'disconnected', via: 'lan', lastSeenAt: null },
       attachment: this.resource.attachment ?? null,
+      shaping: this.resource.shaping ?? null,
     }
   }
 

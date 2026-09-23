@@ -38,6 +38,7 @@ import {
   type TrafficResolution,
   type TrafficScope,
 } from '#validators/devices'
+import { pickShaping, shapingByMac } from '#services/qos_views'
 import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import { DateTime } from 'luxon'
@@ -386,19 +387,23 @@ export default class DevicesController {
     // they are read per request, never from the cached rows above (a past
     // window's rows are kept for hours).
     const macs = rows.map((row) => row.mac)
-    const [wifiByMac, trafficSeenAt, hostnameMatches, labelsByMac, placements] = await Promise.all([
-      queryLatestWifiContext(macs, thresholds),
-      queryTrafficSeenAt(macs),
-      getHostnameMatches(
-        rows.map((row) => ({
-          mac: row.mac,
-          primaryIp: row.primaryIp,
-          ips: parseIps(row.ips),
-        }))
-      ),
-      getDeviceLabels(macs),
-      loadDeviceAttachments(macs, thresholds),
-    ])
+    const [wifiByMac, trafficSeenAt, hostnameMatches, labelsByMac, placements, shaping] =
+      await Promise.all([
+        queryLatestWifiContext(macs, thresholds),
+        queryTrafficSeenAt(macs),
+        getHostnameMatches(
+          rows.map((row) => ({
+            mac: row.mac,
+            primaryIp: row.primaryIp,
+            ips: parseIps(row.ips),
+          }))
+        ),
+        getDeviceLabels(macs),
+        loadDeviceAttachments(macs, thresholds),
+        // Traffic shaping, read per request (plan cached briefly): one query
+        // when there is no managed gateway.
+        shapingByMac(macs),
+      ])
     const rowsWithHostnames = rows.map((row, i) => {
       const match = hostnameMatches[i]
       const wifi = wifiByMac.get(row.mac.toLowerCase())
@@ -439,6 +444,7 @@ export default class DevicesController {
         wifiHeardAt: wifi ? new Date(wifi.heardAt).toISOString() : null,
         presence,
         attachment: placement?.attachment ?? null,
+        shaping: pickShaping(shaping.get(row.mac.toLowerCase()), row.collectorId),
       } satisfies DeviceSummaryRow
     })
 
@@ -895,6 +901,37 @@ export default class DevicesController {
     const placement = placements.get(mac)
     const presence = await queryDevicePresence(params.mac, thresholds, placement?.onMap ?? null)
     return serialize({ ...presence, attachment: placement?.attachment ?? null })
+  }
+
+  /**
+   * GET /api/v1/devices/:mac/shaping?collectorId=
+   *
+   * How a managed gateway shapes the device (docs/gateway/qos.md section 7,
+   * plan 3 `DeviceShaping`), or `data: null` when none does. Readable by any
+   * signed-in user (owner decision 16). Unlike `/presence` a MAC the
+   * collectors never saw is not a 404: a cap can be set before the device
+   * shows up.
+   */
+  async shaping({ params, request, response, serialize }: HttpContext) {
+    const mac = normalizeMac(params.mac)
+    if (!mac) {
+      return response.unprocessableEntity({
+        error: 'invalid_mac',
+        message: `${params.mac} is not a MAC address.`,
+      })
+    }
+    const collectorId = Number(request.qs().collectorId)
+    const byMac = await shapingByMac([mac])
+    const views = byMac.get(mac)
+    const pick = pickShaping(
+      Number.isInteger(collectorId) && collectorId > 0
+        ? views?.filter((v) => v.collectorId === collectorId)
+        : views,
+      Number.isInteger(collectorId) ? collectorId : null
+    )
+    // The serializer refuses a null item; the envelope is the same.
+    if (pick === null) return response.ok({ data: null })
+    return serialize({ ...pick })
   }
 }
 
