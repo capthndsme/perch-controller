@@ -11,8 +11,10 @@ import {
   authoritativeFor,
   pauseHeld,
   pauseTransition,
+  reclaimPending,
   reconcileRead,
   sectionsDueForRevert,
+  settleReclaim,
   type ReconcileReadInput,
   type SectionState,
 } from '#services/gateway_config/sync_engine'
@@ -401,8 +403,63 @@ test.group('config plane | router-side pauses and one-way domains', () => {
       newPerchId: () => 'x',
     })
     assert.equal(reclaimed.upserts[0].desired!.options.enabled, '1')
-    assert.isNull(reclaimed.upserts[0].ownership)
+    // Owned from the draft on, marked until the apply carrying it ends.
+    assert.isFalse(pauseHeld(reclaimed.upserts[0].ownership, 'enabled'))
+    assert.isTrue(reclaimPending(reclaimed.upserts[0].ownership, 'enabled'))
     assert.equal(reclaimed.upserts[0].status, 'ahead')
+  })
+
+  test('a reclaim that does not land goes back to the router; one that lands is Perch’s', ({
+    assert,
+  }) => {
+    const held = row({
+      perchId: 'g1',
+      base: content({ ...GLOBALS, enabled: '0' }),
+      router: content({ ...GLOBALS, enabled: '0' }),
+      desired: content({ ...GLOBALS, enabled: '0' }),
+      ownership: perchQosOwnership({ type: 'globals', options: { ...GLOBALS, enabled: '0' } }),
+    })
+    const pending = planSectionEdits({
+      rows: [held],
+      edits: [
+        {
+          op: 'put',
+          perchId: 'g1',
+          config: 'perch-qos',
+          type: 'globals',
+          options: { ...GLOBALS, revision: '4', enabled: '1' },
+          reclaim: ['enabled'],
+        },
+      ],
+      domain: 'perch_qos',
+      registry,
+      authoritative: false,
+      newPerchId: () => 'x',
+    }).upserts[0]
+    const domain = registry.get('perch_qos')
+
+    // Rolled back / failed: the router still has it paused.
+    const back = settleReclaim(pending, domain, false)
+    assert.deepEqual(back.ownership, held.ownership)
+    assert.isTrue(pauseHeld(back.ownership, 'enabled'))
+    assert.isFalse(reclaimPending(back.ownership, 'enabled'))
+    assert.equal(back.desired!.options.enabled, '0')
+    assert.equal(back.desired!.options.revision, '4')
+
+    // Landed: the domain's full claim (the whole section for perch-qos).
+    assert.isNull(settleReclaim(pending, domain, true).ownership)
+
+    // Did not land, but the router resumed by itself meanwhile: Perch's.
+    const resumed = settleReclaim(
+      { ...pending, router: content({ ...GLOBALS, enabled: '1' }) },
+      domain,
+      false
+    )
+    assert.isNull(resumed.ownership)
+    assert.equal(resumed.desired!.options.enabled, '1')
+
+    // Rows without a pending reclaim are left alone.
+    assert.strictEqual(settleReclaim(held, domain, false), held)
   })
 
   test('a section Perch creates disabled stays Perch’s (sqm enabled 0 is not a pause)', ({

@@ -49,6 +49,7 @@ import {
   deriveStatus,
   isGone,
   resolveConflict,
+  settleReclaim,
   type ConflictResolution,
   type OptionResolution,
   type SectionState,
@@ -672,7 +673,12 @@ export async function discardDraft(
         changes.push({ perchId: s.perchId, after: null })
         continue
       }
-      const next: SectionState = { ...s, desired: cloneContent(s.base) }
+      // A pending reclaim (decision 15) goes back to the router with its draft.
+      const next: SectionState = settleReclaim(
+        { ...s, desired: cloneContent(s.base) },
+        domainRegistry().get(s.domain),
+        false
+      )
       next.status = deriveStatus(next, { authoritative: authoritativeOf(gateway), rules })
       changes.push({ perchId: s.perchId, after: next })
     }

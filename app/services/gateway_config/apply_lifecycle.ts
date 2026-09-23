@@ -45,6 +45,7 @@ import {
   nextApplyState,
   authoritativeFor,
   sectionsDueForRevert,
+  settleReclaim,
   type ApplyEvent,
   type SectionState,
 } from '#services/gateway_config/sync_engine'
@@ -521,6 +522,7 @@ export async function sendApply(gateway: Gateway, apply: GatewayApply): Promise<
       applyId: Number(apply.id),
       detail: { applyId: apply.applyKey, reason: apply.outcome.reason },
     })
+    await handBackReclaims(gateway, apply.perchIds)
     await refreshSyncState(gateway)
     return
   }
@@ -667,13 +669,35 @@ async function failApply(
     ...(Object.keys(data).length > 0 ? { data: boundedData(data) } : {}),
   }
   await apply.save()
-  await markRows(gateway, apply.perchIds, (s) => restoreStatus(gateway, s))
+  await markRows(gateway, apply.perchIds, (s) => restoreStatus(gateway, reclaimSettled(s, false)))
   await recordGatewayEvent(gateway.id, 'failed', {
     applyId: Number(apply.id),
     detail: { applyId: apply.applyKey, error, message: message.slice(0, 500) },
   })
   await afterFailure(gateway, apply)
   await refreshSyncState(gateway)
+}
+
+/**
+ * A row's pending reclaim (decision 15: an admin resumed over a router
+ * pause) once its apply ended: Perch's for good when it landed, else back
+ * to the router while the router still has it paused.
+ */
+function reclaimSettled(s: SectionState, landed: boolean): SectionState {
+  return settleReclaim(s, domainRegistry().get(s.domain), landed)
+}
+
+/** Hands back the pending reclaims of an apply that ended before it was sent. */
+async function handBackReclaims(gateway: Gateway, perchIds: string[] | null): Promise<void> {
+  if (!perchIds || perchIds.length === 0) return
+  const loaded = await loadSections(gateway.id)
+  const changes: Array<{ perchId: string; after: SectionState | null }> = []
+  for (const s of loaded.states) {
+    if (!perchIds.includes(s.perchId)) continue
+    const next = reclaimSettled(s, false)
+    if (next !== s) changes.push({ perchId: s.perchId, after: restoreStatus(gateway, next) })
+  }
+  if (changes.length > 0) await saveStates(gateway.id, loaded.rows, changes)
 }
 
 /** Status of a row whose job ended without a change on the router. */
@@ -851,7 +875,7 @@ async function finishConfirmed(
     if (!apply.perchIds.includes(s.perchId)) continue
     const written: SectionContent | null =
       apply.written && s.perchId in apply.written ? apply.written[s.perchId] : s.router
-    let next: SectionState | null = markConfirmed(s, written, {
+    let next: SectionState | null = markConfirmed(reclaimSettled(s, true), written, {
       authoritative: authoritativeRow(gateway, s.domain),
       rules: domainRegistry().rules(s.domain),
     })
@@ -977,6 +1001,7 @@ export async function revertApply(
         applyId: Number(apply.id),
         detail: { applyId: apply.applyKey },
       })
+      await handBackReclaims(gateway, apply.perchIds)
       await refreshSyncState(gateway)
       return apply
     }
@@ -1060,7 +1085,7 @@ async function settleRolledBack(gateway: Gateway, apply: GatewayApply, result: A
   const changes: Array<{ perchId: string; after: SectionState | null }> = []
   for (const loadedState of loaded.states) {
     if (!apply.perchIds.includes(loadedState.perchId)) continue
-    const s = routerBeforeJob(apply, loadedState)
+    const s = reclaimSettled(routerBeforeJob(apply, loadedState), false)
     let discarded: SectionContent | null | undefined
     const list = result.discarded?.[s.config] ?? []
     const names = [s.name, renames.get(s.perchId) ?? `perch_${s.perchId}`]
@@ -1214,6 +1239,7 @@ async function tickGateway(gateway: Gateway, now: DateTime) {
           applyId: Number(apply.id),
           detail: { applyId: apply.applyKey },
         })
+        await handBackReclaims(gateway, apply.perchIds)
         continue
       }
       if (writeAccess(gateway, settings).writable) await sendApply(gateway, apply)
@@ -1256,7 +1282,9 @@ async function assumeRolledBack(gateway: Gateway, apply: GatewayApply, now: Date
   apply.finishedAt = now
   apply.outcome = { reason: 'confirm_timeout', assumed: true }
   await apply.save()
-  await markRows(gateway, apply.perchIds, (s) => restoreStatus(gateway, routerBeforeJob(apply, s)))
+  await markRows(gateway, apply.perchIds, (s) =>
+    restoreStatus(gateway, reclaimSettled(routerBeforeJob(apply, s), false))
+  )
   await recordGatewayEvent(gateway.id, 'rolled_back', {
     applyId: Number(apply.id),
     detail: { applyId: apply.applyKey, reason: 'confirm_timeout', assumed: true },

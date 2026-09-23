@@ -530,7 +530,8 @@ enforcement tick reverts them (config-plane.md 6.8); the first import of the fil
 installs is not drift. **Decision 15** (`routerPause` on `globals.enabled`): the router's `enabled '0'` is
 held as a pause (never drift, never reverted, every later package keeps `'0'`); the router switching it
 back releases it; `POST /qos/resume {overrideRouter: true}` (`overrideRouterPause`) sends the put with
-`reclaim: ['enabled']`, which writes `'1'`. Validation mirrors what perch-collector refuses: one globals,
+`reclaim: ['enabled']`, which writes `'1'`; when that apply rolls back or fails, the pause is the
+router's again (the next package keeps `'0'`; config-plane.md 6.8). Validation mirrors what perch-collector refuses: one globals,
 section names, whole-number rates, bucket `class` 0x02–0xff, known parent / bucket names, schedule
 windows (`<days> HH:MM-HH:MM`) and actions (unknown schedules are warnings).
 
@@ -721,8 +722,6 @@ ensureTierPolicy(i: { collectorId?; gatewayId?; key: string; name: string; share
 
 ## 9. Not built yet
 
-- A rolled-back reclaim (an admin's resume over a router pause that the router rolled back) leaves
-  the option owned by Perch again; the next package would then write `'1'`. Rare; the admin resumed.
 - The package is written once the gateway is managed (the sender's sweep); a gateway without the
   perch-qos package shows `config.error 'qos_package_missing'` until it is installed.
 - `usage.source: 'capture'` for MACs in a rest leaf; `collectors.last_status.qos` (plan 3 section 4:

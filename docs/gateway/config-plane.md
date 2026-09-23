@@ -518,7 +518,12 @@ Built with the QoS writers (task plane-writer, 2026-09-23).
   and C take the router's value, event `router_resumed`). A pause Perch wrote itself (the
   base is paused) is no hold. `planSectionEdits` keeps a held option at the router's value
   unless the put names it in `reclaim` (only an admin's explicit resume does:
-  `POST /qos/resume {overrideRouter: true}`). A section Perch creates is never held.
+  `POST /qos/resume {overrideRouter: true}`). A reclaim is marked on the ownership
+  (`reclaimed: ['enabled']`) until the apply carrying it ends (`settleReclaim`): confirmed
+  → the option is Perch's (the domain's full claim); rolled back, failed, expired or
+  cancelled, or the draft discarded → while the router still has it paused, the hold comes
+  back (ownership without the option, C at the router's value), so no later write carries
+  the resume again. A section Perch creates is never held.
 - **One-way domains.** `oneWay: true` (`perch_qos`, README 2: Perch-owned config): in
   managed mode the domain's sections are authoritative whatever the gateway's flag (router
   edits are drift, `authoritativeFor()`), and the tick reverts them after the grace delay

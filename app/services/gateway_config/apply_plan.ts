@@ -17,8 +17,10 @@ import {
 import { wireOptions } from '#services/gateway_config/secrets'
 import {
   applyControllerEdit,
+  claimedPauseOwnership,
   controllerWins,
   pauseHeld,
+  reclaimOwnership,
   type SectionState,
 } from '#services/gateway_config/sync_engine'
 import type {
@@ -528,8 +530,12 @@ export function planSectionEdits(input: EditSectionsInput): EditSectionsResult {
     let ownership = ownershipFor(row.ownership, row.desired, desired)
     if (pause && desired && desired.type === pause.type && pauseHeld(row.ownership, pause.option)) {
       if (reclaimed.has(row.perchId)) {
-        // Decision 15: the admin's explicit resume takes the option back.
-        ownership = claimedOwnership(domain!, row, desired, pause.option)
+        // Decision 15: the admin's explicit resume takes the option back,
+        // marked until its apply lands (a rollback hands it back).
+        ownership =
+          row.ownership?.kind === 'options'
+            ? reclaimOwnership(row.ownership, pause.option)
+            : claimedPauseOwnership(domain!, row, desired, pause.option)
       } else {
         // The router holds it: C keeps the router's value, or C would stay
         // "ahead" of a value no apply may write.
@@ -591,26 +597,6 @@ export function planSectionEdits(input: EditSectionsInput): EditSectionsResult {
     .filter((e): e is Extract<SectionEdit, { op: 'order' }> => e.op === 'order')
     .map((e) => ({ config: e.config, type: e.type, perchIds: [...e.perchIds] }))
   return { upserts, deleted, orders }
-}
-
-/** The domain's ownership of a section as if it were not paused (a reclaim). */
-function claimedOwnership(
-  domain: NonNullable<ReturnType<DomainRegistry['get']>>,
-  row: SectionState,
-  desired: SectionContent,
-  option: string
-): SectionState['ownership'] {
-  const options = { ...desired.options }
-  delete options[option]
-  const claimed = domain.ownership?.({
-    name: row.name,
-    type: desired.type,
-    anonymous: row.anonymous,
-    index: 0,
-    options,
-    config: row.config,
-  })
-  return claimed && claimed.kind === 'options' ? claimed : null
 }
 
 function keepRouterValue(
