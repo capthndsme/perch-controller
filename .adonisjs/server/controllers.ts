@@ -15,6 +15,7 @@ export const controllers = {
   Infra: () => import('#controllers/infra_controller'),
   NewAccount: () => import('#controllers/new_account_controller'),
   Profile: () => import('#controllers/profile_controller'),
+  Qos: () => import('#controllers/qos_controller'),
   Router: () => import('#controllers/router_controller'),
   Services: () => import('#controllers/services_controller'),
   Settings: () => import('#controllers/settings_controller'),

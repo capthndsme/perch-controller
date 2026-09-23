@@ -48,6 +48,7 @@ const ApJoinTokensController = () => import('#controllers/ap_join_tokens_control
 const AgentSocketsController = () => import('#controllers/agent_sockets_controller')
 const InfraController = () => import('#controllers/infra_controller')
 const VersionController = () => import('#controllers/version_controller')
+const QosController = () => import('#controllers/qos_controller')
 
 /**
  * Setup wizard endpoints. INTENTIONALLY outside the requireSetupComplete
@@ -160,6 +161,8 @@ router
         router.get('hostname-enrichment/sources', [SettingsController, 'hostnameEnrichmentSources'])
         router.get('presence', [SettingsController, 'presence']).as('presence')
         router.patch('presence', [SettingsController, 'updatePresence']).as('updatePresence')
+        router.get('qos', [SettingsController, 'qos']).as('qos')
+        router.patch('qos', [SettingsController, 'updateQos']).as('updateQos')
         router.get('charts', [SettingsController, 'charts']).as('charts')
         router.patch('charts', [SettingsController, 'updateCharts']).as('updateCharts')
         router.get('wifi-sources', [SettingsController, 'wifiSources'])
@@ -398,6 +401,36 @@ router
       })
       .prefix('infra')
       .as('infra')
+      .use([middleware.auth(), middleware.requirePasswordChange()])
+
+    /**
+     * Traffic shaping (docs/gateway/qos.md section 5). Every signed-in user
+     * reads it (owner decision 16: operators see every cap, bucket and
+     * schedule); writes are admin-only and go through the config plane.
+     */
+    router
+      .group(() => {
+        router.get('wan-queues', [QosController, 'wanQueues']).as('wanQueues.index')
+        router.get('policies', [QosController, 'policies']).as('policies.index')
+        router.get('groups', [QosController, 'groups']).as('groups.index')
+        router.get('assignments', [QosController, 'assignments']).as('assignments.index')
+        router.get('schedules', [QosController, 'schedules']).as('schedules.index')
+        router
+          .group(() => {
+            router.post('wan-queues', [QosController, 'createWanQueue']).as('wanQueues.store')
+            router
+              .patch('wan-queues/:id', [QosController, 'updateWanQueue'])
+              .as('wanQueues.update')
+              .where('id', router.matchers.number())
+            router
+              .delete('wan-queues/:id', [QosController, 'destroyWanQueue'])
+              .as('wanQueues.destroy')
+              .where('id', router.matchers.number())
+          })
+          .use(middleware.requireAdmin())
+      })
+      .prefix('qos')
+      .as('qos')
       .use([middleware.auth(), middleware.requirePasswordChange()])
   })
   .prefix('/api/v1')
