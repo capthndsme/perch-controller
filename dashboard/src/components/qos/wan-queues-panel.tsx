@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
-import { ArrowDown, ArrowUp, PencilSimple, Plus, WarningOctagon } from '@phosphor-icons/react'
-import { CheckRow, RateBar, RefusalAlert, StatePill } from '@/components/qos/qos-bits'
+import { Link } from 'react-router-dom'
+import { ArrowDown, ArrowUp, LockKey, PencilSimple, Plus, Trash, WarningOctagon } from '@phosphor-icons/react'
+import { CheckRow, LoudBanner, RateBar, RefusalAlert, StatePill, ToneDot } from '@/components/qos/qos-bits'
 import { NativeSelect } from '@/components/infra/native-select'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -21,6 +22,7 @@ import type { QosWrites } from '@/hooks/use-qos'
 import { apiErrorCode } from '@/lib/api'
 import {
   describeApply,
+  describeWriteApply,
   formatKbit,
   formatWhen,
   kbitToInput,
@@ -32,12 +34,34 @@ import {
   WAN_FLAG_TEXT,
 } from '@/lib/qos'
 import { cn } from '@/lib/utils'
-import type { QosDiffserv, QosLinkLayer, QosQdiscStats, QosWanFairness, QosWanQueue, QosWanQueueInput, QosWarning } from '@/types/api'
+import type {
+  QosApplyError,
+  QosDiffserv,
+  QosLinkLayer,
+  QosPlaneConfigAccess,
+  QosQdiscStats,
+  QosWanFairness,
+  QosWanQueue,
+  QosWanQueueInput,
+  QosWarning,
+} from '@/types/api'
+import type { GatewayApply } from '@/types/gateway-config'
 
 type Props = {
   queues: QosWanQueue[]
   canEdit: boolean
   writes: QosWrites
+  /** `GET /qos` `planeAccess.sqm`: whether the router lets Perch write its sqm config. */
+  access?: QosPlaneConfigAccess | null
+}
+
+/** What a write answered, for the dialog's result view. */
+type WriteOutcome = {
+  kind: 'saved' | 'removed'
+  queue: QosWanQueue | null
+  warnings: QosWarning[]
+  apply: GatewayApply | null
+  applyError: QosApplyError | null
 }
 
 /**
@@ -45,12 +69,16 @@ type Props = {
  * On the live gateway the imported queue is kept as it is (owner decision 14):
  * rows show where a queue came from, and editing is a deliberate step.
  */
-export function WanQueuesPanel({ queues, canEdit, writes }: Props) {
+export function WanQueuesPanel({ queues, canEdit: canEditRole, writes, access }: Props) {
+  // A router that does not allow `sqm` refuses every queue write (409 config_not_allowed).
+  const blocked = access?.allowed === false
+  const canEdit = canEditRole && !blocked
   const [editing, setEditing] = useState<QosWanQueue | 'new' | null>(null)
   const [reenable, setReenable] = useState<QosWanQueue | null>(null)
   const closeEditor = () => {
     writes.createWanQueue.reset()
     writes.updateWanQueue.reset()
+    writes.deleteWanQueue.reset()
     setEditing(null)
   }
   const closeReenable = () => {
@@ -70,6 +98,18 @@ export function WanQueuesPanel({ queues, canEdit, writes }: Props) {
         ) : null
       }
     >
+      {blocked ? (
+        <div className="mb-3">
+          <LoudBanner
+            tone="warning"
+            icon={<LockKey className="size-5" />}
+            title="The router does not let Perch write its WAN queues"
+          >
+            <p>{access?.hint ?? 'Allow the sqm config on the router.'}</p>
+            <p>Until then the queues below are shown as the router has them, and cannot be changed from here.</p>
+          </LoudBanner>
+        </div>
+      ) : null}
       {queues.length === 0 ? (
         <EmptyState
           title="No WAN queue"
@@ -109,18 +149,27 @@ function WanQueueCard({
 }) {
   const sync = describeApply(q.sync, 'wan')
   const preset = matchLinkPreset(q)
-  const flags = q.flags.filter((f) => f !== 'router_paused')
+  const removing = q.flags.includes('pending_delete')
+  const flags = q.flags.filter((f) => f !== 'router_paused' && f !== 'pending_delete')
+  const progress = removing ? null : syncSentence(q)
   return (
     <article
       className={cn(
         'rounded-lg border p-3',
         q.pausedByRouter ? 'border-status-critical/60 bg-status-critical/5' : 'border-border',
+        removing && 'border-dashed opacity-80',
       )}
+      aria-busy={removing || undefined}
     >
       <header className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 space-y-1">
           <p className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
             <span className="font-mono">{q.device}</span>
+            {removing ? (
+              <Badge variant="outline" className="rounded border-status-warning/60">
+                Removing…
+              </Badge>
+            ) : null}
             {q.pausedByRouter ? (
               <Badge variant="destructive" className="rounded">
                 <WarningOctagon weight="fill" /> Off on the router
@@ -137,17 +186,36 @@ function WanQueueCard({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <StatePill tone={sync.tone} title={sync.detail ?? undefined}>{sync.label}</StatePill>
-          {canEdit && q.pausedByRouter ? (
+          {removing ? null : (
+            <StatePill tone={sync.tone} title={sync.detail ?? undefined}>{sync.label}</StatePill>
+          )}
+          {canEdit && q.pausedByRouter && !removing ? (
             <Button size="xs" variant="outline" onClick={onReenable}>Turn back on…</Button>
           ) : null}
-          {canEdit ? (
+          {canEdit && !removing ? (
             <Button size="xs" variant="ghost" onClick={onEdit} aria-label={`Edit the queue on ${q.device}`}>
               <PencilSimple /> Edit
             </Button>
           ) : null}
         </div>
       </header>
+
+      {removing ? (
+        <p role="status" className="mt-2 flex items-start gap-1.5 text-[12px] text-status-warning">
+          <ToneDot tone="warning" className="mt-1" />
+          <span>
+            Being removed: the router still runs this queue and drops it once the change is confirmed
+            {q.sync.state === 'rolled_back' || q.sync.state === 'failed'
+              ? `. The last try did not stick (${describeApply(q.sync, 'wan').label.toLowerCase()}); Perch tries again.`
+              : '.'}
+          </span>
+        </p>
+      ) : progress ? (
+        <p role="status" className="mt-2 flex items-start gap-1.5 text-[12px]">
+          <ToneDot tone={sync.tone} className="mt-1" />
+          <span className={sync.tone === 'critical' ? 'text-status-critical' : 'text-muted-foreground'}>{progress}</span>
+        </p>
+      ) : null}
 
       <div className="mt-3 grid grid-cols-2 gap-3">
         <LiveDirection
@@ -196,6 +264,27 @@ function WanQueueCard({
       ) : null}
     </article>
   )
+}
+
+/** The queue's apply state as a sentence, when it is not simply in sync. */
+function syncSentence(q: QosWanQueue): string | null {
+  const d = describeApply(q.sync, 'wan')
+  switch (q.sync.state) {
+    case 'in_sync':
+      return null
+    case 'queued':
+      return d.detail ?? 'Saved; waiting to be sent to the router.'
+    case 'applying':
+      return 'Applying on the router: it runs the change and confirms it within its window.'
+    case 'offline':
+      return 'Saved; the gateway is offline, the change goes out when it is back.'
+    case 'drift':
+      return 'Changed on the router since Perch last wrote it.'
+    case 'conflict':
+      return 'The router and Perch both changed it: settle the conflict on the gateway config page.'
+    default:
+      return d.detail ? `${d.label}. ${d.detail}` : d.label
+  }
 }
 
 function LiveDirection({
@@ -273,8 +362,10 @@ function initialForm(q: QosWanQueue | null): FormState {
 function WanQueueDialog({ queue, writes, onClose }: { queue: QosWanQueue | null; writes: QosWrites; onClose: () => void }) {
   const [form, setForm] = useState<FormState>(() => initialForm(queue))
   const [error, setError] = useState<string | null>(null)
-  const [warnings, setWarnings] = useState<QosWarning[]>([])
+  const [outcome, setOutcome] = useState<WriteOutcome | null>(null)
+  const [confirmRemove, setConfirmRemove] = useState(false)
   const mutation = queue ? writes.updateWanQueue : writes.createWanQueue
+  const remove = writes.deleteWanQueue
   const qdiscEditable = !queue || queue.qdisc === 'cake' || queue.qdisc === 'fq_codel'
   const isCake = form.qdisc === 'cake'
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }))
@@ -335,7 +426,7 @@ function WanQueueDialog({ queue, writes, onClose }: { queue: QosWanQueue | null;
   function onSubmit(event: FormEvent) {
     event.preventDefault()
     setError(null)
-    setWarnings([])
+    setOutcome(null)
     const body = build()
     if (!body) return
     if (queue && Object.keys(body).length === 0) {
@@ -346,9 +437,10 @@ function WanQueueDialog({ queue, writes, onClose }: { queue: QosWanQueue | null;
       setError('Name the WAN device (for example wan or pppoe-wan).')
       return
     }
-    const done = (result: { warnings: QosWarning[] }) => {
-      if (result.warnings.length) setWarnings(result.warnings)
-      else onClose()
+    const done = (result: { queue: QosWanQueue; warnings: QosWarning[]; apply: GatewayApply | null; applyError: QosApplyError | null }) => {
+      // Close only when there is nothing to say: no warning, and the router already runs it.
+      if (!result.warnings.length && !result.applyError && (!result.apply || result.apply.state === 'confirmed')) onClose()
+      else setOutcome({ kind: 'saved', ...result })
     }
     if (queue) writes.updateWanQueue.mutate({ id: queue.id, patch: body }, { onSuccess: done })
     else writes.createWanQueue.mutate(body, { onSuccess: done })
@@ -365,6 +457,11 @@ function WanQueueDialog({ queue, writes, onClose }: { queue: QosWanQueue | null;
               the modem.
             </DialogDescription>
           </DialogHeader>
+          {outcome ? (
+            <DialogBody>
+              <WriteOutcomeView outcome={outcome} gatewayId={queue?.gatewayId ?? outcome.queue?.gatewayId ?? null} />
+            </DialogBody>
+          ) : (
           <DialogBody>
             {queue?.origin === 'router' ? (
               <p className="rounded-md border border-status-warning/40 bg-status-warning/10 px-3 py-2 text-xs">
@@ -503,30 +600,56 @@ function WanQueueDialog({ queue, writes, onClose }: { queue: QosWanQueue | null;
             ) : mutation.error ? (
               <RefusalAlert error={mutation.error} />
             ) : null}
-            {warnings.length ? (
-              <div className="space-y-1 rounded-md border border-status-warning/40 bg-status-warning/10 px-3 py-2 text-xs">
-                <p className="font-medium">Saved, with warnings</p>
-                <ul className="list-disc pl-4">
-                  {warnings.map((w, i) => (
-                    <li key={i}>
-                      {w.code === 'qos_rate_far_below_observed'
-                        ? `The ${w.field === 'uploadKbit' ? 'upload' : 'download'} rate is under half of what this line carried (${formatKbit(w.observedKbit ?? null)} at the 95th percentile this week).`
-                        : (w.message ?? w.code)}
-                    </li>
-                  ))}
-                </ul>
+            {queue && confirmRemove ? (
+              <div role="alert" className="space-y-1 rounded-md border border-status-critical/40 bg-status-critical/10 px-3 py-2 text-xs">
+                <p className="font-medium">Remove the queue on {queue.device}?</p>
+                <p className="text-muted-foreground">
+                  The line then runs without smart queueing: expect lag for everyone when it is full. The router drops the
+                  queue once the change is confirmed; until then it is listed as being removed.
+                </p>
               </div>
             ) : null}
+            {remove.error ? <RefusalAlert error={remove.error} /> : null}
           </DialogBody>
+          )}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              {warnings.length ? 'Close' : 'Cancel'}
-            </Button>
-            {!warnings.length ? (
-              <Button type="submit" disabled={mutation.isPending}>
-                {mutation.isPending ? 'Saving…' : queue ? 'Save queue' : 'Add queue'}
+            {outcome ? (
+              <Button type="button" onClick={onClose}>
+                Close
               </Button>
-            ) : null}
+            ) : confirmRemove && queue ? (
+              <>
+                <Button type="button" variant="outline" onClick={() => setConfirmRemove(false)}>
+                  Keep it
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={remove.isPending}
+                  onClick={() =>
+                    remove.mutate(queue.id, {
+                      onSuccess: (r) => setOutcome({ kind: 'removed', warnings: [], ...r }),
+                    })
+                  }
+                >
+                  {remove.isPending ? 'Removing…' : 'Remove it'}
+                </Button>
+              </>
+            ) : (
+              <>
+                {queue ? (
+                  <Button type="button" variant="ghost" className="mr-auto text-destructive" onClick={() => setConfirmRemove(true)}>
+                    <Trash /> Remove…
+                  </Button>
+                ) : null}
+                <Button type="button" variant="outline" onClick={onClose}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={mutation.isPending}>
+                  {mutation.isPending ? 'Saving…' : queue ? 'Save queue' : 'Add queue'}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </form>
       </DialogContent>
@@ -536,6 +659,7 @@ function WanQueueDialog({ queue, writes, onClose }: { queue: QosWanQueue | null;
 
 function ReenableDialog({ queue, writes, onClose }: { queue: QosWanQueue; writes: QosWrites; onClose: () => void }) {
   const m = writes.updateWanQueue
+  const [outcome, setOutcome] = useState<WriteOutcome | null>(null)
   const queued = apiErrorCode(m.error) === 'plane_unavailable'
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -558,6 +682,7 @@ function ReenableDialog({ queue, writes, onClose }: { queue: QosWanQueue; writes
           ) : m.error ? (
             <RefusalAlert error={m.error} />
           ) : null}
+          {outcome ? <WriteOutcomeView outcome={outcome} gatewayId={queue.gatewayId} /> : null}
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
@@ -566,12 +691,77 @@ function ReenableDialog({ queue, writes, onClose }: { queue: QosWanQueue; writes
           <Button
             variant="destructive"
             disabled={m.isPending}
-            onClick={() => m.mutate({ id: queue.id, patch: { enabled: true } }, { onSuccess: onClose })}
+            onClick={() =>
+              m.mutate(
+                { id: queue.id, patch: { enabled: true } },
+                { onSuccess: (r) => (r.applyError ? setOutcome({ kind: 'saved', ...r }) : onClose()) },
+              )
+            }
           >
             Turn it back on
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** What happened to a write right after saving: the apply in words, warnings, and where to follow it. */
+function WriteOutcomeView({ outcome, gatewayId }: { outcome: WriteOutcome; gatewayId: number | null }) {
+  const words = describeWriteApply(outcome.apply, outcome.applyError)
+  const removedNow = outcome.kind === 'removed' && outcome.queue === null
+  const skin =
+    words.tone === 'critical'
+      ? 'border-status-critical/40 bg-status-critical/10'
+      : words.tone === 'warning'
+        ? 'border-status-warning/40 bg-status-warning/10'
+        : words.tone === 'good'
+          ? 'border-status-good/40 bg-status-good/10'
+          : 'border-border bg-muted/30'
+  return (
+    <div className="space-y-3">
+      <div role="status" className={cn('space-y-1 rounded-md border px-3 py-2 text-xs', skin)}>
+        <p className="flex items-center gap-1.5 font-medium">
+          <ToneDot tone={words.tone} />
+          {removedNow
+            ? 'Removed'
+            : outcome.kind === 'removed'
+              ? `Removing: ${words.title.charAt(0).toLowerCase()}${words.title.slice(1)}`
+              : words.title}
+        </p>
+        <p className="text-muted-foreground">
+          {removedNow ? 'The queue is gone from the router.' : words.detail}
+          {outcome.kind === 'removed' && !removedNow && !outcome.applyError
+            ? ' The queue stays listed as being removed until the router confirms.'
+            : ''}
+        </p>
+        {outcome.apply ? (
+          <p className="font-mono text-[11px] text-muted-foreground">apply {outcome.apply.id}</p>
+        ) : null}
+      </div>
+      {outcome.warnings.length ? (
+        <div className="space-y-1 rounded-md border border-status-warning/40 bg-status-warning/10 px-3 py-2 text-xs">
+          <p className="font-medium">Warnings</p>
+          <ul className="list-disc pl-4">
+            {outcome.warnings.map((w, i) => (
+              <li key={i}>
+                {w.code === 'qos_rate_far_below_observed'
+                  ? `The ${w.field === 'uploadKbit' ? 'upload' : 'download'} rate is under half of what this line carried (${formatKbit(w.observedKbit ?? null)} at the 95th percentile this week).`
+                  : (w.message ?? w.code)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {gatewayId && (outcome.apply || outcome.applyError) ? (
+        <p className="text-xs text-muted-foreground">
+          The queue's card follows the change. Details and the confirm window:{' '}
+          <Link className="text-foreground underline underline-offset-2" to={`/gateway/config/${gatewayId}?tab=changes`}>
+            the gateway's Changes tab
+          </Link>
+          .
+        </p>
+      ) : null}
+    </div>
   )
 }

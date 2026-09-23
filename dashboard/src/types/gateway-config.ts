@@ -18,6 +18,13 @@ export type WriteBlockedReason =
 export type UciValue = string | string[]
 export type UserRef = { id: number; email: string } | null
 
+/** Which part of Perch made a change by itself (config-plane.md 6.8). */
+export type SystemActorVia = 'qos' | 'portal' | 'enforcement' | 'system'
+/** A change Perch made by itself: shown as "Perch (system)". */
+export type SystemActorRef = { id: null; email: null; system: true; name: string; via: SystemActorVia }
+/** Who made a change: a user, Perch itself, or nobody named (null). */
+export type ActorRef = { id: number; email: string; system?: undefined } | SystemActorRef | null
+
 export type GatewayPairingState =
   | 'awaiting_confirmation'
   | 'awaiting_router'
@@ -82,7 +89,7 @@ export type GatewayApply = {
   deadlineAt: string | null
   confirmations: { agent: string | null; admin: string | null }
   agentReconnectedAt: string | null
-  requestedBy: UserRef
+  requestedBy: ActorRef
   requestedAt: string
   sentAt: string | null
   finishedAt: string | null
@@ -94,6 +101,8 @@ export type GatewayApply = {
     message?: string
     discardedConfigs?: string[]
     assumed?: true
+    /** The router's refusal details (`minWanKbit`, `configs`, …). */
+    data?: Record<string, unknown>
   } | null
   revision: number | null
   perchIds: string[]
@@ -236,7 +245,7 @@ export type RevisionSource = 'import' | 'router' | 'controller' | 'merge' | 'rev
 export type GatewayRevision = {
   number: number
   source: RevisionSource
-  author: UserRef
+  author: ActorRef
   routerAuthor: RouterAuthor | null
   summary: string
   note: string | null
@@ -256,7 +265,7 @@ export type GatewayRevision = {
 export type GatewayEvent = {
   id: number
   event: string
-  user: UserRef
+  user: ActorRef
   applyId: string | null
   revision: number | null
   detail: Record<string, unknown> | null

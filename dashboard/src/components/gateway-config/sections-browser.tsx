@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input'
 import { Panel } from '@/components/ui/panel'
 import { Segmented } from '@/components/ui/segmented'
 import { Spinner } from '@/components/ui/spinner'
+import { ActorName } from '@/components/gateway-config/actor'
 import { DiffList, ErrorLine, ToneBadge, UciValueText } from '@/components/gateway-config/bits'
 import { useSections, useSectionDetail, useSetSectionScope } from '@/hooks/use-gateways'
 import {
@@ -276,7 +277,8 @@ export function SectionDialog({
                           <span className="font-mono">#{rev.number}</span>
                           <ToneBadge tone="neutral">{REVISION_SOURCE_LABEL[rev.source]}</ToneBadge>
                           <span className="text-muted-foreground">
-                            {rev.author?.email ?? routerAuthorLabel(rev.routerAuthor) ?? ''} · {formatDateTime(rev.createdAt)}
+                            <ActorName actor={rev.author} fallback={routerAuthorLabel(rev.routerAuthor) ?? ''} /> ·{' '}
+                            {formatDateTime(rev.createdAt)}
                           </span>
                         </p>
                         <DiffList entries={[rev.change]} />

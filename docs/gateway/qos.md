@@ -719,6 +719,14 @@ ensureTierPolicy(i: { collectorId?; gatewayId?; key: string; name: string; share
   Devices list: a badge from the rows' `shaping`.
 - 409 `qos_not_managed` / `plane_unavailable` and the other refusals of section 5.2 are shown in
   plain words (`dashboard/src/lib/qos.ts`), with the planner's `issues` listed under a refused save.
+- WAN queue writes show their apply in words (`apply` / `applyError`: applying, rolled back, refused, or
+  kept as a draft), their warnings, and a link to the gateway's Changes tab; Remove answers with the queue
+  still listed as "Removing…" (`pending_delete`) until the router confirms. Cards say the sync state in a
+  sentence (queued, applying, rolled back, failed). `planeAccess` not allowed: a callout with the hint,
+  and the writes it blocks are disabled (sqm: every queue write; perch-qos: pause and resume). A plain
+  Resume refused with `qos_paused_on_router` offers "Resume anyway (override router)" (`overrideRouter`).
+- Config plane pages: every actor renders through `ActorName` (a user's email, or "Perch (system)" with
+  a badge naming `via`); `router_paused` / `router_resumed` events read "Paused / Resumed on the router".
 
 ## 9. Not built yet
 

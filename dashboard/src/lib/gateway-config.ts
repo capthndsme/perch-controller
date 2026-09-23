@@ -1,5 +1,6 @@
 import { ApiError, apiErrorCode } from '@/lib/api'
 import type {
+  ActorRef,
   ApplyKind,
   ApplyState,
   ConfigDiffEntry,
@@ -13,6 +14,7 @@ import type {
   SectionScope,
   SectionStatus,
   SyncBlocker,
+  SystemActorVia,
   UciValue,
   WriteBlockedReason,
 } from '@/types/gateway-config'
@@ -123,6 +125,21 @@ export const REVISION_SOURCE_LABEL: Record<RevisionSource, string> = {
 
 export function isOpenApply(state: ApplyState): boolean {
   return state === 'queued' || state === 'sending' || state === 'pending_confirm'
+}
+
+/** What part of Perch made a change by itself, for the "Perch (system)" badge. */
+export const SYSTEM_VIA_META: Record<SystemActorVia, { label: string; hint: string }> = {
+  qos: { label: 'QoS', hint: 'Written by traffic shaping (the WAN queues and the shaper package).' },
+  portal: { label: 'Portal', hint: 'Written by the guest portal.' },
+  enforcement: { label: 'Enforcement', hint: 'Authoritative Mode put Perch’s version back.' },
+  system: { label: 'System', hint: 'Written by Perch itself.' },
+}
+
+/** An actor as plain text (no badge): the user’s email, "Perch (system) · QoS", or null. */
+export function actorText(actor: ActorRef | undefined): string | null {
+  if (!actor) return null
+  if (actor.system) return `${actor.name || 'Perch (system)'} · ${SYSTEM_VIA_META[actor.via]?.label ?? actor.via}`
+  return actor.email
 }
 
 export function routerAuthorLabel(author: RouterAuthor | null | undefined): string | null {
@@ -426,14 +443,20 @@ export const EVENT_LABEL: Record<string, string> = {
   pairing_failed: 'Pairing failed',
   pairing_lost: 'Pairing lost',
   unpaired: 'Unpaired',
+  router_paused: 'Paused on the router',
+  router_resumed: 'Resumed on the router',
 }
+
+/** Events the router caused (no user, and not Perch either). */
+export const ROUTER_EVENTS = new Set(['router_paused', 'router_resumed', 'imported', 'drift_detected', 'unmodeled_changed'])
 
 export function eventTone(event: string): Tone {
   if (['failed', 'rolled_back', 'enforcement_suspended', 'read_refused', 'pairing_failed', 'pairing_lost', 'conflict_opened'].includes(event)) {
     return event === 'failed' || event === 'read_refused' || event === 'pairing_lost' ? 'critical' : 'serious'
   }
   if (['confirmed', 'paired', 'conflict_resolved', 'enforcement_resumed', 'drift_accepted'].includes(event)) return 'good'
-  if (['drift_detected', 'expired', 'pairing_code_rejected', 'section_ambiguous'].includes(event)) return 'warning'
+  if (['drift_detected', 'expired', 'pairing_code_rejected', 'section_ambiguous', 'router_paused'].includes(event)) return 'warning'
+  if (event === 'router_resumed') return 'good'
   return 'neutral'
 }
 

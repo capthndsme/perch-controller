@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Info, Pause, Play, PlugsConnected, ShieldCheck, WarningOctagon } from '@phosphor-icons/react'
+import { Info, LockKey, Pause, Play, PlugsConnected, ShieldCheck, WarningOctagon } from '@phosphor-icons/react'
 import { IssueList, LoudBanner, RefusalAlert, StatePill } from '@/components/qos/qos-bits'
 import { Button } from '@/components/ui/button'
 import {
@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import type { QosWrites } from '@/hooks/use-qos'
+import { apiErrorCode } from '@/lib/api'
 import { formatLastSeen } from '@/lib/collectors'
 import { describeApply, formatWhen, routerPauses } from '@/lib/qos'
 import type { QosOverview } from '@/types/api'
@@ -54,6 +55,14 @@ type BannerProps = { overview: QosOverview; isAdmin: boolean; writes: QosWrites 
 export function QosBanners({ overview, isAdmin, writes }: BannerProps) {
   const pauses = routerPauses(overview)
   const [confirmOverride, setConfirmOverride] = useState(false)
+  const packageAccess = overview.planeAccess?.perchQos ?? null
+  const packageBlocked = overview.managed && packageAccess?.allowed === false
+  // A plain Resume refused because the router paused shaping too (409 qos_paused_on_router).
+  const resumeHitRouterPause = apiErrorCode(writes.resume.error) === 'qos_paused_on_router'
+  const openOverride = () => {
+    writes.resume.reset()
+    setConfirmOverride(true)
+  }
   const config = describeApply(overview.config, 'config')
   const devicesInSync = overview.devices.state === 'in_sync'
   const caps = overview.capabilities
@@ -82,8 +91,8 @@ export function QosBanners({ overview, isAdmin, writes }: BannerProps) {
           title="Shaping is paused on the router"
           actions={
             isAdmin && overview.managed ? (
-              <Button size="sm" variant="outline" onClick={() => setConfirmOverride(true)}>
-                Resume over the router's pause…
+              <Button size="sm" variant="outline" onClick={openOverride} disabled={packageBlocked}>
+                Resume anyway (override router)…
               </Button>
             ) : null
           }
@@ -129,7 +138,11 @@ export function QosBanners({ overview, isAdmin, writes }: BannerProps) {
           title="Shaping is paused from Perch"
           actions={
             isAdmin ? (
-              <Button size="sm" onClick={() => writes.resume.mutate(false)} disabled={writes.resume.isPending}>
+              <Button
+                size="sm"
+                onClick={() => writes.resume.mutate(false)}
+                disabled={writes.resume.isPending || packageBlocked}
+              >
                 <Play className="size-3.5" weight="fill" /> Resume
               </Button>
             ) : null
@@ -138,6 +151,38 @@ export function QosBanners({ overview, isAdmin, writes }: BannerProps) {
           <p>
             Paused {overview.paused.at ? formatWhen(overview.paused.at) : ''}. Device caps, buckets and schedules are
             lifted on the router; WAN queues keep running. Everything stays configured here.
+          </p>
+          {resumeHitRouterPause && !confirmOverride ? (
+            <div role="alert" className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-status-critical/40 bg-status-critical/10 px-2.5 py-2 text-foreground">
+              <span className="min-w-0 flex-1">
+                Not resumed: shaping is also paused on the router itself, and Perch leaves that switch to whoever is
+                at the router.
+              </span>
+              {isAdmin ? (
+                <Button size="xs" variant="destructive" onClick={openOverride}>
+                  Resume anyway (override router)…
+                </Button>
+              ) : null}
+            </div>
+          ) : writes.resume.error && !confirmOverride ? (
+            <div className="mt-2">
+              <RefusalAlert error={writes.resume.error} />
+            </div>
+          ) : null}
+        </LoudBanner>
+      ) : null}
+
+      {packageBlocked ? (
+        <LoudBanner
+          tone="warning"
+          icon={<LockKey className="size-5" />}
+          title="The router does not let Perch write the shaper config"
+        >
+          <p>{packageAccess?.hint ?? 'Allow the perch-qos config on the router.'}</p>
+          <p>
+            <strong>Per-device caps still apply</strong> (they go straight to the collector). Shared buckets, network
+            defaults and schedules are kept here and go out once the router allows it; pausing and resuming from Perch
+            wait for it too.
           </p>
         </LoudBanner>
       ) : null}
@@ -158,7 +203,7 @@ export function QosBanners({ overview, isAdmin, writes }: BannerProps) {
             and every 5 minutes, so nothing is lost.
           </p>
         </LoudBanner>
-      ) : overview.managed && config.detail && overview.config.state !== 'in_sync' ? (
+      ) : overview.managed && !packageBlocked && config.detail && overview.config.state !== 'in_sync' ? (
         <LoudBanner tone="warning" icon={<Info className="size-5" />} title={`Shaper config: ${config.label}`}>
           <p>{config.detail}</p>
         </LoudBanner>
@@ -202,6 +247,9 @@ export function QosBanners({ overview, isAdmin, writes }: BannerProps) {
               here switches every device cap, bucket and schedule back on.
             </p>
             <p>Only do this when you know why it was paused.</p>
+            <p className="text-muted-foreground">
+              If the router rolls the change back, the pause stays with the router and later changes keep it off.
+            </p>
             {writes.resume.error ? <RefusalAlert error={writes.resume.error} /> : null}
           </DialogBody>
           <DialogFooter>
@@ -217,7 +265,7 @@ export function QosBanners({ overview, isAdmin, writes }: BannerProps) {
                 })
               }
             >
-              Resume anyway
+              {writes.resume.isPending ? 'Resuming…' : 'Resume anyway (override router)'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -231,9 +279,16 @@ export function PauseControl({ overview, writes }: { overview: QosOverview; writ
   const [confirm, setConfirm] = useState(false)
   if (!overview.managed) return null
   if (overview.paused) return null // the banner carries Resume
+  const blocked = overview.planeAccess?.perchQos.allowed === false
   return (
     <>
-      <Button size="sm" variant="outline" onClick={() => setConfirm(true)}>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => setConfirm(true)}
+        disabled={blocked}
+        title={blocked ? 'The router does not let Perch write the shaper config.' : undefined}
+      >
         <Pause className="size-3.5" weight="fill" /> Pause shaping
       </Button>
       <Dialog open={confirm} onOpenChange={setConfirm}>
