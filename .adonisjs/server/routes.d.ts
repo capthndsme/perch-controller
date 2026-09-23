@@ -27,6 +27,12 @@ export type ScannedRoutes = {
     'settings.settings.hostname_enrichment_sources': { paramsTuple?: []; params?: {} }
     'settings.presence': { paramsTuple?: []; params?: {} }
     'settings.updatePresence': { paramsTuple?: []; params?: {} }
+    'settings.gateway': { paramsTuple?: []; params?: {} }
+    'settings.updateGateway': { paramsTuple?: []; params?: {} }
+    'settings.gatewayObservations': { paramsTuple?: []; params?: {} }
+    'settings.updateGatewayObservations': { paramsTuple?: []; params?: {} }
+    'settings.qos': { paramsTuple?: []; params?: {} }
+    'settings.updateQos': { paramsTuple?: []; params?: {} }
     'settings.charts': { paramsTuple?: []; params?: {} }
     'settings.updateCharts': { paramsTuple?: []; params?: {} }
     'settings.settings.wifi_sources': { paramsTuple?: []; params?: {} }
@@ -83,7 +89,15 @@ export type ScannedRoutes = {
     'devices.destinations': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'devices.overview': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'devices.presence': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.shaping': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'devices.protocols': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.network': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.networks': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.reservation': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.wanAccess': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.putWanAccess': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.putReservation': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.deleteReservation': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'wifi.wifi.overview': { paramsTuple?: []; params?: {} }
     'wifi.wifi.ssids': { paramsTuple?: []; params?: {} }
     'wifi.wifi.ssid_clients': { paramsTuple: [ParamValue]; params: {'ssid': ParamValue} }
@@ -114,6 +128,18 @@ export type ScannedRoutes = {
     'infra.links.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'infra.links.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'infra.positions': { paramsTuple?: []; params?: {} }
+    'gatewayObservations.gateway_observations.overview': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.leases': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.neighbors': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.interfaces': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.upnp': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.wan_status': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.system': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.wireguard': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.observe': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.backups': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.create_backup': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.download_backup': { paramsTuple: [ParamValue,ParamValue]; params: {'gatewayId': ParamValue,'backupId': ParamValue} }
     'portal.authorizations.store': { paramsTuple?: []; params?: {} }
     'portal.authorizations.show': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'portal.authorizations.destroy': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
@@ -121,13 +147,6 @@ export type ScannedRoutes = {
     'portal.portals.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.grants.index': { paramsTuple?: []; params?: {} }
     'portal.sessions.index': { paramsTuple?: []; params?: {} }
-    'portal.priceTables.index': { paramsTuple?: []; params?: {} }
-    'portal.priceTables.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.priceTables.quote': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.terminals.index': { paramsTuple?: []; params?: {} }
-    'portal.terminals.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.checkouts.index': { paramsTuple?: []; params?: {} }
-    'portal.checkouts.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.portals.store': { paramsTuple?: []; params?: {} }
     'portal.portals.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.portals.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
@@ -163,16 +182,99 @@ export type ScannedRoutes = {
     'portal.apiClients.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.apiClients.rotate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.apiClients.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.priceTables.store': { paramsTuple?: []; params?: {} }
-    'portal.priceTables.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.priceTables.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.terminals.store': { paramsTuple?: []; params?: {} }
-    'portal.terminals.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.terminals.rotate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.terminals.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.checkouts.void': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.checkouts.credit': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.checkouts.dismiss': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.overview': { paramsTuple?: []; params?: {} }
+    'qos.devices.index': { paramsTuple?: []; params?: {} }
+    'qos.wanQueues.index': { paramsTuple?: []; params?: {} }
+    'qos.policies.index': { paramsTuple?: []; params?: {} }
+    'qos.groups.index': { paramsTuple?: []; params?: {} }
+    'qos.assignments.index': { paramsTuple?: []; params?: {} }
+    'qos.schedules.index': { paramsTuple?: []; params?: {} }
+    'qos.wanQueues.store': { paramsTuple?: []; params?: {} }
+    'qos.wanQueues.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.wanQueues.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.policies.store': { paramsTuple?: []; params?: {} }
+    'qos.policies.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.policies.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.groups.store': { paramsTuple?: []; params?: {} }
+    'qos.groups.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.groups.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.assignments.store': { paramsTuple?: []; params?: {} }
+    'qos.assignments.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.assignments.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.schedules.store': { paramsTuple?: []; params?: {} }
+    'qos.schedules.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.schedules.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.assignments.resetQuota': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.pause': { paramsTuple?: []; params?: {} }
+    'qos.resume': { paramsTuple?: []; params?: {} }
+    'networks.index': { paramsTuple?: []; params?: {} }
+    'networks.scopeChanges': { paramsTuple?: []; params?: {} }
+    'gateways.index': { paramsTuple?: []; params?: {} }
+    'gateways.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.syncStatus': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.sections': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.section': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.draft': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.applies': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.apply': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'applyId': ParamValue} }
+    'gateways.revisions': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.revision': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'number': ParamValue} }
+    'gateways.events': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.pairing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.dns': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.labelNames': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.networks': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.networkHistory': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.network': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'networkId': ParamValue} }
+    'gateways.createNetwork': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.updateNetwork': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'networkId': ParamValue} }
+    'gateways.deleteNetwork': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'networkId': ParamValue} }
+    'gateways.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.bind': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.refresh': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.updateSection': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.resolve': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.discardDraft': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createApply': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.installPackages': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.setSignKey': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.startPairing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.confirmPairing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.unpair': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.clearSignKey': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.confirmApply': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'applyId': ParamValue} }
+    'gateways.revertApply': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'applyId': ParamValue} }
+    'gateways.restoreRevision': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'number': ParamValue} }
+    'gateways.dismissRejoin': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.acceptDrift': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.revertDrift': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.resumeEnforcement': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.updateDns': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createRecord': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.updateRecord': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.deleteRecord': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.applyLabelNames': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.dhcp': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.updateDhcpPool': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'network': ParamValue} }
+    'gateways.createDhcpTag': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.updateDhcpTag': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.deleteDhcpTag': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.updateDhcpReservation': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.routing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createRoute': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.updateRoute': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.deleteRoute': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.updateSystem': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.firewall': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.orderFirewallRules': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.orderPortForwards': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.resolveFirewallOrder': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createPortForward': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.updatePortForward': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.deletePortForward': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.createFirewallRule': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.updateFirewallRule': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.deleteFirewallRule': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
   }
   GET: {
     'setup.status': { paramsTuple?: []; params?: {} }
@@ -184,6 +286,9 @@ export type ScannedRoutes = {
     'settings.settings.hostname_enrichment': { paramsTuple?: []; params?: {} }
     'settings.settings.hostname_enrichment_sources': { paramsTuple?: []; params?: {} }
     'settings.presence': { paramsTuple?: []; params?: {} }
+    'settings.gateway': { paramsTuple?: []; params?: {} }
+    'settings.gatewayObservations': { paramsTuple?: []; params?: {} }
+    'settings.qos': { paramsTuple?: []; params?: {} }
     'settings.charts': { paramsTuple?: []; params?: {} }
     'settings.settings.wifi_sources': { paramsTuple?: []; params?: {} }
     'settings.apJoinTokens.index': { paramsTuple?: []; params?: {} }
@@ -215,7 +320,12 @@ export type ScannedRoutes = {
     'devices.destinations': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'devices.overview': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'devices.presence': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.shaping': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'devices.protocols': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.network': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.networks': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.reservation': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.wanAccess': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'wifi.wifi.overview': { paramsTuple?: []; params?: {} }
     'wifi.wifi.ssids': { paramsTuple?: []; params?: {} }
     'wifi.wifi.ssid_clients': { paramsTuple: [ParamValue]; params: {'ssid': ParamValue} }
@@ -231,17 +341,21 @@ export type ScannedRoutes = {
     'wifi.wifi.ap_health': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'infra.layout': { paramsTuple?: []; params?: {} }
     'infra.state': { paramsTuple?: []; params?: {} }
+    'gatewayObservations.gateway_observations.overview': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.leases': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.neighbors': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.interfaces': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.upnp': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.wan_status': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.system': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.wireguard': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.backups': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.download_backup': { paramsTuple: [ParamValue,ParamValue]; params: {'gatewayId': ParamValue,'backupId': ParamValue} }
     'portal.authorizations.show': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'portal.portals.index': { paramsTuple?: []; params?: {} }
     'portal.portals.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.grants.index': { paramsTuple?: []; params?: {} }
     'portal.sessions.index': { paramsTuple?: []; params?: {} }
-    'portal.priceTables.index': { paramsTuple?: []; params?: {} }
-    'portal.priceTables.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.terminals.index': { paramsTuple?: []; params?: {} }
-    'portal.terminals.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.checkouts.index': { paramsTuple?: []; params?: {} }
-    'portal.checkouts.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.templates.index': { paramsTuple?: []; params?: {} }
     'portal.templates.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.templates.preview': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
@@ -252,6 +366,35 @@ export type ScannedRoutes = {
     'portal.vouchers.index': { paramsTuple?: []; params?: {} }
     'portal.users.index': { paramsTuple?: []; params?: {} }
     'portal.apiClients.index': { paramsTuple?: []; params?: {} }
+    'qos.overview': { paramsTuple?: []; params?: {} }
+    'qos.devices.index': { paramsTuple?: []; params?: {} }
+    'qos.wanQueues.index': { paramsTuple?: []; params?: {} }
+    'qos.policies.index': { paramsTuple?: []; params?: {} }
+    'qos.groups.index': { paramsTuple?: []; params?: {} }
+    'qos.assignments.index': { paramsTuple?: []; params?: {} }
+    'qos.schedules.index': { paramsTuple?: []; params?: {} }
+    'networks.index': { paramsTuple?: []; params?: {} }
+    'networks.scopeChanges': { paramsTuple?: []; params?: {} }
+    'gateways.index': { paramsTuple?: []; params?: {} }
+    'gateways.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.syncStatus': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.sections': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.section': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.draft': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.applies': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.apply': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'applyId': ParamValue} }
+    'gateways.revisions': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.revision': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'number': ParamValue} }
+    'gateways.events': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.pairing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.dns': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.labelNames': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.networks': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.networkHistory': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.network': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'networkId': ParamValue} }
+    'gateways.dhcp': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.routing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.firewall': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
   }
   HEAD: {
     'setup.status': { paramsTuple?: []; params?: {} }
@@ -263,6 +406,9 @@ export type ScannedRoutes = {
     'settings.settings.hostname_enrichment': { paramsTuple?: []; params?: {} }
     'settings.settings.hostname_enrichment_sources': { paramsTuple?: []; params?: {} }
     'settings.presence': { paramsTuple?: []; params?: {} }
+    'settings.gateway': { paramsTuple?: []; params?: {} }
+    'settings.gatewayObservations': { paramsTuple?: []; params?: {} }
+    'settings.qos': { paramsTuple?: []; params?: {} }
     'settings.charts': { paramsTuple?: []; params?: {} }
     'settings.settings.wifi_sources': { paramsTuple?: []; params?: {} }
     'settings.apJoinTokens.index': { paramsTuple?: []; params?: {} }
@@ -294,7 +440,12 @@ export type ScannedRoutes = {
     'devices.destinations': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'devices.overview': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'devices.presence': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.shaping': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'devices.protocols': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.network': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.networks': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.reservation': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.wanAccess': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'wifi.wifi.overview': { paramsTuple?: []; params?: {} }
     'wifi.wifi.ssids': { paramsTuple?: []; params?: {} }
     'wifi.wifi.ssid_clients': { paramsTuple: [ParamValue]; params: {'ssid': ParamValue} }
@@ -310,17 +461,21 @@ export type ScannedRoutes = {
     'wifi.wifi.ap_health': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'infra.layout': { paramsTuple?: []; params?: {} }
     'infra.state': { paramsTuple?: []; params?: {} }
+    'gatewayObservations.gateway_observations.overview': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.leases': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.neighbors': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.interfaces': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.upnp': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.wan_status': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.system': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.wireguard': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.backups': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.download_backup': { paramsTuple: [ParamValue,ParamValue]; params: {'gatewayId': ParamValue,'backupId': ParamValue} }
     'portal.authorizations.show': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'portal.portals.index': { paramsTuple?: []; params?: {} }
     'portal.portals.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.grants.index': { paramsTuple?: []; params?: {} }
     'portal.sessions.index': { paramsTuple?: []; params?: {} }
-    'portal.priceTables.index': { paramsTuple?: []; params?: {} }
-    'portal.priceTables.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.terminals.index': { paramsTuple?: []; params?: {} }
-    'portal.terminals.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.checkouts.index': { paramsTuple?: []; params?: {} }
-    'portal.checkouts.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.templates.index': { paramsTuple?: []; params?: {} }
     'portal.templates.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.templates.preview': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
@@ -331,6 +486,35 @@ export type ScannedRoutes = {
     'portal.vouchers.index': { paramsTuple?: []; params?: {} }
     'portal.users.index': { paramsTuple?: []; params?: {} }
     'portal.apiClients.index': { paramsTuple?: []; params?: {} }
+    'qos.overview': { paramsTuple?: []; params?: {} }
+    'qos.devices.index': { paramsTuple?: []; params?: {} }
+    'qos.wanQueues.index': { paramsTuple?: []; params?: {} }
+    'qos.policies.index': { paramsTuple?: []; params?: {} }
+    'qos.groups.index': { paramsTuple?: []; params?: {} }
+    'qos.assignments.index': { paramsTuple?: []; params?: {} }
+    'qos.schedules.index': { paramsTuple?: []; params?: {} }
+    'networks.index': { paramsTuple?: []; params?: {} }
+    'networks.scopeChanges': { paramsTuple?: []; params?: {} }
+    'gateways.index': { paramsTuple?: []; params?: {} }
+    'gateways.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.syncStatus': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.sections': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.section': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.draft': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.applies': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.apply': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'applyId': ParamValue} }
+    'gateways.revisions': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.revision': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'number': ParamValue} }
+    'gateways.events': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.pairing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.dns': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.labelNames': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.networks': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.networkHistory': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.network': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'networkId': ParamValue} }
+    'gateways.dhcp': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.routing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.firewall': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
   }
   POST: {
     'setup.admin': { paramsTuple?: []; params?: {} }
@@ -364,8 +548,9 @@ export type ScannedRoutes = {
     'infra.nodes.bind': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'infra.nodes.ports.store': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'infra.links.store': { paramsTuple?: []; params?: {} }
+    'gatewayObservations.gateway_observations.observe': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.create_backup': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
     'portal.authorizations.store': { paramsTuple?: []; params?: {} }
-    'portal.priceTables.quote': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.portals.store': { paramsTuple?: []; params?: {} }
     'portal.gateways.rotateKey': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
     'portal.grants.extend': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
@@ -379,17 +564,44 @@ export type ScannedRoutes = {
     'portal.users.store': { paramsTuple?: []; params?: {} }
     'portal.apiClients.store': { paramsTuple?: []; params?: {} }
     'portal.apiClients.rotate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.priceTables.store': { paramsTuple?: []; params?: {} }
-    'portal.terminals.store': { paramsTuple?: []; params?: {} }
-    'portal.terminals.rotate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.checkouts.void': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.checkouts.credit': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.checkouts.dismiss': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.wanQueues.store': { paramsTuple?: []; params?: {} }
+    'qos.policies.store': { paramsTuple?: []; params?: {} }
+    'qos.groups.store': { paramsTuple?: []; params?: {} }
+    'qos.assignments.store': { paramsTuple?: []; params?: {} }
+    'qos.schedules.store': { paramsTuple?: []; params?: {} }
+    'qos.assignments.resetQuota': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.pause': { paramsTuple?: []; params?: {} }
+    'qos.resume': { paramsTuple?: []; params?: {} }
+    'gateways.createNetwork': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.bind': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.refresh': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.resolve': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createApply': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.installPackages': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.startPairing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.confirmPairing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.confirmApply': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'applyId': ParamValue} }
+    'gateways.revertApply': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'applyId': ParamValue} }
+    'gateways.restoreRevision': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'number': ParamValue} }
+    'gateways.dismissRejoin': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.acceptDrift': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.revertDrift': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.resumeEnforcement': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createRecord': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.applyLabelNames': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createDhcpTag': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createRoute': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.resolveFirewallOrder': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createPortForward': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createFirewallRule': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
   }
   PATCH: {
     'profile.profile.change_password': { paramsTuple?: []; params?: {} }
     'settings.settings.update_hostname_enrichment': { paramsTuple?: []; params?: {} }
     'settings.updatePresence': { paramsTuple?: []; params?: {} }
+    'settings.updateGateway': { paramsTuple?: []; params?: {} }
+    'settings.updateGatewayObservations': { paramsTuple?: []; params?: {} }
+    'settings.updateQos': { paramsTuple?: []; params?: {} }
     'settings.updateCharts': { paramsTuple?: []; params?: {} }
     'settings.collectors.updateDiscovery': { paramsTuple?: []; params?: {} }
     'settings.updatePortal': { paramsTuple?: []; params?: {} }
@@ -402,15 +614,35 @@ export type ScannedRoutes = {
     'portal.templates.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.users.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.apiClients.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.priceTables.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.terminals.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.wanQueues.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.policies.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.groups.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.assignments.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.schedules.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.updateNetwork': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'networkId': ParamValue} }
+    'gateways.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.updateSection': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.updateDns': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.updateRecord': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.updateDhcpPool': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'network': ParamValue} }
+    'gateways.updateDhcpTag': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.updateDhcpReservation': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.updateRoute': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.updateSystem': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.updatePortForward': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.updateFirewallRule': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
   }
   PUT: {
     'settings.settings.update_wifi_source': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'settings.collectors.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'devices.putWanAccess': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.putReservation': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'infra.positions': { paramsTuple?: []; params?: {} }
     'portal.templates.files.put': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'name': ParamValue} }
     'portal.users.password': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.setSignKey': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.orderFirewallRules': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.orderPortForwards': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
   }
   DELETE: {
     'settings.settings.delete_wifi_source': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
@@ -419,6 +651,7 @@ export type ScannedRoutes = {
     'settings.collectors.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'settings.users.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'devices.destroyLabel': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.deleteReservation': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'infra.nodes.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'infra.ports.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'infra.links.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
@@ -429,8 +662,20 @@ export type ScannedRoutes = {
     'portal.voucherBatches.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.users.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.apiClients.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.priceTables.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.terminals.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.wanQueues.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.policies.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.groups.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.assignments.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.schedules.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.deleteNetwork': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'networkId': ParamValue} }
+    'gateways.discardDraft': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.unpair': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.clearSignKey': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.deleteRecord': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.deleteDhcpTag': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.deleteRoute': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.deletePortForward': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gateways.deleteFirewallRule': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
   }
 }
 declare module '@adonisjs/core/types/http' {

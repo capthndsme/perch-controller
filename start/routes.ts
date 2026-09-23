@@ -59,6 +59,7 @@ const PortalGrantsController = () => import('#controllers/portal_grants_controll
 const PortalAuthorizationsController = () => import('#controllers/portal_authorizations_controller')
 const QosController = () => import('#controllers/qos_controller')
 const GatewaysController = () => import('#controllers/gateways_controller')
+const GatewayNativeController = () => import('#controllers/gateway_native_controller')
 const GatewayNamesController = () => import('#controllers/gateway_names_controller')
 const GatewayNetworksController = () => import('#controllers/gateway_networks_controller')
 const GatewayFirewallController = () => import('#controllers/gateway_firewall_controller')
@@ -823,6 +824,38 @@ router
             router
               .post(':id/dns/label-names/apply', [GatewayNamesController, 'applyLabelNames'])
               .as('applyLabelNames')
+            // Native sync (docs/gateway/native-sync.md; plan 2 phase 4):
+            // admin-only, reads included (plan 2 section 5). DNS settings
+            // are the `:id/dns` routes above.
+            router.get(':id/dhcp', [GatewayNativeController, 'dhcp']).as('dhcp')
+            router
+              .patch(':id/dhcp/pools/:network', [GatewayNativeController, 'updatePool'])
+              .as('updateDhcpPool')
+              .where('network', /^[A-Za-z0-9_.-]{1,32}$/)
+            router.post(':id/dhcp/tags', [GatewayNativeController, 'createTag']).as('createDhcpTag')
+            router
+              .patch(':id/dhcp/tags/:perchId', [GatewayNativeController, 'updateTag'])
+              .as('updateDhcpTag')
+            router
+              .delete(':id/dhcp/tags/:perchId', [GatewayNativeController, 'deleteTag'])
+              .as('deleteDhcpTag')
+            router
+              .patch(':id/dhcp/reservations/:perchId', [
+                GatewayNativeController,
+                'updateReservation',
+              ])
+              .as('updateDhcpReservation')
+            router.get(':id/routing', [GatewayNativeController, 'routing']).as('routing')
+            router
+              .post(':id/routing/routes', [GatewayNativeController, 'createRoute'])
+              .as('createRoute')
+            router
+              .patch(':id/routing/routes/:perchId', [GatewayNativeController, 'updateRoute'])
+              .as('updateRoute')
+            router
+              .delete(':id/routing/routes/:perchId', [GatewayNativeController, 'deleteRoute'])
+              .as('deleteRoute')
+            router.patch(':id/system', [GatewayNativeController, 'updateSystem']).as('updateSystem')
             // The firewall (docs/gateway/firewall.md section 6): admin-only,
             // reads included (plan 2 section 5). Static `order` segments
             // before the `:perchId` ones.

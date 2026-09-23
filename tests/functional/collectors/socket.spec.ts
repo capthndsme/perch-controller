@@ -251,7 +251,7 @@ test.group('collector socket | session', (group) => {
     assert.isTrue(collectorHub.isOnline(row.id))
 
     const listed = await client.get(SETTINGS).bearerToken(adminToken)
-    const entry = listed.body().data.find((c: { id: number }) => c.id === row.id)
+    const entry = (listed.body().data as any[]).find((c: { id: number }) => c.id === row.id)
     assert.equal(entry.transport, 'agent')
     assert.isNull(entry.baseUrl)
     assert.isTrue(entry.connection.online)
@@ -299,7 +299,7 @@ test.group('collector socket | session', (group) => {
     const { collectorId } = reply.result as { collectorId: number }
 
     const listed = await client.get(SETTINGS).bearerToken(adminToken)
-    const entry = listed.body().data.find((c: { id: number }) => c.id === collectorId)
+    const entry = (listed.body().data as any[]).find((c: { id: number }) => c.id === collectorId)
     assert.isTrue(entry.connection.secure)
     await collector.close()
   })
@@ -635,7 +635,7 @@ test.group('collector socket | session', (group) => {
     assert.deepEqual(fresh.lastStatus?.gateway?.wanInterfaces, ['wan0'])
 
     const listed = await client.get(SETTINGS).bearerToken(adminToken)
-    const entry = listed.body().data.find((c: { id: number }) => c.id === row.id)
+    const entry = (listed.body().data as any[]).find((c: { id: number }) => c.id === row.id)
     assert.deepEqual(entry.gateway.wanInterfaces, ['wan0'])
     assert.equal(entry.gateway.wanSource, 'default-route')
 

@@ -34,7 +34,10 @@ const LAYOUT = '/api/v1/infra/layout'
 const NODES = '/api/v1/infra/nodes'
 
 function post(client: ApiClient, token: string, body: Record<string, unknown>) {
-  return client.post(NODES).bearerToken(token).json(body)
+  return client
+    .post(NODES)
+    .bearerToken(token)
+    .json(body as any)
 }
 
 function patch(client: ApiClient, token: string, id: number, body: Record<string, unknown>) {
@@ -44,13 +47,13 @@ function patch(client: ApiClient, token: string, id: number, body: Record<string
 async function created(client: ApiClient, token: string, body: Record<string, unknown>) {
   const response = await post(client, token, body)
   response.assertStatus(201)
-  return response.body().data
+  return (response.body() as any).data
 }
 
 async function layoutNode(client: ApiClient, token: string, id: number) {
   const response = await client.get(LAYOUT).bearerToken(token)
   response.assertStatus(200)
-  return response.body().data.nodes.find((node: { id: number }) => node.id === id)
+  return response.body().data.nodes.find((node: { id: number }) => node.id === id)!
 }
 
 test.group('infra | devices on nodes', (group) => {
@@ -135,10 +138,10 @@ test.group('infra | devices on nodes', (group) => {
     again.assertStatus(409)
     assert.deepEqual(again.body(), {
       error: 'infra_device_already_placed',
-      message: again.body().message,
+      message: (again.body() as { message?: string }).message,
       nodeId: nas.id,
     })
-    assert.isString(again.body().message)
+    assert.isString((again.body() as { message?: string }).message)
     const { node: other } = await created(client, adminToken, { kind: 'device', name: 'Other' })
     const moved = await patch(client, adminToken, other.id, { deviceMac: '02:00:00:00:00:21' })
     moved.assertStatus(409)
@@ -179,7 +182,10 @@ test.group('infra | devices on nodes', (group) => {
     for (const body of [{ kind: 'device' }, { kind: 'device', name: '   ' }]) {
       const nameless = await post(client, adminToken, body)
       nameless.assertStatus(422)
-      assert.equal(nameless.body().errors[0].field, 'name')
+      assert.equal(
+        (nameless.body() as { errors?: Array<{ field: string }> }).errors![0].field,
+        'name'
+      )
     }
 
     const { node } = await created(client, adminToken, {
@@ -263,8 +269,8 @@ test.group('infra | devices on nodes', (group) => {
       .bearerToken(adminToken)
       .json({ apId: ap.id })
     bind.assertStatus(200)
-    assert.deepInclude(bind.body().data.node, { name: 'ap-porch', nameOverride: null })
-    assert.equal(bind.body().data.node.device.mac, apMac, 'bind keeps the device')
+    assert.deepInclude((bind.body() as any).data.node, { name: 'ap-porch', nameOverride: null })
+    assert.equal((bind.body() as any).data.node.device.mac, apMac, 'bind keeps the device')
   })
 
   test('linkTo cables the new node in the same transaction', async ({ client, assert }) => {

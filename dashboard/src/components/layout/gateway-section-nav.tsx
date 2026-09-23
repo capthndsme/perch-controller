@@ -5,12 +5,19 @@ import { GATEWAY_SECTION, sectionItemActive } from '@/lib/nav'
 import { cn } from '@/lib/utils'
 
 /** Pages that read `?gateway=N` (the others list every gateway). */
-const TAKES_GATEWAY_PARAM = new Set(['/gateway', '/shaping'])
+const TAKES_GATEWAY_PARAM = new Set([
+  '/gateway',
+  '/shaping',
+  '/gateway/dhcp',
+  '/gateway/dns',
+  '/gateway/routing',
+  '/gateway/system',
+])
 
 /**
  * The Gateway section's sub-nav, above each of its pages (the sidebar has one
  * Gateway entry): Overview (the router's observed state), Configuration,
- * Networks, Shaping and Guest portal. A `?gateway=N` choice travels between
+ * Networks, DHCP, DNS, Routing, System, Shaping and Guest portal. A `?gateway=N` choice travels between
  * the pages that take one. Scrolls sideways on a phone.
  */
 export function GatewaySectionNav() {

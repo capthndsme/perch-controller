@@ -8,7 +8,10 @@ import { DateTime } from 'luxon'
 const LINKS = '/api/v1/infra/links'
 
 function link(client: ApiClient, token: string, body: Record<string, unknown>) {
-  return client.post(LINKS).bearerToken(token).json(body)
+  return client
+    .post(LINKS)
+    .bearerToken(token)
+    .json(body as any)
 }
 
 async function setMedium(portId: number, medium: string, column = 'medium') {
@@ -33,7 +36,7 @@ test.group('infra | links', (group) => {
       notes: null,
     })
     created.assertStatus(201)
-    const body = created.body().data.link
+    const body = (created.body() as any).data.link
     assert.deepEqual(body, {
       id: body.id,
       medium: 'ethernet',
@@ -47,8 +50,8 @@ test.group('infra | links', (group) => {
     const data = layout.body().data
     assert.deepEqual(data.links, [body])
     const port = data.nodes
-      .find((node: { id: number }) => node.id === sw.id)
-      .ports.find((p: { key: string }) => p.key === '1')
+      .find((node: { id: number }) => node.id === sw.id)!
+      .ports.find((p: { key: string }) => p.key === '1')!
     assert.equal(port.linkId, body.id)
   })
 
@@ -62,7 +65,7 @@ test.group('infra | links', (group) => {
     const nas = await seedManualNode('device', 'NAS', ['eth0'])
     const first = await link(client, adminToken, { aPortId: sw.ports['1'], bPortId: pc.ports.eth0 })
     first.assertStatus(201)
-    const firstId = first.body().data.link.id
+    const firstId = (first.body() as any).data.link.id
 
     // Either end of the existing cable is busy, whichever column it sits in.
     for (const [aPortId, bPortId, busyPort] of [
@@ -74,7 +77,7 @@ test.group('infra | links', (group) => {
       busy.assertStatus(409)
       assert.deepEqual(busy.body(), {
         error: 'infra_port_busy',
-        message: busy.body().message,
+        message: (busy.body() as { message?: string }).message,
         portId: busyPort,
         linkId: firstId,
       })
@@ -92,13 +95,13 @@ test.group('infra | links', (group) => {
       bPortId: sw.ports['1'],
     })
     samePort.assertStatus(422)
-    assert.equal(samePort.body().error, 'infra_link_same_port')
+    assert.equal((samePort.body() as { error?: string }).error, 'infra_link_same_port')
     const sameNode = await link(client, adminToken, {
       aPortId: sw.ports['1'],
       bPortId: sw.ports['2'],
     })
     sameNode.assertStatus(422)
-    assert.equal(sameNode.body().error, 'infra_link_same_node')
+    assert.equal((sameNode.body() as { error?: string }).error, 'infra_link_same_node')
     const missing = await link(client, adminToken, { aPortId: sw.ports['1'], bPortId: 9999 })
     missing.assertStatus(404)
     assert.deepInclude(missing.body(), { error: 'infra_port_not_found', portId: 9999 })
@@ -113,7 +116,7 @@ test.group('infra | links', (group) => {
 
     const invalid = await link(client, adminToken, { aPortId: sw.ports['1'] })
     invalid.assertStatus(422)
-    assert.isArray(invalid.body().errors)
+    assert.isArray((invalid.body() as { errors?: unknown[] }).errors)
     assert.lengthOf(await db.from('infra_links').select('id'), 0)
   })
 
@@ -134,7 +137,7 @@ test.group('infra | links', (group) => {
         ...(given ? { medium: given } : {}),
       })
       response.assertStatus(201)
-      return response.body().data.link.medium
+      return (response.body() as any).data.link.medium
     }
     assert.equal(await medium(a.ports.v1, b.ports.v1), 'virtual', 'both ends virtual')
     assert.equal(await medium(a.ports.v2, b.ports.c1), 'ethernet', 'one virtual end')
@@ -247,6 +250,6 @@ test.group('infra | links', (group) => {
     )
     const refused = await link(client, adminToken, { aPortId: a[400], bPortId: b[400] })
     refused.assertStatus(422)
-    assert.equal(refused.body().error, 'infra_limit_reached')
+    assert.equal((refused.body() as { error?: string }).error, 'infra_limit_reached')
   })
 })

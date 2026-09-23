@@ -440,7 +440,7 @@ test.group('sync engine | reconciling a read', () => {
     const nas = byName(rows, 'nas')
     assert.deepEqual(nas.ownership, {
       kind: 'options',
-      options: ['mac', 'ip', 'name', 'dns', 'leasetime'],
+      options: ['mac', 'ip', 'name', 'dns', 'leasetime', 'tag'],
     })
     assert.equal(nas.status, 'in_sync')
     assert.deepEqual(nas.base, nas.router)
@@ -750,12 +750,12 @@ test.group('sync engine | Authoritative Mode (section 5.3)', () => {
   test('a router edit to a router-owned option is never drift', ({ assert }) => {
     const rows = authoritativeRows()
     const edited = dhcpConfig()
-    edited.sections.find((s) => s.name === 'nas')!.options.tag = 'other'
+    edited.sections.find((s) => s.name === 'nas')!.options.broadcast = '1'
     const change = read(rows, [edited], { authoritative: true }).changes[0]
     assert.equal(change.kind, 'imported')
     assert.equal(change.after?.status, 'in_sync')
-    assert.equal(change.after?.desired?.options.tag, 'other')
-    assert.equal(change.after?.base?.options.tag, 'other')
+    assert.equal(change.after?.desired?.options.broadcast, '1')
+    assert.equal(change.after?.base?.options.broadcast, '1')
   })
 
   test('the router going back clears the drift', ({ assert }) => {

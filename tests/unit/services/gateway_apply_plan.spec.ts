@@ -602,7 +602,7 @@ test.group('apply planning | editSections core', () => {
     assert.equal(created.status, 'ahead')
     assert.deepEqual(created.ownership, {
       kind: 'options',
-      options: ['mac', 'ip', 'name', 'dns', 'leasetime'],
+      options: ['mac', 'ip', 'name', 'dns', 'leasetime', 'tag'],
     })
   })
 

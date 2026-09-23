@@ -23,6 +23,7 @@ import {
   resolveObservedGateway,
 } from '#services/gateway_observation_read'
 import { ObserveRequestError, requestGatewayObservation } from '#services/gateway_observe'
+import { systemConfigForCollector } from '#services/gateway_config/system_service'
 import {
   createBackupValidator,
   observeRequestValidator,
@@ -124,7 +125,18 @@ export default class GatewayObservationsController {
   async system(ctx: Ctx) {
     const collector = await this.gateway(ctx)
     if (!collector) return
-    return ctx.serialize(await readSystem(collector.id))
+    const observed = await readSystem(collector.id)
+    // The config plane fills what observation cannot (docs/gateway/native-sync.md section 5).
+    const config = await systemConfigForCollector(collector.id)
+    return ctx.serialize({
+      ...observed,
+      timezone: config?.timezone ?? null,
+      zonename: config?.zonename ?? null,
+      ntp: config?.ntp
+        ? { enabled: config.ntp.enabled, server: config.ntp.server, servers: config.ntp.servers }
+        : null,
+      config,
+    })
   }
 
   /** GET /gateways/:gatewayId/wireguard (admin) */

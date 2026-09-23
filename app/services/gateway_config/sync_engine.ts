@@ -21,6 +21,9 @@ import {
   syncedFromRouter,
   type ConfigDomain,
   type DomainRegistry,
+  type FeatureObservation,
+  type FeatureSection,
+  type FeatureSyncIssue,
 } from '#services/gateway_config/domain'
 import { routerSecretSlots } from '#services/gateway_config/secrets'
 import {
@@ -740,9 +743,25 @@ export function reconcileRead(input: ReconcileReadInput): ReconcileReadResult {
 
     // 4. Per-row merge. One-way domains (README 2, Perch-owned config) are
     // authoritative whatever the gateway's flag; a config's first import is
-    // never drift.
+    // never drift. A plain mirror a domain now claims (the controller gained
+    // a domain since it was read: an upgrade) is promoted first.
     const firstOfConfig = !rows.some((r) => r.scope === 'synced')
     for (const { row, found } of pendingRows) {
+      const promoted = found
+        ? promoteMirror(
+            row,
+            found,
+            config.name,
+            claimOf.get(found.section.name) ?? null,
+            (keysOf.get(found.section.name) ?? []).some((k) => (keyCount.get(k) ?? 0) > 1),
+            input,
+            events
+          )
+        : null
+      if (promoted) {
+        changes.push(promoted)
+        continue
+      }
       const change = reconcileRow(row, found, config.name, all, rowInput(input, row.domain), events)
       if (!change) continue
       if (relinked.has(row.perchId)) {
@@ -1244,6 +1263,75 @@ function reconcileRowInner(
     after: rescoped ?? after,
     baseChanged: true,
   }
+}
+
+/**
+ * An `unmodeled` mirror a domain can manage now: a plain one (no domain
+ * claimed it when it was first read; the controller gained that domain
+ * since: plan 2 phase 4 added `system`, `routes`, `dns_settings`,
+ * `dhcp_tags`), or one that was `ambiguous` / `no_round_trip` and the
+ * operator fixed on the router. It becomes `synced` with B = R = C = the
+ * router's content, whatever the mode: this is not a router edit, so
+ * Authoritative Mode has nothing to revert. A section that is still
+ * ambiguous or still does not round-trip keeps its mirror with the issue.
+ * The next apply adopts it into the ledger like any new section.
+ */
+function promoteMirror(
+  row: SectionState,
+  found: { section: UciSection; index: number },
+  config: string,
+  claim: ReturnType<DomainRegistry['claim']>,
+  ambiguous: boolean,
+  input: ReconcileReadInput,
+  events: EngineEvent[]
+): SectionChange | null {
+  if (row.scope !== 'unmodeled' || !claim) return null
+  const plain = row.issue === null && row.domain === null
+  const fixable = row.issue === 'ambiguous' || row.issue === 'no_round_trip'
+  if (!plain && !fixable) return null
+  const content = contentFromRouter(found.section)
+  const where = { perchId: row.perchId, config, section: found.section.name }
+  const located = {
+    ...row,
+    name: found.section.name,
+    anonymous: found.section.anonymous,
+    position: found.index,
+    type: content.type,
+    router: content,
+    base: content,
+    desired: content,
+    status: 'in_sync' as const,
+  }
+  if (ambiguous) {
+    if (row.issue === 'ambiguous') return null
+    events.push({ event: 'section_ambiguous', ...where, detail: { domain: claim.domain.key } })
+    const after = { ...located, domain: claim.domain.key, issue: 'ambiguous' as const }
+    return { perchId: row.perchId, kind: 'rescoped', before: row, after, baseChanged: false }
+  }
+  if (!roundTripsSection(claim.domain, syncedFromRouter(config, found.section, row.perchId))) {
+    if (row.issue === 'no_round_trip') return null
+    const after = { ...located, domain: claim.domain.key, issue: 'no_round_trip' as const }
+    return { perchId: row.perchId, kind: 'rescoped', before: row, after, baseChanged: false }
+  }
+  if ((input.initialScope?.(config, found.section) ?? 'synced') === 'excluded') {
+    const after = { ...located, scope: 'excluded' as const, domain: claim.domain.key }
+    return { perchId: row.perchId, kind: 'rescoped', before: row, after, baseChanged: false }
+  }
+  const after: SectionState = {
+    ...located,
+    scope: 'synced',
+    domain: claim.domain.key,
+    ownership: claim.ownership.kind === 'section' ? null : claim.ownership,
+    issue: null,
+    conflict: null,
+    driftSince: null,
+  }
+  events.push({
+    event: 'imported',
+    ...where,
+    detail: { promoted: true, domain: claim.domain.key },
+  })
+  return { perchId: row.perchId, kind: 'rescoped', before: row, after, baseChanged: true }
 }
 
 function recheckClaim(
@@ -1788,6 +1876,18 @@ export type SyncBlocker =
       diff: ConfigDiffEntry
     }
   | {
+      /**
+       * A feature's own "in sync" check failed (plan 2 section 4.6 (d);
+       * docs/gateway/native-sync.md section 6): `feature` is the domain key,
+       * `objectId` the section's perch id when the reason is one section.
+       */
+      kind: 'feature'
+      feature: string
+      objectId: string | null
+      code: string
+      message: string
+    }
+  | {
       /** An ordered type out of line (docs/gateway/firewall.md section 3). */
       kind: 'order'
       config: string
@@ -1822,6 +1922,8 @@ export interface SyncStatusInput {
   registry: DomainRegistry | null
   /** Section orders (firewall rules, redirects) after the same read. */
   orders?: OrderState[]
+  /** The per-feature checks' findings (`featureSyncIssues`). */
+  features?: FeatureSyncIssue[]
 }
 
 /**
@@ -1887,6 +1989,15 @@ export function computeSyncStatus(input: SyncStatusInput): SyncStatus {
       })
     }
   }
+  for (const f of input.features ?? []) {
+    blockers.push({
+      kind: 'feature',
+      feature: f.feature,
+      objectId: f.objectId,
+      code: f.code,
+      message: f.message,
+    })
+  }
   for (const order of input.orders ?? []) {
     if (order.status === 'in_sync') continue
     const members = orderMembers(input.sections, order)
@@ -1942,6 +2053,50 @@ export function checkEnableAuthoritative(
   }
   if (!status.inSync) return { ok: false, error: 'not_in_sync', blockers: status.blockers }
   return { ok: true }
+}
+
+/**
+ * The per-feature "in sync" checks (plan 2 section 4.6 (d)): every domain's
+ * `inSync` over its rows and the observed facts, plus one rule for all of
+ * them: a section a domain would manage but cannot because it is
+ * `ambiguous` (two router sections for one object, e.g. two hosts on one
+ * MAC) or a `duplicate` blocks until the operator fixes it (T-A1).
+ */
+export function featureSyncIssues(
+  registry: DomainRegistry,
+  sections: SectionState[],
+  observed: FeatureObservation
+): FeatureSyncIssue[] {
+  const out: FeatureSyncIssue[] = []
+  for (const domain of registry.list()) {
+    const rows = sections.filter((s) => s.domain === domain.key)
+    for (const s of rows) {
+      if (s.scope === 'unmodeled' && (s.issue === 'ambiguous' || s.issue === 'duplicate')) {
+        out.push({
+          feature: domain.key,
+          objectId: s.perchId,
+          code: `section_${s.issue}`,
+          message: `${s.config}.${s.name} is ${s.issue} on the router: fix it there first.`,
+        })
+      }
+    }
+    if (!domain.inSync) continue
+    const featureRows: FeatureSection[] = []
+    for (const s of rows) {
+      const content = s.scope === 'synced' ? (s.desired ?? s.router) : s.router
+      if (!content) continue
+      featureRows.push({
+        perchId: s.perchId,
+        name: s.name,
+        type: content.type,
+        scope: s.scope,
+        issue: s.issue,
+        options: content.options,
+      })
+    }
+    if (featureRows.length > 0) out.push(...domain.inSync(featureRows, observed))
+  }
+  return out
 }
 
 // ── helpers for callers ──────────────────────────────────────────────────

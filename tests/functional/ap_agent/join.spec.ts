@@ -203,12 +203,12 @@ test.group('ap-agent join', (group) => {
     const revokedResponse = await client.post(ENDPOINT).json(joinBody(revoked.token))
     revokedResponse.assertStatus(401)
     revokedResponse.assertBodyContains({ error: 'invalid_join_token' })
-    assert.include(revokedResponse.body().message, 'revoked')
+    assert.include((revokedResponse.body() as { message?: string }).message, 'revoked')
 
     const expired = await seedJoinToken({ expiresAt: DateTime.utc().minus({ minutes: 1 }) })
     const expiredResponse = await client.post(ENDPOINT).json(joinBody(expired.token))
     expiredResponse.assertStatus(401)
-    assert.include(expiredResponse.body().message, 'expired')
+    assert.include((expiredResponse.body() as { message?: string }).message, 'expired')
 
     const single = await seedJoinToken({ maxUses: 1 })
     const used = await client.post(ENDPOINT).json(joinBody(single.token))
@@ -217,7 +217,7 @@ test.group('ap-agent join', (group) => {
       .post(ENDPOINT)
       .json(joinBody(single.token, { hostname: 'ap-other', macs: ['02:00:00:00:00:99'] }))
     exhausted.assertStatus(401)
-    assert.include(exhausted.body().message, 'used up')
+    assert.include((exhausted.body() as { message?: string }).message, 'used up')
 
     await single.row.refresh()
     assert.equal(single.row.useCount, 1)
@@ -226,7 +226,7 @@ test.group('ap-agent join', (group) => {
 
   test('an invalid body is a 422 and counts as a failure', async ({ client, assert }) => {
     const { token } = await seedJoinToken()
-    const response = await client.post(ENDPOINT).json({ token, macs: ['nope'] })
+    const response = await client.post(ENDPOINT).json({ token, macs: ['nope'] } as any)
     response.assertStatus(422)
     const row = await ApJoinToken.firstOrFail()
     assert.equal(row.useCount, 0)
@@ -244,7 +244,7 @@ test.group('ap-agent join', (group) => {
     const limited = await client.post(ENDPOINT).json(joinBody(token))
     limited.assertStatus(429)
     limited.assertBodyContains({ error: 'rate_limited' })
-    assert.isAbove(limited.body().retryAfterSeconds, 0)
+    assert.isAbove((limited.body() as { retryAfterSeconds?: number }).retryAfterSeconds!, 0)
     assert.isDefined(limited.header('retry-after'))
 
     // The WebSocket shares the budget.

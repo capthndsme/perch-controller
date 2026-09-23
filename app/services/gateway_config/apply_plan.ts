@@ -712,7 +712,7 @@ export function planSectionEdits(input: EditSectionsInput): EditSectionsResult {
   for (const row of synced) {
     const next = after.find((s) => s.perchId === row.perchId)
     let desired = next ? contentOf(next) : null
-    let ownership = ownershipFor(row.ownership, row.desired, desired)
+    let ownership = ownershipFor(row.ownership, row.desired, desired, [row.router, row.base])
     if (pause && desired && desired.type === pause.type && pauseHeld(row.ownership, pause.option)) {
       if (reclaimed.has(row.perchId)) {
         // Decision 15: the admin's explicit resume takes the option back,
@@ -809,20 +809,26 @@ function sameSecretRefs(a: SectionContent | null, b: SectionContent | null): boo
 /**
  * Item-owned list options after a controller edit: the owned items are the
  * ones C now has that the router's foreign items do not explain, i.e. the
- * previous owned items still in C plus every item C gained.
+ * previous owned items still in C plus every item C gained, plus the owned
+ * items C dropped that the router (or the base) still has: they stay owned
+ * until an apply removed them, or the router's copy would read as a
+ * foreign item and survive the apply. The next import prunes them.
  */
 function ownershipFor(
   ownership: SectionState['ownership'],
   previous: SectionContent | null,
-  desired: SectionContent | null
+  desired: SectionContent | null,
+  elsewhere: Array<SectionContent | null> = []
 ): SectionState['ownership'] {
   if (!ownership || ownership.kind === 'section' || !ownership.items) return ownership
   const items: Record<string, string[]> = {}
   for (const [name, owned] of Object.entries(ownership.items)) {
     const before = itemsOf(previous?.options[name])
-    items[name] = itemsOf(desired?.options[name]).filter(
-      (item) => owned.includes(item) || !before.includes(item)
-    )
+    const wanted = itemsOf(desired?.options[name])
+    const kept = wanted.filter((item) => owned.includes(item) || !before.includes(item))
+    const stillOut = elsewhere.flatMap((c) => itemsOf(c?.options[name]))
+    const dropped = owned.filter((item) => !wanted.includes(item) && stillOut.includes(item))
+    items[name] = [...kept, ...dropped.filter((item) => !kept.includes(item))]
   }
   return { ...ownership, items }
 }

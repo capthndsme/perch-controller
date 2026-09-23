@@ -30,17 +30,20 @@ async function layoutOf(client: ApiClient, token: string) {
 
 async function nodeView(client: ApiClient, token: string, id: number) {
   const layout = await layoutOf(client, token)
-  return layout.nodes.find((node: { id: number }) => node.id === id)
+  return layout.nodes.find((node: { id: number }) => node.id === id)!
 }
 
 async function create(client: ApiClient, token: string, body: Record<string, unknown>) {
-  return client.post(NODES).bearerToken(token).json(body)
+  return client
+    .post(NODES)
+    .bearerToken(token)
+    .json(body as any)
 }
 
 async function createOk(client: ApiClient, token: string, body: Record<string, unknown>) {
   const response = await create(client, token, body)
   response.assertStatus(201)
-  return response.body().data.node
+  return (response.body() as any).data.node
 }
 
 function keys(node: { ports: Array<{ key: string }> }) {
@@ -66,9 +69,7 @@ test.group('infra | layout API', (group) => {
       layout.kinds.map((kind: { kind: string }) => kind.kind),
       ['gateway', 'access_point', 'switch', 'router', 'modem', 'isp', 'host', 'device']
     )
-    const byKind = Object.fromEntries(
-      layout.kinds.map((kind: { kind: string }) => [kind.kind, kind])
-    )
+    const byKind = Object.fromEntries(layout.kinds.map((kind: any) => [kind.kind, kind]))
     assert.deepEqual(byKind.switch, {
       kind: 'switch',
       label: 'Switch',
@@ -126,7 +127,7 @@ test.group('infra | layout API', (group) => {
     const bound = (type: string, id: number) =>
       layout.nodes.find((node: any) => node.binding?.type === type && node.binding.id === id)
 
-    const garageNode = bound('ap', garage.id)
+    const garageNode = bound('ap', garage.id)!
     assert.deepInclude(garageNode, {
       kind: 'access_point',
       name: 'Garage',
@@ -153,8 +154,11 @@ test.group('infra | layout API', (group) => {
       version: '0.1.0',
       portsSupported: true,
     })
-    assert.isFalse(bound('ap', porch.id).binding.portsSupported, 'an agent without the capability')
-    assert.deepEqual(bound('ap', attic.id).binding, {
+    assert.isFalse(
+      bound('ap', porch.id)!.binding!.portsSupported,
+      'an agent without the capability'
+    )
+    assert.deepEqual(bound('ap', attic.id)!.binding, {
       type: 'ap',
       id: attic.id,
       name: 'ap-attic',
@@ -162,7 +166,7 @@ test.group('infra | layout API', (group) => {
       version: null,
       portsSupported: false,
     })
-    const gatewayNode = bound('collector', gateway.id)
+    const gatewayNode = bound('collector', gateway.id)!
     assert.equal(gatewayNode.kind, 'gateway')
     assert.isTrue(gatewayNode.isRoot)
     assert.equal(layout.rootNodeId, gatewayNode.id)
@@ -319,7 +323,7 @@ test.group('infra | layout API', (group) => {
       ports: [{ key: 'lan1' }, { key: 'LAN1' }],
     })
     duplicate.assertStatus(422)
-    assert.equal(duplicate.body().error, 'infra_port_key_duplicate')
+    assert.equal((duplicate.body() as { error?: string }).error, 'infra_port_key_duplicate')
   })
 
   test('POST /nodes refusals', async ({ client, assert }) => {
@@ -330,7 +334,7 @@ test.group('infra | layout API', (group) => {
     const expectError = async (body: Record<string, unknown>, status: number, error: string) => {
       const response = await create(client, adminToken, body)
       response.assertStatus(status)
-      assert.equal(response.body().error, error, JSON.stringify(body))
+      assert.equal((response.body() as { error?: string }).error, error, JSON.stringify(body))
     }
     await expectError({ kind: 'gateway', name: 'Root' }, 422, 'infra_kind_not_manual')
     await expectError({ kind: 'device', name: 'X', parentId: sw.id }, 422, 'infra_parent_invalid')
@@ -360,13 +364,16 @@ test.group('infra | layout API', (group) => {
 
     const range = await create(client, adminToken, { kind: 'isp', name: 'X', portCount: 3 })
     range.assertStatus(422)
-    assert.equal(range.body().errors[0].field, 'portCount')
+    assert.equal(
+      (range.body() as { errors?: Array<{ field: string }> }).errors![0].field,
+      'portCount'
+    )
     const noName = await create(client, adminToken, { kind: 'switch' })
     noName.assertStatus(422)
-    assert.equal(noName.body().errors[0].field, 'name')
+    assert.equal((noName.body() as { errors?: Array<{ field: string }> }).errors![0].field, 'name')
     const badKind = await create(client, adminToken, { kind: 'toaster', name: 'X' })
     badKind.assertStatus(422)
-    assert.equal(badKind.body().errors[0].field, 'kind')
+    assert.equal((badKind.body() as { errors?: Array<{ field: string }> }).errors![0].field, 'kind')
 
     // The node cap: 200 on the map.
     const now = DateTime.utc().toFormat('yyyy-MM-dd HH:mm:ss')
@@ -457,8 +464,8 @@ test.group('infra | layout API', (group) => {
 
     const grown = await patch({ portCount: 6 })
     grown.assertStatus(200)
-    const ports = grown.body().data.node.ports
-    assert.deepEqual(keys(grown.body().data.node), ['1', '2', '3', '4', '5', '6', 'sfp1'])
+    const ports = (grown.body() as any).data.node.ports
+    assert.deepEqual(keys((grown.body() as any).data.node), ['1', '2', '3', '4', '5', '6', 'sfp1'])
     assert.deepEqual(
       ports.map((port: any) => port.position),
       [0, 1, 2, 3, 4, 5, 6]
@@ -469,19 +476,19 @@ test.group('infra | layout API', (group) => {
     const linkId = await seedLink(port6.id, other.ports.eth0)
     const blocked = await patch({ portCount: 3 })
     blocked.assertStatus(409)
-    assert.equal(blocked.body().error, 'infra_port_has_link')
-    assert.deepEqual(blocked.body().ports, [{ id: port6.id, key: '6', linkId }])
+    assert.equal((blocked.body() as any).error, 'infra_port_has_link')
+    assert.deepEqual((blocked.body() as any).ports, [{ id: port6.id, key: '6', linkId }])
     const unchanged = await nodeView(client, adminToken, sw.id)
     assert.lengthOf(unchanged.ports, 7, 'nothing dropped')
 
     await db.from('infra_links').where('id', linkId).delete()
     const shrunk = await patch({ portCount: 3 })
     shrunk.assertStatus(200)
-    assert.deepEqual(keys(shrunk.body().data.node), ['1', '2', '3', 'sfp1'])
+    assert.deepEqual(keys((shrunk.body() as any).data.node), ['1', '2', '3', 'sfp1'])
 
     const zero = await patch({ portCount: 0 })
     zero.assertStatus(422)
-    assert.equal(zero.body().errors[0].field, 'portCount')
+    assert.equal((zero.body() as any).errors[0].field, 'portCount')
   })
 
   test('only a host is a parent, one level deep', async ({ client, assert }) => {
@@ -512,12 +519,12 @@ test.group('infra | layout API', (group) => {
     ]) {
       const response = await patch(id, { parentId })
       response.assertStatus(422)
-      assert.equal(response.body().error, 'infra_parent_invalid')
+      assert.equal((response.body() as { error?: string }).error, 'infra_parent_invalid')
     }
     const second = await createOk(client, adminToken, { kind: 'host', name: 'NAS host' })
     const nested = await patch(second.id, { parentId: host.id })
     nested.assertStatus(422)
-    assert.equal(nested.body().error, 'infra_parent_invalid')
+    assert.equal((nested.body() as { error?: string }).error, 'infra_parent_invalid')
 
     // Deleting the frame leaves its children where they are, without a parent.
     const deleted = await client.delete(`${NODES}/${host.id}`).bearerToken(adminToken)
@@ -557,17 +564,17 @@ test.group('infra | layout API', (group) => {
 
     const apRefusal = await client.delete(`${NODES}/${apNode.id}`).bearerToken(adminToken)
     apRefusal.assertStatus(409)
-    assert.equal(apRefusal.body().error, 'infra_node_bound')
-    assert.deepEqual(apRefusal.body().binding, { type: 'ap', id: ap.id })
-    assert.include(apRefusal.body().message, '"Garage"')
-    assert.include(apRefusal.body().message, 'Settings → Wi-Fi sources')
+    assert.equal((apRefusal.body() as any).error, 'infra_node_bound')
+    assert.deepEqual((apRefusal.body() as any).binding, { type: 'ap', id: ap.id })
+    assert.include((apRefusal.body() as any).message, '"Garage"')
+    assert.include((apRefusal.body() as any).message, 'Settings → Wi-Fi sources')
     const gatewayRefusal = await client.delete(`${NODES}/${gatewayNode.id}`).bearerToken(adminToken)
     gatewayRefusal.assertStatus(409)
-    assert.include(gatewayRefusal.body().message, 'Gateway agent')
+    assert.include((gatewayRefusal.body() as any).message, 'Gateway agent')
 
     const missing = await client.delete(`${NODES}/9999`).bearerToken(adminToken)
     missing.assertStatus(404)
-    assert.equal(missing.body().error, 'infra_node_not_found')
+    assert.equal((missing.body() as { error?: string }).error, 'infra_node_not_found')
   })
 
   test('deleting an AP in Settings detaches its node; bind puts it on the new AP', async ({
@@ -593,7 +600,7 @@ test.group('infra | layout API', (group) => {
     const detached = await nodeView(client, adminToken, Number(node.id))
     assert.deepInclude(detached, { source: 'agent', binding: null, detached: true })
     assert.lengthOf(detached.ports, 4, 'ports as last reported')
-    assert.equal(detached.ports.find((port: any) => port.key === 'lan1').linkId, linkId)
+    assert.equal(detached.ports.find((port: any) => port.key === 'lan1')!.linkId, linkId)
 
     // The AP joins again (a new row): the layout gives it a node of its own…
     const { ap: rejoined } = await seedAgentAp({
@@ -611,9 +618,9 @@ test.group('infra | layout API', (group) => {
       .bearerToken(adminToken)
       .json({ apId: rejoined.id })
     bound.assertStatus(200)
-    assert.equal(bound.body().data.replacedNodeId, Number(fresh.id))
-    assert.deepInclude(bound.body().data.node, { id: Number(node.id), detached: false })
-    assert.equal(bound.body().data.node.binding.id, rejoined.id)
+    assert.equal((bound.body() as any).data.replacedNodeId, Number(fresh.id))
+    assert.deepInclude((bound.body() as any).data.node, { id: Number(node.id), detached: false })
+    assert.equal((bound.body() as any).data.node.binding.id, rejoined.id)
     assert.isNull(await db.from('infra_nodes').where('id', fresh.id).first())
 
     // The next report matches the ports by key: same rows, same cable.
@@ -771,7 +778,7 @@ test.group('infra | layout API', (group) => {
       .delete(`/api/v1/infra/ports/${wan.id}`)
       .bearerToken(adminToken)
     refusedDelete.assertStatus(409)
-    assert.equal(refusedDelete.body().error, 'infra_port_present')
+    assert.equal((refusedDelete.body() as any).error, 'infra_port_present')
 
     // lan3 disappears from the reports while it is hidden: kept, then deletable.
     const lan3 = await db
@@ -796,7 +803,7 @@ test.group('infra | layout API', (group) => {
     pinGone.assertStatus(204)
     const gone = await client.delete(`/api/v1/infra/ports/${lan1Id}`).bearerToken(adminToken)
     gone.assertStatus(404)
-    assert.equal(gone.body().error, 'infra_port_not_found')
+    assert.equal((gone.body() as any).error, 'infra_port_not_found')
   })
 
   test('hiding a cabled port is refused', async ({ client, assert }) => {
@@ -818,7 +825,7 @@ test.group('infra | layout API', (group) => {
     const host = await createOk(client, adminToken, { kind: 'host', name: 'Server' })
     const a = await createOk(client, adminToken, { kind: 'switch', name: 'A' })
     const b = await createOk(client, adminToken, { kind: 'device', name: 'B' })
-    const put = (positions: unknown[]) =>
+    const put = (positions: any[]) =>
       client.put('/api/v1/infra/positions').bearerToken(adminToken).json({ positions })
 
     const saved = await put([
@@ -826,7 +833,7 @@ test.group('infra | layout API', (group) => {
       { nodeId: b.id, x: -5, y: 10, parentId: host.id },
     ])
     saved.assertStatus(200)
-    assert.deepEqual(saved.body().data, { updated: 2 })
+    assert.deepEqual((saved.body() as any).data, { updated: 2 })
     const placed = await nodeView(client, adminToken, a.id)
     assert.deepEqual(placed.position, { x: 240, y: 40 })
     const moved = await nodeView(client, adminToken, b.id)
@@ -839,17 +846,17 @@ test.group('infra | layout API', (group) => {
       { nodeId: 9999, x: 1, y: 1 },
     ])
     unknown.assertStatus(404)
-    assert.equal(unknown.body().error, 'infra_node_not_found')
-    assert.equal(unknown.body().nodeId, 9998)
+    assert.equal((unknown.body() as any).error, 'infra_node_not_found')
+    assert.equal((unknown.body() as any).nodeId, 9998)
     const untouched = await nodeView(client, adminToken, a.id)
     assert.deepEqual(untouched.position, { x: 240, y: 40 })
 
     const badParent = await put([{ nodeId: a.id, x: 1, y: 1, parentId: b.id }])
     badParent.assertStatus(422)
-    assert.equal(badParent.body().error, 'infra_parent_invalid')
+    assert.equal((badParent.body() as any).error, 'infra_parent_invalid')
     const outOfRange = await put([{ nodeId: a.id, x: 100001, y: 1 }])
     outOfRange.assertStatus(422)
-    assert.isArray(outOfRange.body().errors)
+    assert.isArray((outOfRange.body() as any).errors)
     const empty = await put([])
     empty.assertStatus(422)
   })
@@ -877,12 +884,15 @@ test.group('infra | layout API', (group) => {
       .patch(`${NODES}/${node.id}`)
       .bearerToken(adminToken)
       .json({ name: 'Hallway AP' })
-    assert.deepInclude(named.body().data.node, { name: 'Hallway AP', nameOverride: 'Hallway AP' })
+    assert.deepInclude((named.body() as any).data.node, {
+      name: 'Hallway AP',
+      nameOverride: 'Hallway AP',
+    })
     const followed = await client
       .patch(`${NODES}/${node.id}`)
       .bearerToken(adminToken)
       .json({ name: null })
-    assert.deepInclude(followed.body().data.node, { name: 'Garage', nameOverride: null })
+    assert.deepInclude((followed.body() as any).data.node, { name: 'Garage', nameOverride: null })
   })
 
   test('agent ports report in the layout with their overrides and missing state', async ({
@@ -922,6 +932,6 @@ test.group('infra | layout API', (group) => {
       missingSince: null,
     })
     assert.deepInclude(lan1, { key: 'lan1', label: 'Desk', labelOverride: 'Desk', present: false })
-    assert.match(lan1.missingSince, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.000Z$/)
+    assert.match(lan1.missingSince!, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.000Z$/)
   })
 })

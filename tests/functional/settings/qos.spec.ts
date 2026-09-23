@@ -32,7 +32,7 @@ test.group('qos settings API', (group) => {
     const { adminToken } = await seedSetupComplete()
     const response = await client.get(ENDPOINT).bearerToken(adminToken)
     response.assertStatus(200)
-    assert.deepEqual(response.body().data, {
+    assert.deepEqual((response.body() as any).data, {
       settings: { ...QOS_DEFAULTS },
       defaults: { ...QOS_DEFAULTS },
       limits: JSON.parse(JSON.stringify(QOS_LIMITS)),
@@ -48,13 +48,13 @@ test.group('qos settings API', (group) => {
       .bearerToken(adminToken)
       .json({ minWanKbit: 2000, maxBucketDepth: 2 })
     first.assertStatus(200)
-    assert.containsSubset(first.body().data.settings, {
+    assert.containsSubset((first.body() as any).data.settings, {
       minWanKbit: 2000,
       maxBucketDepth: 2,
       leafFlows: QOS_DEFAULTS.leafFlows,
     })
     const second = await client.patch(ENDPOINT).bearerToken(adminToken).json({ leafMemoryKb: 512 })
-    assert.containsSubset(second.body().data.settings, {
+    assert.containsSubset((second.body() as any).data.settings, {
       minWanKbit: 2000,
       maxBucketDepth: 2,
       leafMemoryKb: 512,
