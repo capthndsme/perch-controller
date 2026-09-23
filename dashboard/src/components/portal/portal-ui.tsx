@@ -33,6 +33,9 @@ import type { PortalDelivery, PortalGrant, VoucherStatus } from '@/types/api'
 
 const SECTIONS = [
   { to: '/portal', label: 'Portals', end: true, admin: false },
+  { to: '/portal/payments', label: 'Payments', end: false, admin: false },
+  { to: '/portal/terminals', label: 'Terminals', end: false, admin: false },
+  { to: '/portal/price-tables', label: 'Price tables', end: false, admin: false },
   { to: '/portal/vouchers', label: 'Vouchers', end: false, admin: true },
   { to: '/portal/users', label: 'Portal users', end: false, admin: true },
   { to: '/portal/api-clients', label: 'API clients', end: false, admin: true },

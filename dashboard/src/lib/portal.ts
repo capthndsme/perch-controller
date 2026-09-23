@@ -137,6 +137,7 @@ export const GRANT_SOURCE_LABELS: Record<PortalGrantSource, string> = {
   user: 'Portal user',
   api: 'API',
   admin: 'Admin',
+  clickthrough: 'Click-through',
 }
 
 /** Tailwind classes of a grant state badge (status tokens, never series colours). */
@@ -340,6 +341,25 @@ const ERROR_TEXT: Record<string, string> = {
   rate_limited: 'Too many requests. Wait a minute.',
   idempotency_conflict: 'That payment reference was used for a different request.',
   no_active_grant: 'The device has nothing live on this portal.',
+  // Paid Hotspot (portal.md §14.9)
+  price_table_not_found: 'That price table no longer exists.',
+  price_table_in_use: 'Portals or terminals still use this price table: point them at another one first.',
+  price_table_required: 'The payment method needs a price table.',
+  no_entries: 'A price table needs at least one rate.',
+  too_many_entries: 'A price table has at most 32 rates.',
+  duplicate_amount: 'Two rates have the same amount: each amount can appear once.',
+  mixed_quota: 'Either every rate includes data or none does.',
+  invalid_entry: 'One of the rates is not valid.',
+  invalid_currency: 'The currency is a three-letter code, e.g. PHP or USD.',
+  terminal_not_found: 'That terminal no longer exists.',
+  checkout_not_found: 'That payment no longer exists.',
+  not_a_payment: 'Only payments can be voided.',
+  checkout_voided: 'This payment is already voided.',
+  refund_exceeds_amount: 'The refund is more than was paid.',
+  not_unclaimed: 'Only unclaimed coins can be credited or dismissed.',
+  already_resolved: 'Someone already credited or dismissed these coins.',
+  below_minimum: 'This amount buys nothing under the terminal’s price table: give minutes instead.',
+  invalid_range: 'The start date is after the end date.',
 }
 
 /** A sentence for a failed portal call: the known code's wording, else the server's message. */
@@ -575,6 +595,18 @@ export function splitBytes(bytes: number | null): { amount: string; unit: QuotaU
 
 export function kbpsToMbpsText(kbps: number | null): string {
   return kbps ? String(Number((kbps / 1000).toFixed(3))) : ''
+}
+
+// ── Methods ──────────────────────────────────────────────────────────────
+
+/** The ways a portal lets guests online, e.g. ["Vouchers", "Paid access"]. */
+export function methodLabels(methods: Portal['methods']): string[] {
+  return [
+    methods.voucher ? 'Vouchers' : null,
+    methods.password ? 'Username + password' : null,
+    methods.payment ? 'Paid access' : null,
+    methods.clickThrough ? 'Click-through' : null,
+  ].filter((m): m is string => m !== null)
 }
 
 // ── Portal health ────────────────────────────────────────────────────────

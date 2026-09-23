@@ -50,6 +50,9 @@ export const pages = {
   portalVoucherPrint: lazyPage(() =>
     import('@/pages/portal-voucher-print-page').then((m) => m.PortalVoucherPrintPage),
   ),
+  portalPayments: lazyPage(() => import('@/pages/portal-payments-page').then((m) => m.PortalPaymentsPage)),
+  portalTerminals: lazyPage(() => import('@/pages/portal-terminals-page').then((m) => m.PortalTerminalsPage)),
+  portalPriceTables: lazyPage(() => import('@/pages/portal-price-tables-page').then((m) => m.PortalPriceTablesPage)),
   portalUsers: lazyPage(() => import('@/pages/portal-users-page').then((m) => m.PortalUsersPage)),
   portalApiClients: lazyPage(() => import('@/pages/portal-api-clients-page').then((m) => m.PortalApiClientsPage)),
   portalTemplates: lazyPage(() => import('@/pages/portal-templates-page').then((m) => m.PortalTemplatesPage)),

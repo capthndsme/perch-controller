@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Warning } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
 import {
@@ -12,7 +12,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Checkbox, ErrorNote, FormField } from '@/components/portal/portal-ui'
+import { Checkbox, DurationInput, ErrorNote, FormField, QuotaInput } from '@/components/portal/portal-ui'
+import { usePriceTables } from '@/hooks/use-hotspot'
 import {
   useCreatePortal,
   usePortalGateways,
@@ -23,8 +24,32 @@ import {
 } from '@/hooks/use-portal'
 import { useDefaultGatewayId } from '@/hooks/use-gateways'
 import { apiErrorCode } from '@/lib/api'
-import { errorDetail, selectClassName, textareaClassName, vineFieldErrors } from '@/lib/portal'
-import type { Portal, PortalPayload } from '@/types/api'
+import {
+  errorDetail,
+  kbpsToMbpsText,
+  mbpsToKbps,
+  selectClassName,
+  splitBytes,
+  splitMinutes,
+  textareaClassName,
+  toBytes,
+  toMinutes,
+  vineFieldErrors,
+  type DurationUnit,
+  type QuotaUnit,
+} from '@/lib/portal'
+import type { Portal, PortalClickThroughSettings, PortalPayload, PortalPaymentSettings } from '@/types/api'
+
+const PAYMENT_DEFAULTS: PortalPaymentSettings = { priceTableId: null, idleTimeoutSeconds: 60 }
+const CLICK_THROUGH_DEFAULTS: PortalClickThroughSettings = {
+  minutes: 30,
+  quotaBytes: null,
+  downKbps: null,
+  upKbps: null,
+  windowHours: 24,
+  perWindow: 1,
+  terms: '',
+}
 
 type PortalFormDialogProps = {
   /** Edit this portal; create a new one without. */
@@ -48,6 +73,7 @@ export function PortalFormDialog({ portal, onClose }: PortalFormDialogProps) {
   const gateways = usePortalGateways()
   const portals = usePortals()
   const templates = usePortalTemplates()
+  const priceTables = usePriceTables()
 
   const [name, setName] = useState(portal?.name ?? 'Guest Wi-Fi')
   // A new portal starts on the default gateway (the same pick as every gateway page).
@@ -57,6 +83,19 @@ export function PortalFormDialog({ portal, onClose }: PortalFormDialogProps) {
   const [networkText, setNetworkText] = useState(portal?.network.perchId ?? '')
   const [voucher, setVoucher] = useState(portal?.methods.voucher ?? true)
   const [password, setPassword] = useState(portal?.methods.password ?? false)
+  const [payment, setPayment] = useState(portal?.methods.payment ?? false)
+  const [clickThrough, setClickThrough] = useState(portal?.methods.clickThrough ?? false)
+  const paymentSettings = portal?.payment ?? PAYMENT_DEFAULTS
+  const [priceTableId, setPriceTableId] = useState(paymentSettings.priceTableId ? String(paymentSettings.priceTableId) : '')
+  const [idleTimeout, setIdleTimeout] = useState(String(paymentSettings.idleTimeoutSeconds))
+  const ct = portal?.clickThrough ?? CLICK_THROUGH_DEFAULTS
+  const [ctDuration, setCtDuration] = useState<{ amount: string; unit: DurationUnit }>(splitMinutes(ct.minutes))
+  const [ctQuota, setCtQuota] = useState<{ amount: string; unit: QuotaUnit }>(splitBytes(ct.quotaBytes))
+  const [ctDown, setCtDown] = useState(kbpsToMbpsText(ct.downKbps))
+  const [ctUp, setCtUp] = useState(kbpsToMbpsText(ct.upKbps))
+  const [ctWindowHours, setCtWindowHours] = useState(String(ct.windowHours))
+  const [ctPerWindow, setCtPerWindow] = useState(String(ct.perWindow))
+  const [ctTerms, setCtTerms] = useState(ct.terms)
   const [templateId, setTemplateId] = useState<string>(
     portal ? (portal.templateId === null ? 'none' : String(portal.templateId)) : 'default',
   )
@@ -94,10 +133,26 @@ export function PortalFormDialog({ portal, onClose }: PortalFormDialogProps) {
     const body: PortalPayload = {
       name: name.trim(),
       networkPerchId: networkText.trim(),
-      methods: { voucher, password },
+      methods: { voucher, password, payment, clickThrough },
       cspConnectSrc: origins,
       privacyNotice: privacy.trim() || null,
     }
+    const paymentBody: PortalPaymentSettings = {
+      priceTableId: priceTableId ? Number(priceTableId) : null,
+      idleTimeoutSeconds: Number(idleTimeout),
+    }
+    const clickBody: PortalClickThroughSettings = {
+      minutes: toMinutes(ctDuration.amount, ctDuration.unit) ?? Number.NaN,
+      quotaBytes: toBytes(ctQuota.amount, ctQuota.unit) ?? null,
+      downKbps: mbpsToKbps(ctDown) ?? null,
+      upKbps: mbpsToKbps(ctUp) ?? null,
+      windowHours: Number(ctWindowHours),
+      perWindow: Number(ctPerWindow),
+      terms: ctTerms.trim(),
+    }
+    // A method's settings travel when it is on (or were changed while off, in an edit).
+    if (payment || (portal && JSON.stringify(paymentBody) !== JSON.stringify(portal.payment))) body.payment = paymentBody
+    if (clickThrough) body.clickThrough = clickBody
     if (!editing) body.gatewayId = gatewayId ?? undefined
     if (templateId === 'none') body.templateId = null
     else if (templateId !== 'default') body.templateId = Number(templateId)
@@ -105,9 +160,16 @@ export function PortalFormDialog({ portal, onClose }: PortalFormDialogProps) {
       // PATCH only what changed: every change bumps the portal's revision.
       if (body.name === portal.name) delete body.name
       if (body.networkPerchId === portal.network.perchId) delete body.networkPerchId
-      if (body.methods?.voucher === portal.methods.voucher && body.methods?.password === portal.methods.password) {
+      if (
+        body.methods?.voucher === portal.methods.voucher &&
+        body.methods?.password === portal.methods.password &&
+        body.methods?.payment === portal.methods.payment &&
+        body.methods?.clickThrough === portal.methods.clickThrough
+      ) {
         delete body.methods
       }
+      if (JSON.stringify(body.payment) === JSON.stringify(portal.payment)) delete body.payment
+      if (JSON.stringify(body.clickThrough) === JSON.stringify(portal.clickThrough)) delete body.clickThrough
       if (JSON.stringify(body.cspConnectSrc) === JSON.stringify(portal.cspConnectSrc)) delete body.cspConnectSrc
       if (body.privacyNotice === portal.privacyNotice) delete body.privacyNotice
       if (body.templateId === portal.templateId) delete body.templateId
@@ -126,9 +188,20 @@ export function PortalFormDialog({ portal, onClose }: PortalFormDialogProps) {
       setLocalError('Choose the network the portal sits on.')
       return
     }
-    if (!voucher && !password) {
-      setLocalError('Offer at least one way to sign in.')
+    if (!voucher && !password && !payment && !clickThrough) {
+      setLocalError('Offer at least one way to get online.')
       return
+    }
+    if (payment && !priceTableId) {
+      setLocalError('Paid access needs a price table.')
+      return
+    }
+    if (clickThrough) {
+      const minutes = toMinutes(ctDuration.amount, ctDuration.unit)
+      if (minutes === undefined || !Number.isInteger(minutes) || minutes < 1 || minutes > 1440) {
+        setLocalError('Free access lasts between 1 minute and 24 hours.')
+        return
+      }
     }
     const onError = (error: unknown) => {
       if (apiErrorCode(error) === 'network_hosts_controller') {
@@ -257,7 +330,7 @@ export function PortalFormDialog({ portal, onClose }: PortalFormDialogProps) {
             </div>
 
             <fieldset className="space-y-2">
-              <legend className="mb-1.5 text-xs font-medium">Sign-in methods</legend>
+              <legend className="mb-1.5 text-xs font-medium">How guests get online</legend>
               <Checkbox
                 id="portal-voucher"
                 checked={voucher}
@@ -272,7 +345,149 @@ export function PortalFormDialog({ portal, onClose }: PortalFormDialogProps) {
                 label="Username and password"
                 description="Portal users you create under Portal users. Needs the controller to be reachable."
               />
+              <Checkbox
+                id="portal-payment"
+                checked={payment}
+                onChange={setPayment}
+                label="Paid access (coin terminals)"
+                description="Guests pick a coin terminal on the page, pay, and get what the price table says. The gateway runs the checkout, so it works while the controller is unreachable."
+              />
+              <Checkbox
+                id="portal-clickthrough"
+                checked={clickThrough}
+                onChange={setClickThrough}
+                label="Free access after accepting terms (click-through)"
+                description="A short, capped session for anyone who accepts the terms, a limited number of times per device."
+              />
             </fieldset>
+
+            {payment ? (
+              <fieldset className="space-y-3 rounded-md border border-border p-3">
+                <legend className="px-1 text-xs font-medium">Paid access</legend>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField
+                    label="Price table"
+                    htmlFor="portal-price-table"
+                    error={fieldErrors['payment.priceTableId']}
+                    hint={
+                      priceTables.data && priceTables.data.length === 0 ? (
+                        <>
+                          No price table yet:{' '}
+                          <Link to="/portal/price-tables" className="underline underline-offset-2" onClick={onClose}>
+                            create one first
+                          </Link>
+                          .
+                        </>
+                      ) : (
+                        'Terminals sell at these rates unless they have their own table.'
+                      )
+                    }
+                  >
+                    <select
+                      id="portal-price-table"
+                      className={selectClassName}
+                      value={priceTableId}
+                      onChange={(e) => setPriceTableId(e.target.value)}
+                    >
+                      <option value="">Choose…</option>
+                      {(priceTables.data ?? []).map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} · {t.currency}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+                  <FormField
+                    label="Walk-away timeout (seconds)"
+                    htmlFor="portal-idle"
+                    error={fieldErrors['payment.idleTimeoutSeconds']}
+                    hint="15–600. With no new coin for this long a checkout closes; money already paid is credited to the guest."
+                  >
+                    <Input
+                      id="portal-idle"
+                      inputMode="numeric"
+                      value={idleTimeout}
+                      onChange={(e) => setIdleTimeout(e.target.value)}
+                      className="rounded-md"
+                    />
+                  </FormField>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Add the coin boxes under{' '}
+                  <Link to="/portal/terminals" className="underline underline-offset-2" onClick={onClose}>
+                    Terminals
+                  </Link>
+                  . After paying, guests get a reference code that moves their time to another phone.
+                </p>
+              </fieldset>
+            ) : null}
+
+            {clickThrough ? (
+              <fieldset className="space-y-3 rounded-md border border-border p-3">
+                <legend className="px-1 text-xs font-medium">Click-through</legend>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField label="Free time" htmlFor="portal-ct-minutes" error={fieldErrors['clickThrough.minutes']} hint="Up to 24 hours.">
+                    <DurationInput id="portal-ct-minutes" {...ctDuration} onChange={setCtDuration} placeholder="30" />
+                  </FormField>
+                  <FormField label="Data cap" htmlFor="portal-ct-quota" error={fieldErrors['clickThrough.quotaBytes']}>
+                    <QuotaInput id="portal-ct-quota" {...ctQuota} onChange={setCtQuota} />
+                  </FormField>
+                  <FormField label="Download Mbps" htmlFor="portal-ct-down" error={fieldErrors['clickThrough.downKbps']}>
+                    <Input id="portal-ct-down" inputMode="decimal" placeholder="No cap" value={ctDown} onChange={(e) => setCtDown(e.target.value)} className="rounded-md" />
+                  </FormField>
+                  <FormField label="Upload Mbps" htmlFor="portal-ct-up" error={fieldErrors['clickThrough.upKbps']}>
+                    <Input id="portal-ct-up" inputMode="decimal" placeholder="No cap" value={ctUp} onChange={(e) => setCtUp(e.target.value)} className="rounded-md" />
+                  </FormField>
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium">How often</p>
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                    <Input
+                      aria-label="Times per window"
+                      inputMode="numeric"
+                      value={ctPerWindow}
+                      onChange={(e) => setCtPerWindow(e.target.value)}
+                      className="h-8 w-16 rounded-md"
+                    />
+                    <span>time(s) per device in any</span>
+                    <Input
+                      aria-label="Window in hours"
+                      inputMode="numeric"
+                      value={ctWindowHours}
+                      onChange={(e) => setCtWindowHours(e.target.value)}
+                      className="h-8 w-16 rounded-md"
+                    />
+                    <span>hours</span>
+                  </div>
+                  {fieldErrors['clickThrough.perWindow'] || fieldErrors['clickThrough.windowHours'] ? (
+                    <p className="text-xs text-destructive">
+                      {fieldErrors['clickThrough.perWindow'] ?? fieldErrors['clickThrough.windowHours']}
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">
+                      1–24 times in 1–720 hours. Counted per MAC address: a phone that picks a new private address gets a new
+                      allowance.
+                    </p>
+                  )}
+                </div>
+                <FormField
+                  label="Terms guests accept"
+                  htmlFor="portal-ct-terms"
+                  error={fieldErrors['clickThrough.terms']}
+                  hint="Shown above the Accept button. Up to 4000 characters."
+                >
+                  <textarea
+                    id="portal-ct-terms"
+                    className={textareaClassName}
+                    rows={4}
+                    maxLength={4000}
+                    value={ctTerms}
+                    placeholder="e.g. Free Wi-Fi for 30 minutes. Be kind; no illegal use."
+                    onChange={(e) => setCtTerms(e.target.value)}
+                  />
+                </FormField>
+              </fieldset>
+            ) : null}
 
             <FormField label="Page template" htmlFor="portal-template" error={fieldErrors.templateId}>
               <select id="portal-template" className={selectClassName} value={templateId} onChange={(e) => setTemplateId(e.target.value)}>

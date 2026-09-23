@@ -11,10 +11,11 @@ import { GrantsPanel } from '@/components/portal/grants-panel'
 import { PortalFormDialog } from '@/components/portal/portal-form-dialog'
 import { PortalHealthBadge, PortalNotices, PortalStatusFacts } from '@/components/portal/portal-status'
 import { ConfirmDialog, ErrorNote, Fact } from '@/components/portal/portal-ui'
+import { PaidAccessPanel } from '@/components/portal/paid-access-panel'
 import { SessionsPanel } from '@/components/portal/sessions-panel'
 import { useDeletePortal, useIsPortalAdmin, usePortal, usePortalTemplates } from '@/hooks/use-portal'
 import { ApiError, apiErrorCode } from '@/lib/api'
-import { errorDetail } from '@/lib/portal'
+import { errorDetail, methodLabels } from '@/lib/portal'
 import type { Portal } from '@/types/api'
 
 type Tab = 'guests' | 'sessions' | 'setup'
@@ -123,11 +124,7 @@ function PortalSetupPanel({ portal, isAdmin, onEdit }: { portal: Portal; isAdmin
             {portal.network.label ?? portal.network.name ?? portal.network.perchId}
             {portal.network.purpose ? <span className="ml-1 text-muted-foreground">({portal.network.purpose})</span> : null}
           </Fact>
-          <Fact label="Sign-in methods">
-            {[portal.methods.voucher ? 'Vouchers' : null, portal.methods.password ? 'Username + password' : null]
-              .filter(Boolean)
-              .join(', ') || 'None'}
-          </Fact>
+          <Fact label="How guests get online">{methodLabels(portal.methods).join(', ') || 'None'}</Fact>
           <Fact label="Page template">
             {portal.templateId === null ? (
               'Gateway’s compiled-in pages'
@@ -177,6 +174,10 @@ function PortalSetupPanel({ portal, isAdmin, onEdit }: { portal: Portal; isAdmin
           <NetworkCaptureSwitch gatewayId={portal.gatewayId} perchId={portal.network.perchId} />
         </div>
       </Panel>
+
+      {portal.methods.payment || portal.methods.clickThrough ? (
+        <PaidAccessPanel portal={portal} isAdmin={isAdmin} onEdit={onEdit} />
+      ) : null}
     </div>
   )
 }

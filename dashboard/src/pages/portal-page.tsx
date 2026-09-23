@@ -10,6 +10,7 @@ import { PortalFormDialog } from '@/components/portal/portal-form-dialog'
 import { PortalHealthBadge } from '@/components/portal/portal-status'
 import { DeliveryBadge, ErrorNote, PortalSectionNav } from '@/components/portal/portal-ui'
 import { useIsPortalAdmin, usePortals } from '@/hooks/use-portal'
+import { methodLabels } from '@/lib/portal'
 import type { Portal } from '@/types/api'
 
 /** `/portal`: the guest portals of every gateway, one per network. */
@@ -22,7 +23,7 @@ export function PortalPage() {
     <div className="flex w-full flex-col gap-5">
       <PageHeader
         title="Guest portal"
-        description="Sign-in pages in front of guest networks: vouchers, portal users and paid-hotspot integrations."
+        description="Sign-in pages in front of guest networks: vouchers, portal users, coin terminals and click-through."
         actions={
           isAdmin ? (
             <Button size="sm" onClick={() => setCreating(true)}>
@@ -63,9 +64,7 @@ export function PortalPage() {
 }
 
 function PortalCard({ portal }: { portal: Portal }) {
-  const methods = [portal.methods.voucher ? 'Vouchers' : null, portal.methods.password ? 'Username + password' : null]
-    .filter(Boolean)
-    .join(' · ')
+  const methods = methodLabels(portal.methods).join(' · ')
   const clients = portal.status.clients
   return (
     <Link
