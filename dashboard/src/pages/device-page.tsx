@@ -8,6 +8,7 @@ import { ScopeToggle } from '@/components/dashboard/scope-toggle'
 import { TimePicker } from '@/components/dashboard/time-picker'
 import { DeviceDestinationsTable } from '@/components/destinations/device-destinations-table'
 import { DeviceLabelCard } from '@/components/devices/device-label-editor'
+import { DeviceWanAccessCard } from '@/components/firewall/device-wan-access-card'
 import { PeersPanel } from '@/components/devices/peers-panel'
 import { ProtocolsSection } from '@/components/devices/protocols-section'
 import { PageHeader } from '@/components/layout/page-header'
@@ -342,6 +343,8 @@ export function DevicePage() {
               <Row label="Collector">{identity ? `#${identity.collectorId}` : '—'}</Row>
             </div>
           </Panel>
+
+          <DeviceWanAccessCard mac={mac ?? ''} deviceName={displayName} />
 
           <Panel
             title="WiFi"
