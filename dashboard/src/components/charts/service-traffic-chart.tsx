@@ -137,7 +137,7 @@ export function ServiceTrafficChart({
               tickLine={false}
               axisLine={false}
               tickMargin={8}
-              width={64}
+              width={76}
               tickFormatter={(value: number) => formatMbps(value, value >= 10 ? 0 : 1)}
             />
           ) : null}

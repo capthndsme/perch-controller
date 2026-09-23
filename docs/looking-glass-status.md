@@ -2278,3 +2278,66 @@ tagged yet.
   sign-in again → back on the collector step with the 1.0.0-rc.2 package commands. From a LAN
   client: second `setup/admin` 409, ten wrong passwords 401 then 429 (`Retry-After: 900`),
   `collector/skip` without a token 401. After finishing: `setup/login` 409, `/auth/login` 200.
+
+## 2026-09-23 — Servers view: dense name charts, 15 s floor (rc.2, branch `rc2-servers`)
+
+- **Report.** A server name's chart on the Servers page skipped quiet periods: lines bridged the gaps
+  and the time axis started at the first busy slot and ended at the last. Reproduced on the live API
+  (read-only): a 24 h window of a self-hosted name returned 11 of 288 five-minute buckets, the
+  largest gap 4.8 h, no zeros. Two causes: the SQL only returns buckets that have rows (every name
+  series: services and destinations, no zero-fill), and the chart drew them with `monotone` areas
+  on a time axis whose domain is the first and last point. The device and protocol series have the
+  same shape but separate code (not changed here).
+- **Server.** `app/services/series_buckets.ts` (shared by `service_history.ts` and
+  `destination_history.ts`): picks one bucket width, reads the sums per bucket
+  (`TIMESTAMPDIFF(SECOND, epoch, t) DIV width`, time-zone free) and returns every bucket of the
+  window, quiet ones as zero, each with `seconds` (the part inside the window and not in the future:
+  partial first and last bucket) and its rate (`mbpsServed` / `mbpsIn` …). Width = the smallest step
+  of a ladder (5 s … 7 d) that is at least the floor, keeps the series under the point cap and is a
+  whole multiple of a stored tier that covers the window; the coarsest such tier is read. A tier
+  covers when its oldest row reaches the window start (or the start of all history), so a fresh
+  install and an upgrade both behave.
+- **Per-poll service rows.** Only 5-minute and hourly service rows existed, so a 15 s floor needed a
+  new native table: `device_service_buckets` (migration 047, one row per poll that moved bytes,
+  `bucket_start` aligned to the poll interval), written beside the 5-minute and hourly rows, pruned
+  with the other native tables (`BUCKET_RETENTION_DAYS`, 30 d), in `collectors:merge` (role native)
+  and `collectors:purge`. It serves only buckets under 5 minutes (windows up to ~2 d at the default
+  cap); from 5 minutes up the rollups answer. Its name index covers the sums. Destinations keep their
+  hourly table: at their cardinality (~30k hourly rows a day here) a per-poll table would be tens of
+  millions of rows; they are zero-filled, never finer than an hour.
+- **Setting.** Settings → Charts (`chart_settings.ts`, `system_settings` key `charts`, admin
+  `GET`/`PATCH /api/v1/settings/charts`, same pattern as Presence): `minBucketSeconds` 15 (5–300),
+  `maxPoints` 1500 (100–1500).
+- **Contract.** `GET /api/v1/services/:name/traffic` and `/destinations/:name/traffic`: `resolution`
+  optional (15s … 1d, the finest bucket wanted; omitted = auto); response adds `bucketSeconds`,
+  `source` (`native` | `5m` | `1h`), `floorSeconds`, `maxPoints`; `resolution` becomes the label of
+  the width (`15s`, `2m`, `10m` …) and `resolutionSeconds` stays; buckets add `seconds` and rates.
+- **Dashboard** (fork): no client-side resolution picking any more; points from `seconds`; linear
+  areas; captions from the response; the chart still draws when a window is silent. New page
+  Settings → Charts.
+- **Query cost.** Live DB (read-only EXPLAIN): the 5-minute and hourly reads use the
+  `(server_name, time)` indexes (~500 / ~800 rows, ~3 ms). Per-poll table, synthetic worst case in a
+  scratch database (1.1 M rows, one name busy every 5 s for 30 days): 6 h at 15 s ~15 ms, 2 d at
+  120 s ~75 ms with the covering index (~170 ms without; 5 d at 5 min would have been a 0.9 s full
+  scan, which is why the per-poll table stops below 5 minutes). Results go through the bounded query
+  cache (TTL 10 s for sub-minute buckets); the oldest-row lookups behind the tier choice are cached
+  60 s in a map of at most 16 entries.
+- **Tests.** Unit (`planSeries`, `denseBuckets`, labels) and functional: a window with gaps returns
+  every 15 s bucket with zeros, partial first/last buckets carry their seconds and rate, the live
+  bucket stops at now, the floor and cap from Settings → Charts, the cap on 6 h … 365 d windows, an
+  upgraded install serves per-poll buckets only after the table's first row, old windows fall back,
+  settings API (403 / 422 / clamping), destinations dense. Full suite 530/531 on first run (one
+  timing-sensitive perch-apd push test under a load average of 12; passed on rerun), lint,
+  typecheck, dashboard lint and build with `VITE_API_URL=` empty.
+- **Lab.** Branch deployed to the lab controller; a host client pulled 20 MB bursts (2 MB/s, 90 s apart, 7 min
+  quiet) from a lab server through a temporary port forward. Before (stable, 38 min window): 5 of 8
+  five-minute buckets, the axis clipped to the busy slots, the quiet slots bridged, peak rate
+  1.6 Mbps. After, same window: all 8 buckets, the quiet ones at zero. After at 15 s: 164 buckets,
+  161 zero, each burst at 10.7 Mbps (20 MB in one 15 s bucket). The lab controller was redeployed
+  from another rc.2 copy midway, so the 15 s view was taken from the branch server run locally on a
+  copy of the lab database; the port forward, the test servers and the per-poll table were removed
+  from the lab afterwards.
+- **Open.** Destination charts stay hourly. The device and protocol series do not zero-fill either
+  (separate code, `devices_controller.ts`). The name lists on the Servers and destinations pages sum
+  hourly rows with `hour_start >= from`, so a window shorter than the time since the hour began lists
+  nothing, and the first partial hour of any window is left out.
