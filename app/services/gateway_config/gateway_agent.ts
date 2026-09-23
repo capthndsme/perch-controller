@@ -1,4 +1,3 @@
-import Collector from '#models/collector'
 import Gateway from '#models/gateway'
 import collectorHub, { AgentRpcError, RPC_ERRORS } from '#services/collector_agent_hub'
 import { domainRegistry } from '#services/gateway_config/domains/index'
@@ -80,10 +79,10 @@ function isObject(value: unknown): value is Record<string, unknown> {
  * clock.
  */
 export async function gatewayRequest<T = unknown>(
-  gateway: Pick<Gateway, 'id' | 'collectorId' | 'configSignKey'>,
+  gateway: Pick<Gateway, 'id' | 'collectorId' | 'configSignKey' | 'pairingKey'>,
   method: string,
   params: Record<string, unknown>,
-  options: { timeoutMs?: number; access?: WriteAccess; apiKey?: string | null } = {}
+  options: { timeoutMs?: number; access?: WriteAccess } = {}
 ): Promise<T> {
   if (gateway.collectorId === null) throw new GatewayOfflineError()
   const access = options.access
@@ -92,13 +91,12 @@ export async function gatewayRequest<T = unknown>(
       timeoutMs: options.timeoutMs,
     })
   }
-  let apiKey: string | null
-  if (access.key === 'config_sign_key') {
-    apiKey = gateway.configSignKey
-  } else {
-    const collector = options.apiKey ? null : await Collector.find(gateway.collectorId)
-    apiKey = options.apiKey ?? collector?.apiKey ?? null
-  }
+  const apiKey: string | Buffer | null =
+    access.key === 'config_sign_key'
+      ? gateway.configSignKey
+      : gateway.pairingKey
+        ? Buffer.from(gateway.pairingKey, 'hex')
+        : null
   if (!apiKey) throw new AgentRpcError(RPC_ERRORS.COMMAND_FAILED, 'no key to sign with')
   const send = (ts?: number) =>
     collectorHub.request<T>(

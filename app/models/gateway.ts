@@ -62,6 +62,26 @@ export default class Gateway extends GatewaySchema {
   })
   declare configSignKey: string | null
 
+  /** The plain-HTTP signing pairing's state (owner decision 29). */
+  @jsonColumn('pairing')
+  declare pairing: GatewayPairing | null
+
+  /** The paired signing key (64 hex), APP_KEY-encrypted, never serialised. */
+  @column({
+    columnName: 'pairing_key',
+    serializeAs: null,
+    prepare: (value: string | null) => (value ? encryption.encrypt(value) : null),
+    consume: (value: string | null) => {
+      if (!value) return null
+      try {
+        return encryption.decrypt<string>(value) ?? null
+      } catch {
+        return null
+      }
+    },
+  })
+  declare pairingKey: string | null
+
   /** README 3.7: a reset or re-bound gateway is offered its last confirmed revision. */
   @jsonColumn('rejoin_offer')
   declare rejoinOffer: GatewayRejoinOffer | null
@@ -71,6 +91,30 @@ export type GatewayObservedState = {
   luciPending: boolean
   uncommitted: string[]
   readAt: string | null
+}
+
+export type GatewayPairingState =
+  | 'awaiting_confirmation'
+  | 'awaiting_router'
+  | 'paired'
+  | 'lost'
+  | 'expired'
+  | 'failed'
+
+export type GatewayPairing = {
+  state: GatewayPairingState
+  pairingId: string
+  keyId: string
+  /** The 6-digit code both sides show (kept until paired, for the dashboard). */
+  sas: string | null
+  startedAt: string
+  expiresAt: string
+  adminConfirmedAt: string | null
+  routerConfirmedAt: string | null
+  pairedAt: string | null
+  byUserId: number | null
+  attempts: number
+  reason?: string
 }
 
 export type GatewayRejoinOffer = {

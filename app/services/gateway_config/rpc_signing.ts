@@ -16,7 +16,7 @@ import { createHash, createHmac, randomBytes } from 'node:crypto'
  *         "mac":"<hex HMAC-SHA256>"}}
  * ```
  *
- * mac = HMAC-SHA256(api_key, "perch-config-sig-v1\n" + method + "\n" +
+ * mac = HMAC-SHA256(key, "perch-config-sig-v1\n" + method + "\n" +
  * challenge + "\n" + ts + "\n" + nonce + "\n" + hex(SHA-256(payload))). The
  * payload is a string, so both ends MAC the same bytes. Integrity and
  * replay protection (method, session, time window, one-time nonce), not
@@ -30,8 +30,14 @@ const SIG_LABEL = 'perch-config-sig-v1'
 export type AgentSigning = {
   required: boolean
   challenge?: string
-  /** `api_key` (the collector's key, which the controller holds) or `config_sign_key` (router-only). */
+  /**
+   * Which key the router verifies with: `paired` (the pairing's derived key,
+   * owner decision 29; `keyId` names it), `config_sign_key` (a router-only
+   * key the admin enters), or `api_key`, which the controller never signs
+   * with (it is the connection's bearer token, visible on plain HTTP).
+   */
   key: string
+  keyId?: string
   windowSeconds?: number
 }
 
@@ -53,7 +59,7 @@ export type SignedEnvelope = {
 
 /** Wraps `params` in the signed envelope. */
 export function signParams(
-  key: string,
+  key: string | Buffer,
   method: string,
   challenge: string,
   params: Record<string, unknown>,
@@ -77,6 +83,7 @@ export function parseSigning(value: unknown): AgentSigning | null {
     required: v.required,
     challenge: typeof v.challenge === 'string' ? v.challenge.slice(0, 256) : undefined,
     key: typeof v.key === 'string' ? v.key.slice(0, 32) : 'api_key',
+    keyId: typeof v.keyId === 'string' ? v.keyId.slice(0, 32) : undefined,
     windowSeconds: typeof v.windowSeconds === 'number' ? v.windowSeconds : undefined,
   }
 }

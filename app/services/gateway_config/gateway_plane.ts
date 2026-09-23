@@ -21,6 +21,7 @@ import {
   rememberGatewaySession,
   type HelloGatewayConfig,
 } from '#services/gateway_config/gateway_registry'
+import { reconcilePairingWithHello } from '#services/gateway_config/pairing'
 import { gatewayQueue } from '#services/gateway_config/serial_queue'
 import type { RouterAuthor } from '#services/gateway_config/types'
 import logger from '@adonisjs/core/services/logger'
@@ -85,6 +86,8 @@ export async function afterGatewayHello(gatewayId: number): Promise<void> {
       const gateway = await Gateway.findOrFail(gatewayId)
       const session = gatewaySession(gateway.collectorId)
       if (!session) return
+      // Is the router still holding the pairing's key (a reset loses it)?
+      await reconcilePairingWithHello(gateway)
       // Outcomes that happened while the controller was unreachable.
       for (const result of session.hello.results) await applyResult(gateway, result)
       await onAgentReconnected(gateway)

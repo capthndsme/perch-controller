@@ -108,6 +108,21 @@ export const signKeyValidator = vine.compile(
   })
 )
 
+/** `POST /gateways/:id/pairing` (step-up) */
+export const pairingStartValidator = vine.compile(
+  vine.object({ currentPassword: vine.string().maxLength(512) })
+)
+
+/** `POST /gateways/:id/pairing/confirm`: the 6-digit code the router shows. */
+export const pairingConfirmValidator = vine.compile(
+  vine.object({
+    code: vine
+      .string()
+      .trim()
+      .regex(/^\d{6}$/),
+  })
+)
+
 /** `PATCH /gateways/:id/dns` */
 export const dnsPolicyValidator = vine.compile(
   vine.object({ labelNames: vine.enum(['off', 'review'] as const) })

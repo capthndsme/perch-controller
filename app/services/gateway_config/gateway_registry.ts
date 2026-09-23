@@ -31,7 +31,8 @@ import { DateTime } from 'luxon'
  * - `writeAccess`: README 7.1: writes need verified TLS on both ends
  *   (`connection.secure === true` and the agent's `transportOk`), or both
  *   opt-ins (the `allowInsecureTransport` setting and the router's
- *   `config_allow_insecure '1'`), in which case the write RPCs are signed.
+ *   `config_allow_insecure '1'`) plus a pairing (owner decision 29), in
+ *   which case the write RPCs are signed with the paired key.
  */
 
 export const GATEWAY_CAPABILITY = 'gateway_config'
@@ -245,6 +246,20 @@ export function gatewaySession(collectorId: number | null): GatewaySessionContex
   return context
 }
 
+/**
+ * The router switched its signing key during the session (a pairing
+ * completed, or it forgot the key): the session's hello block follows, so
+ * writes use the new key without waiting for a reconnect.
+ */
+export function updateSessionSigning(
+  collectorId: number | null,
+  signing: { key: string; keyId?: string }
+): void {
+  const context = gatewaySession(collectorId)
+  if (!context?.hello.signing) return
+  context.hello.signing = { ...context.hello.signing, key: signing.key, keyId: signing.keyId }
+}
+
 export function forgetGatewaySession(collectorId: number): void {
   sessions.delete(collectorId)
 }
@@ -387,6 +402,7 @@ export type WriteBlockReason =
   | 'offline'
   | 'no_capability'
   | 'sign_key_unknown'
+  | 'not_paired'
 
 export type WriteAccess =
   | { writable: true; signed: false; secure: true }
@@ -395,8 +411,8 @@ export type WriteAccess =
       signed: true
       secure: false
       challenge: string
-      /** Which key signs: the collector's api_key, or the router's config_sign_key. */
-      key: 'api_key' | 'config_sign_key'
+      /** Which key signs: the pairing's derived key, or the router's config_sign_key. */
+      key: 'paired' | 'config_sign_key'
     }
   | { writable: false; reason: WriteBlockReason }
 
@@ -408,7 +424,10 @@ export type WriteAccess =
  * router that signs with its own `config_sign_key` cannot be written.
  */
 export function writeAccess(
-  gateway: Pick<Gateway, 'collectorId' | 'agentAccess' | 'capabilities' | 'configSignKey'>,
+  gateway: Pick<
+    Gateway,
+    'collectorId' | 'agentAccess' | 'capabilities' | 'configSignKey' | 'pairing' | 'pairingKey'
+  >,
   settings: Pick<GatewayConfigSettings, 'allowInsecureTransport'>
 ): WriteAccess {
   const session = gatewaySession(gateway.collectorId)
@@ -439,12 +458,20 @@ export function writeAccess(
       key: 'config_sign_key',
     }
   }
-  if (signing.key !== 'api_key') return { writable: false, reason: 'sign_key_unknown' }
+  // Owner decision 29: the api_key is never a signing key (it is the
+  // bearer token a plain-HTTP listener sees). Writes need a pairing.
+  const pairing = gateway.pairing
+  const paired =
+    pairing?.state === 'paired' &&
+    gateway.pairingKey !== null &&
+    signing.key === 'paired' &&
+    signing.keyId === pairing.keyId
+  if (!paired) return { writable: false, reason: 'not_paired' }
   return {
     writable: true,
     signed: true,
     secure: false,
     challenge: signing.challenge,
-    key: 'api_key',
+    key: 'paired',
   }
 }

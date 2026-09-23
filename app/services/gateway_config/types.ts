@@ -220,6 +220,14 @@ export const GATEWAY_EVENTS = [
   'bound',
   'dns_label_names_changed',
   'sign_key_changed',
+  'pairing_started',
+  'pairing_code_rejected',
+  'pairing_code_accepted',
+  'pairing_router_confirmed',
+  'paired',
+  'pairing_failed',
+  'pairing_lost',
+  'unpaired',
 ] as const
 export type GatewayEventName = (typeof GATEWAY_EVENTS)[number]
 

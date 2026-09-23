@@ -773,12 +773,56 @@ test.group('gateway config plane', (group) => {
       .patch(`/api/v1/gateways/${env.gatewayId}`)
       .bearerToken(env.adminToken)
       .json({ mode: 'observe' })
+    // Owner decision 29: the api_key never signs; the gateway must be paired.
+    const unpaired = await client
+      .patch(`/api/v1/gateways/${env.gatewayId}`)
+      .bearerToken(env.adminToken)
+      .json({ mode: 'managed', currentPassword: PASSWORD })
+    unpaired.assertStatus(409)
+    unpaired.assertBodyContains({ error: 'not_paired' })
+
+    const noStepUp = await client
+      .post(`/api/v1/gateways/${env.gatewayId}/pairing`)
+      .bearerToken(env.adminToken)
+      .json({ currentPassword: 'wrong' })
+    noStepUp.assertStatus(403)
+    const started = await client
+      .post(`/api/v1/gateways/${env.gatewayId}/pairing`)
+      .bearerToken(env.adminToken)
+      .json({ currentPassword: PASSWORD })
+    started.assertStatus(200)
+    const pairing = started.body().data.pairing
+    assert.equal(pairing.state, 'awaiting_confirmation')
+    // Both sides show the same code (the router: `perch-collector pair status`).
+    assert.equal(pairing.sas, gw.pairPending!.sas)
+    const wrong = await client
+      .post(`/api/v1/gateways/${env.gatewayId}/pairing/confirm`)
+      .bearerToken(env.adminToken)
+      .json({ code: pairing.sas === '000000' ? '000001' : '000000' })
+    wrong.assertStatus(422)
+    wrong.assertBodyContains({ error: 'pairing_code_mismatch', attemptsLeft: 2 })
+    const ok = await client
+      .post(`/api/v1/gateways/${env.gatewayId}/pairing/confirm`)
+      .bearerToken(env.adminToken)
+      .json({ code: pairing.sas })
+    ok.assertStatus(200)
+    assert.equal(ok.body().data.pairing.state, 'awaiting_router')
+    assert.isTrue(gw.localConfirm())
+    const paired = await eventually(
+      () => Gateway.findOrFail(env.gatewayId),
+      (g) => g.pairing?.state === 'paired'
+    )
+    assert.equal(paired.pairing!.keyId, gw.pairedKey!.keyId)
+    assert.equal(paired.pairingKey, gw.pairedKey!.key.toString('hex'))
+
     const managed = await client
       .patch(`/api/v1/gateways/${env.gatewayId}`)
       .bearerToken(env.adminToken)
       .json({ mode: 'managed', currentPassword: PASSWORD })
     managed.assertStatus(200)
     assert.isTrue(managed.body().data.signedWrites)
+    assert.equal(managed.body().data.pairing.state, 'paired')
+    assert.isNull(managed.body().data.pairing.sas)
     const put = await client
       .put(`/api/v1/devices/${NEW_MAC}/reservation`)
       .bearerToken(env.adminToken)
@@ -797,6 +841,53 @@ test.group('gateway config plane', (group) => {
     assert.isTrue(writes.every((c) => c.signed))
     const signedApply = await applyState(put.body().data.apply.id)
     assert.isTrue(Boolean(signedApply.signed))
+
+    // A reset router lost the key: the pairing is lost, writes stop.
+    gw.pairedKey = null
+    await gw.redial()
+    const lost = await eventually(
+      () => Gateway.findOrFail(env.gatewayId),
+      (g) => g.pairing?.state === 'lost'
+    )
+    assert.isNull(lost.pairingKey)
+    const view = await client.get(`/api/v1/gateways/${env.gatewayId}`).bearerToken(env.adminToken)
+    assert.equal(view.body().data.writeBlockedReason, 'not_paired')
+    const unpair = await client
+      .delete(`/api/v1/gateways/${env.gatewayId}/pairing`)
+      .bearerToken(env.adminToken)
+    unpair.assertStatus(200)
+    const forgotten = await Gateway.findOrFail(env.gatewayId)
+    assert.isNull(forgotten.pairing)
+  })
+
+  test('unpair: the router forgets the key on a signed request', async ({ client, assert }) => {
+    await settings({ allowInsecureTransport: true })
+    const env = await setup({ transportOk: false, allowInsecure: true })
+    const started = await client
+      .post(`/api/v1/gateways/${env.gatewayId}/pairing`)
+      .bearerToken(env.adminToken)
+      .json({ currentPassword: PASSWORD })
+    // Router first this time, then the admin's code.
+    assert.isTrue(env.gw.localConfirm())
+    await new Promise((r) => setTimeout(r, 100))
+    const ok = await client
+      .post(`/api/v1/gateways/${env.gatewayId}/pairing/confirm`)
+      .bearerToken(env.adminToken)
+      .json({ code: started.body().data.pairing.sas })
+    assert.equal(ok.body().data.pairing.state, 'paired')
+    const again = await client
+      .post(`/api/v1/gateways/${env.gatewayId}/pairing`)
+      .bearerToken(env.adminToken)
+      .json({ currentPassword: PASSWORD })
+    again.assertStatus(409)
+    again.assertBodyContains({ error: 'already_paired' })
+    const unpair = await client
+      .delete(`/api/v1/gateways/${env.gatewayId}/pairing`)
+      .bearerToken(env.adminToken)
+    unpair.assertStatus(200)
+    const forget = env.gw.calls.find((c) => c.method === 'gateway.pair.forget')
+    assert.isTrue(forget?.signed)
+    assert.isNull(env.gw.pairedKey)
   })
 
   test('rejoin: a reset router is offered the last confirmed revision', async ({

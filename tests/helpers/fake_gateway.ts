@@ -7,6 +7,15 @@ import {
   TEST_INSTANCE_ID,
 } from '#tests/helpers/collector_agent'
 import { signatureMessage } from '#services/gateway_config/rpc_signing'
+import {
+  derivePairingKey,
+  generatePairingKeyPair,
+  newPairingNonce,
+  pairingCommitment,
+  pairingKeyId,
+  pairingSas,
+  x25519Shared,
+} from '#services/gateway_config/pairing_crypto'
 import { createHash, createHmac, randomBytes } from 'node:crypto'
 
 /**
@@ -106,6 +115,19 @@ export class FakeGateway {
   installAllowlist = ['sqm-scripts', 'kmod-sched-cake', 'opennds']
   /** The router's own `config_sign_key` (signing.key says so when set). */
   signKey: string | null = null
+  /** A pairing in progress on the router side (owner decision 29). */
+  pairPending: {
+    pairingId: string
+    gatewayId: number
+    controllerPub: string
+    priv: string
+    pub: string
+    nonce: string
+    key: Buffer | null
+    sas: string | null
+  } | null = null
+  /** The paired signing key, once the router's admin confirmed the code. */
+  pairedKey: { key: Buffer; keyId: string } | null = null
 
   constructor(readonly options: FakeGatewayOptions = {}) {
     this.configs = clone(options.configs ?? { dhcp: [] })
@@ -165,7 +187,8 @@ export class FakeGateway {
         signing: {
           required: !this.transportOk,
           challenge: this.challenge,
-          key: this.signKey ? 'config_sign_key' : 'api_key',
+          key: this.signKey ? 'config_sign_key' : this.pairedKey ? 'paired' : 'api_key',
+          ...(this.pairedKey ? { keyId: this.pairedKey.keyId } : {}),
           windowSeconds: 300,
         },
         management: {
@@ -267,6 +290,73 @@ export class FakeGateway {
         this.#requireManaged()
         return this.#install(params, gen)
       },
+      'gateway.pair.begin': (params: Record<string, unknown>) => {
+        this.calls.push({ method: 'gateway.pair.begin', params, signed: false })
+        if (this.access !== 'write') fail('not_managed', 'config_access is not write')
+        if (this.transportOk) fail('pairing_not_needed', 'verified TLS')
+        if (!this.options.allowInsecure) fail('insecure_transport', 'config_allow_insecure is 0')
+        const mine = generatePairingKeyPair()
+        this.pairPending = {
+          pairingId: String(params.pairingId),
+          gatewayId: Number(params.gatewayId),
+          controllerPub: String(params.controllerPub),
+          priv: mine.privateKey,
+          pub: mine.publicKey,
+          nonce: newPairingNonce(),
+          key: null,
+          sas: null,
+        }
+        return {
+          pairingId: this.pairPending.pairingId,
+          routerPub: mine.publicKey,
+          commitment: pairingCommitment(
+            this.pairPending.nonce,
+            mine.publicKey,
+            this.pairPending.controllerPub
+          ),
+          expiresAt: new Date(Date.now() + 600_000).toISOString(),
+        }
+      },
+      'gateway.pair.reveal': (params: Record<string, unknown>) => {
+        this.calls.push({ method: 'gateway.pair.reveal', params, signed: false })
+        const p = this.pairPending
+        if (!p || p.pairingId !== params.pairingId) fail('unknown_pairing', 'no such pairing')
+        const t = {
+          gatewayId: p.gatewayId,
+          controllerPub: p.controllerPub,
+          routerPub: p.pub,
+          controllerNonce: String(params.controllerNonce),
+          routerNonce: p.nonce,
+        }
+        p.key = derivePairingKey(x25519Shared(p.priv, p.controllerPub), t)
+        p.sas = pairingSas(t)
+        return { pairingId: p.pairingId, routerNonce: p.nonce }
+      },
+      'gateway.pair.status': (params: Record<string, unknown>) => {
+        this.calls.push({ method: 'gateway.pair.status', params, signed: false })
+        if (
+          this.pairedKey &&
+          (!this.pairPending || this.pairPending.pairingId === params.pairingId)
+        ) {
+          return { pairingId: params.pairingId, state: 'paired', keyId: this.pairedKey.keyId }
+        }
+        if (this.pairPending?.pairingId === params.pairingId) {
+          return { pairingId: params.pairingId, state: 'waiting_local' }
+        }
+        return { pairingId: params.pairingId, state: 'unknown' }
+      },
+      'gateway.pair.cancel': (params: Record<string, unknown>) => {
+        this.calls.push({ method: 'gateway.pair.cancel', params, signed: false })
+        this.pairPending = null
+        return { pairingId: params.pairingId, state: 'cancelled' }
+      },
+      'gateway.pair.forget': (raw: Record<string, unknown>) => {
+        const { params, signed } = this.#unwrap('gateway.pair.forget', raw)
+        this.calls.push({ method: 'gateway.pair.forget', params, signed })
+        if (!signed) fail('signature_required', 'sign it with the paired key')
+        this.pairedKey = null
+        return { state: 'forgotten' }
+      },
       'gateway.config.confirm': (raw: Record<string, unknown>) => {
         const { params, signed } = this.#unwrap('gateway.config.confirm', raw)
         this.calls.push({ method: 'gateway.config.confirm', params, signed })
@@ -304,7 +394,7 @@ export class FakeGateway {
     if (Math.abs(Date.now() / 1000 - ts) > 300) {
       fail('stale_signature', 'clock skew', { agentTime: Math.floor(Date.now() / 1000) })
     }
-    const mac = createHmac('sha256', this.signKey ?? TEST_API_KEY)
+    const mac = createHmac('sha256', this.signKey ?? this.pairedKey?.key ?? TEST_API_KEY)
       .update(signatureMessage(method, String(sig.challenge), ts, String(sig.nonce), payload))
       .digest('hex')
     if (mac !== sig.mac) fail('bad_signature', 'the signature does not verify')
@@ -318,6 +408,24 @@ export class FakeGateway {
     if (this.transportOk) return
     if (!this.options.allowInsecure) fail('insecure_transport', 'writes need verified TLS')
     if (!signed) fail('signature_required', 'sign it')
+  }
+
+  /**
+   * The router's admin confirms the pairing (`perch-collector pair confirm
+   * <code>`): with the right code the key becomes the signing key and the
+   * agent tells the controller.
+   */
+  localConfirm(code: string | null = this.pairPending?.sas ?? null): boolean {
+    const p = this.pairPending
+    if (!p || !p.key || code !== p.sas) return false
+    this.pairedKey = { key: p.key, keyId: pairingKeyId(p.key) }
+    this.pairPending = null
+    this.collector?.notifyServer('gateway.pair.state', {
+      pairingId: p.pairingId,
+      state: 'paired',
+      keyId: this.pairedKey.keyId,
+    })
+    return true
   }
 
   /** Apply and install need `agent.configure` mode `managed` on the session. */

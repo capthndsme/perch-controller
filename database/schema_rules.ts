@@ -32,6 +32,8 @@ export default {
         'observed_state',
         'rejoin_offer',
         'config_sign_key',
+        'pairing',
+        'pairing_key',
       ],
     },
     gateway_sections: {

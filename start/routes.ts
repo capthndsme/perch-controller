@@ -448,6 +448,7 @@ router
           .as('revision')
           .where('number', router.matchers.number())
         router.get(':id/events', [GatewaysController, 'events']).as('events')
+        router.get(':id/pairing', [GatewaysController, 'pairing']).as('pairing')
         router.get(':id/dns', [GatewayNamesController, 'dns']).as('dns')
         router.get(':id/dns/label-names', [GatewayNamesController, 'labelNames']).as('labelNames')
         router
@@ -465,6 +466,11 @@ router
               .post(':id/packages', [GatewaysController, 'installPackages'])
               .as('installPackages')
             router.put(':id/sign-key', [GatewaysController, 'setSignKey']).as('setSignKey')
+            router.post(':id/pairing', [GatewaysController, 'startPairing']).as('startPairing')
+            router
+              .post(':id/pairing/confirm', [GatewaysController, 'confirmPairing'])
+              .as('confirmPairing')
+            router.delete(':id/pairing', [GatewaysController, 'unpair']).as('unpair')
             router.delete(':id/sign-key', [GatewaysController, 'clearSignKey']).as('clearSignKey')
             router
               .post(':id/applies/:applyId/confirm', [GatewaysController, 'confirmApply'])

@@ -37,6 +37,7 @@ import {
   saveStates,
   writeRevision,
 } from '#services/gateway_config/gateway_store'
+import { clearPairing } from '#services/gateway_config/pairing'
 import { planRestore } from '#services/gateway_config/revisions'
 import { gatewayQueue } from '#services/gateway_config/serial_queue'
 import {
@@ -138,7 +139,9 @@ export async function patchGateway(
         routerAccess: session?.hello.access ?? (gateway.agentAccess as 'none' | 'read' | 'write'),
         transportOk:
           access.writable ||
-          (access.reason !== 'insecure_transport' && access.reason !== 'sign_key_unknown'),
+          (access.reason !== 'insecure_transport' &&
+            access.reason !== 'sign_key_unknown' &&
+            access.reason !== 'not_paired'),
         passwordVerified: true,
       })
       if (error === 'router_access_insufficient') {
@@ -149,6 +152,13 @@ export async function patchGateway(
         )
       }
       if (error === 'insecure_transport') {
+        if (!access.writable && access.reason === 'not_paired') {
+          throw planeError(
+            409,
+            'not_paired',
+            'Pair the gateway with this controller first (plain HTTP writes are signed).'
+          )
+        }
         throw planeError(
           409,
           'insecure_transport',
@@ -822,6 +832,8 @@ export async function bindGateway(
     gateway.authoritative = false
     gateway.observedHashes = null
     gateway.observedLedger = null
+    // Another router: its pairing (if any) has to be made again.
+    clearPairing(gateway)
     await gateway.save()
     await recordGatewayEvent(gateway.id, 'bound', { userId, detail: { collectorId } })
     await offerRejoin(gateway, 'rebound', await lastConfirmedRevision(gateway.id))

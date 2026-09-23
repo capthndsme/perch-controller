@@ -35,6 +35,7 @@ import {
 import { getGatewayConfigSettings } from '#services/gateway_config/gateway_config_settings'
 import { ensureGatewayRows, normalizeMode } from '#services/gateway_config/gateway_registry'
 import { loadSections } from '#services/gateway_config/gateway_store'
+import { confirmPairing, pairingView, startPairing, unpair } from '#services/gateway_config/pairing'
 import { QueueFullError } from '#services/gateway_config/serial_queue'
 import type { UciValue } from '#services/gateway_config/types'
 import {
@@ -52,6 +53,8 @@ import {
   gatewayPatchValidator,
   packageInstallValidator,
   pagingValidator,
+  pairingConfirmValidator,
+  pairingStartValidator,
   perchIdsValidator,
   sectionFilterValidator,
   sectionResolveValidator,
@@ -441,6 +444,48 @@ export default class GatewaysController {
       const gateway = await setSignKey(Number(params.id), auth.getUserOrFail(), null, undefined)
       const [view] = await gatewayViews([gateway], await getGatewayConfigSettings())
       return serialize(view)
+    } catch (error) {
+      return planeRefusal(response, error)
+    }
+  }
+
+  /** GET /api/v1/gateways/:id/pairing */
+  async pairing({ params, response, serialize }: HttpContext) {
+    try {
+      const gateway = await findGateway(Number(params.id))
+      return serialize({ pairing: pairingView(gateway) })
+    } catch (error) {
+      return planeRefusal(response, error)
+    }
+  }
+
+  /** POST /api/v1/gateways/:id/pairing {currentPassword} */
+  async startPairing({ params, request, response, auth, serialize }: HttpContext) {
+    const { currentPassword } = await request.validateUsing(pairingStartValidator)
+    try {
+      const pairing = await startPairing(Number(params.id), auth.getUserOrFail(), currentPassword)
+      return serialize({ pairing })
+    } catch (error) {
+      return planeRefusal(response, error)
+    }
+  }
+
+  /** POST /api/v1/gateways/:id/pairing/confirm {code} */
+  async confirmPairing({ params, request, response, auth, serialize }: HttpContext) {
+    const { code } = await request.validateUsing(pairingConfirmValidator)
+    try {
+      const pairing = await confirmPairing(Number(params.id), auth.getUserOrFail(), code)
+      return serialize({ pairing })
+    } catch (error) {
+      return planeRefusal(response, error)
+    }
+  }
+
+  /** DELETE /api/v1/gateways/:id/pairing */
+  async unpair({ params, response, auth, serialize }: HttpContext) {
+    try {
+      await unpair(Number(params.id), auth.getUserOrFail())
+      return serialize({ pairing: null })
     } catch (error) {
       return planeRefusal(response, error)
     }

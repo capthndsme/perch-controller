@@ -21,6 +21,7 @@ import {
   recordAnnounce,
 } from '#services/collector_announce'
 import { recordAgentAuthFailure } from '#services/ap_agent_rate_limit'
+import { onPairState } from '#services/gateway_config/pairing'
 import {
   afterGatewayHello,
   onCollectorPushAccepted,
@@ -113,6 +114,8 @@ export function collectorAgentEndpoint(): AgentEndpoint<CollectorPrincipal> {
       // The config plane (docs/gateway/config-plane.md section 4).
       collectorHub.onNotification('gateway.config.changed', onConfigChanged)
       collectorHub.onNotification('gateway.config.result', onConfigResult)
+      // Plain-HTTP signing pairing (owner decision 29).
+      collectorHub.onNotification('gateway.pair.state', onPairState)
     },
 
     async authenticate(request, { address }) {

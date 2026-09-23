@@ -13,6 +13,7 @@ import {
   writeAccess,
 } from '#services/gateway_config/gateway_registry'
 import { openApplies } from '#services/gateway_config/gateway_store'
+import { pairingView } from '#services/gateway_config/pairing'
 import { toSectionState } from '#services/gateway_config/section_rows'
 import { revertDueAt } from '#services/gateway_config/sync_engine'
 import type { SecretSlot, SectionContent, UciOptions } from '#services/gateway_config/types'
@@ -280,6 +281,7 @@ export async function gatewayViews(
       signedWrites: access.writable ? access.signed : false,
       signingKey: session?.hello.signing?.key ?? null,
       hasSignKey: gateway.configSignKey !== null,
+      pairing: pairingView(gateway),
       writeBlockedReason: access.writable ? null : access.reason,
       syncState: gateway.syncState,
       counts: counts.get(gateway.id) ?? {

@@ -17,6 +17,9 @@ import { BaseSchema } from '@adonisjs/lucid/schema'
  * - `config_sign_key`: the router's own `config_sign_key` for signed RPCs
  *   over plain HTTP, when it uses one instead of the api_key; APP_KEY-
  *   encrypted like `collectors.api_key`, write-only in the API.
+ * - `pairing` (JSON) and `pairing_key`: the plain-HTTP signing pairing
+ *   (owner decision 29): state, SAS, key id; the derived 32-byte key
+ *   APP_KEY-encrypted, never serialised.
  *
  * `gateway_applies`:
  * - `agent_confirmed_at`: the agent half of a confirm (a fresh session and
@@ -38,6 +41,8 @@ export default class extends BaseSchema {
       table.text('rejoin_offer').nullable()
       table.string('dns_label_names', 8).notNullable().defaultTo('review')
       table.text('config_sign_key').nullable()
+      table.text('pairing').nullable()
+      table.text('pairing_key').nullable()
     })
 
     this.schema.alterTable('gateway_applies', (table) => {
@@ -75,6 +80,8 @@ export default class extends BaseSchema {
       table.dropColumn('rejoin_offer')
       table.dropColumn('dns_label_names')
       table.dropColumn('config_sign_key')
+      table.dropColumn('pairing')
+      table.dropColumn('pairing_key')
     })
   }
 }

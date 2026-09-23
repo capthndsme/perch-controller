@@ -316,6 +316,8 @@ function blockCode(reason: string): string {
       return 'no_capability'
     case 'offline':
       return 'agent_offline'
+    case 'not_paired':
+      return 'not_paired'
     default:
       return 'insecure_transport'
   }
@@ -325,6 +327,8 @@ function writeBlockMessage(reason: string): string {
   switch (reason) {
     case 'router_access':
       return "The router does not allow writes (config_access is not 'write')."
+    case 'not_paired':
+      return 'Writes over plain HTTP need the gateway paired with this controller first.'
     case 'sign_key_unknown':
       return "The router signs with its own config_sign_key, which the controller doesn't hold."
     case 'no_capability':
