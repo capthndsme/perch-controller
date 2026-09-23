@@ -86,6 +86,7 @@ test.group('presence settings API', (group) => {
         apStaleIntervals: 3,
         apStaleMinSeconds: 30,
         nowRateIntervals: 3,
+        gatewaySightings: 1,
       },
       defaults: PRESENCE_DEFAULTS,
       limits: PRESENCE_LIMITS,
@@ -107,13 +108,17 @@ test.group('presence settings API', (group) => {
       apStaleMinSeconds: 60,
     })
 
-    const second = await client.patch(ENDPOINT).bearerToken(token).json({ nowRateIntervals: 5 })
+    const second = await client
+      .patch(ENDPOINT)
+      .bearerToken(token)
+      .json({ nowRateIntervals: 5, gatewaySightings: 0 })
     second.assertStatus(200)
     const expected = {
       ...PRESENCE_DEFAULTS,
       lanQuietMinutes: 45,
       apStaleMinSeconds: 60,
       nowRateIntervals: 5,
+      gatewaySightings: 0,
     }
     assert.deepEqual(second.body().data.settings, expected)
 
@@ -135,6 +140,7 @@ test.group('presence settings API', (group) => {
       { apStaleIntervals: 1 },
       { apStaleMinSeconds: 'soon' },
       { nowRateIntervals: PRESENCE_LIMITS.nowRateIntervals.max + 1 },
+      { gatewaySightings: 2 },
     ]) {
       const response = await client.patch(ENDPOINT).bearerToken(token).json(body)
       response.assertStatus(422)

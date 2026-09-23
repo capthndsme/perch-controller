@@ -25,10 +25,23 @@ test.group('gateway_dhcp | normalisation', () => {
     assert.isNull(macFromDuid('0003000102'), 'truncated')
   })
 
-  test('not an object is null; missing lists read as empty', ({ assert }) => {
+  test('not an object is null; missing lease lists read as empty, missing hosts as not reported', ({
+    assert,
+  }) => {
     assert.isNull(normalizeDhcpObservation(null))
     assert.isNull(normalizeDhcpObservation([]))
-    assert.deepEqual(normalizeDhcpObservation({}), { leases4: [], leases6: [], hosts: [] })
+    assert.deepEqual(normalizeDhcpObservation({}), {
+      pools: [],
+      leases4: [],
+      leases6: [],
+      hosts: null,
+    })
+    assert.deepEqual(normalizeDhcpObservation({ hosts: [] }), {
+      pools: [],
+      leases4: [],
+      leases6: [],
+      hosts: [],
+    })
   })
 
   test('"*" and control characters in names, bad entries dropped one by one', ({ assert }) => {

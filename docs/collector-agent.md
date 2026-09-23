@@ -332,6 +332,13 @@ compose comments, README). `ROUTER_SAMPLE_RETENTION_DAYS` and the table stay.
 
 ### 4.3 DHCP observation (`observe.dhcp`, 2026-09-23)
 
+> Superseded as the contract by `docs/gateway/observation.md` (the whole observation
+> channel: `gateway.observed`, every part, tables, REST). What follows stays true for the
+> `observe.dhcp` push path, with two amendments from there: `hosts` left out of the
+> section keeps the previous static hosts, and a lease that goes away keeps its
+> `gateway_hosts` row (without DHCP facts) while the neighbour table lists the MAC or it
+> has a sighting.
+
 Device names without a transport to the router: the collector on the router
 reports its DHCP leases and static hosts, and the controller names devices from
 them. It is the `dhcp` part of the observation channel sketched in

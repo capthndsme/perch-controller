@@ -244,6 +244,7 @@ test.group('presence thresholds', () => {
         apStaleIntervals: '4',
         apStaleMinSeconds: 5,
         nowRateIntervals: 999,
+        gatewaySightings: 7,
       }),
       {
         lanQuietMinutes: 45,
@@ -251,6 +252,7 @@ test.group('presence thresholds', () => {
         apStaleIntervals: PRESENCE_DEFAULTS.apStaleIntervals,
         apStaleMinSeconds: PRESENCE_LIMITS.apStaleMinSeconds.min,
         nowRateIntervals: PRESENCE_LIMITS.nowRateIntervals.max,
+        gatewaySightings: 1,
       }
     )
   })
