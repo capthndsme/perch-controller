@@ -2620,3 +2620,9 @@ Found in the lab and fixed:
   not set, so device groups show "Groups off" (`unsupported`). AX23 flash 4.2 MB free.
 - Checks: every agent reconnected within seconds, Wi-Fi station reports and gateway samples current,
   no warning or error in the server log.
+- **Gateway config opened to the controller** (21:02 UTC, owner: "copy the current configuration of our live
+  system to Controller, then make it managed"): full config backup first, then `config_access 'write'`
+  (network, dhcp, firewall, system; sqm joins by itself) over verified TLS, so no pairing. Mode `observe`: the
+  controller's copy has 82 sections synced, 19 unmodeled (WAN-side interfaces, WireGuard, four port forwards the
+  model finds ambiguous, firewall defaults, odhcpd, one static host), no conflicts; `lan` is the management
+  network. Managed mode waits for the owner's password in the dashboard.
