@@ -25,6 +25,8 @@ import WifiAccessPointTransformer from '#transformers/wifi_access_point_transfor
 import { updateChartSettingsValidator } from '#validators/chart_settings'
 import { updateHostnameEnrichmentSettingsValidator } from '#validators/hostname_enrichment_settings'
 import { updatePresenceSettingsValidator } from '#validators/presence_settings'
+import { getQosSettings, qosSettingsView, updateQosSettings } from '#services/qos_settings'
+import { updateQosSettingsValidator } from '#validators/qos_settings'
 import {
   wifiSourceCreateValidator,
   wifiSourceProbeValidator,
@@ -97,6 +99,27 @@ export default class SettingsController {
   async updatePresence({ request, serialize }: HttpContext) {
     const payload = await request.validateUsing(updatePresenceSettingsValidator)
     return serialize(presenceSettingsView(await updatePresenceSettings(payload)))
+  }
+
+  /**
+   * GET /api/v1/settings/qos
+   *
+   * Settings → Traffic shaping: the QoS tunables (`qos_settings.ts`,
+   * docs/gateway/qos.md section 4.7) with their defaults and ranges.
+   */
+  async qos({ serialize }: HttpContext) {
+    return serialize(qosSettingsView(await getQosSettings()))
+  }
+
+  /**
+   * PATCH /api/v1/settings/qos
+   *
+   * Any subset of the tunables; the others keep their value. Read per use,
+   * so a save applies to the next request or plan.
+   */
+  async updateQos({ request, serialize }: HttpContext) {
+    const payload = await request.validateUsing(updateQosSettingsValidator)
+    return serialize(qosSettingsView(await updateQosSettings(payload)))
   }
 
   /**

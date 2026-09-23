@@ -24,6 +24,7 @@ export const controllers = {
   PortalUsers: () => import('#controllers/portal_users_controller'),
   PortalVouchers: () => import('#controllers/portal_vouchers_controller'),
   Profile: () => import('#controllers/profile_controller'),
+  Qos: () => import('#controllers/qos_controller'),
   Router: () => import('#controllers/router_controller'),
   Services: () => import('#controllers/services_controller'),
   Settings: () => import('#controllers/settings_controller'),

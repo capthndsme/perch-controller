@@ -1,0 +1,101 @@
+import type { UciOptions } from '#services/gateway_config/types'
+
+/**
+ * The seam between the WAN queue REST endpoints and the config plane
+ * (docs/gateway/qos.md section 2.5; plan 3 section 9.2). Every router write
+ * goes through the config plane (README section 2, "one write path"); the
+ * QoS code never talks to the agent about `sqm` itself.
+ *
+ * The plane's apply path does not exist yet (gw/data builds
+ * `gatewayConfig.editSections` and the apply lifecycle in wave 2). Until it
+ * lands, `StubSqmPlaneWriter` is installed: it records the intended change
+ * (bounded, for tests and debugging) and refuses with `plane_unavailable`,
+ * which the endpoints return as 409 with the intended change in the body.
+ *
+ * Wiring the real plane (TODO wave 2): implement `SqmPlaneWriter.submit` by
+ * turning the change into `sqmDomain.render(...)` section edits and handing
+ * them to `gatewayConfig.editSections(gatewayId, userId, edits)`; return the
+ * section's perchId / name and the draft revision. Install it with
+ * `setSqmPlaneWriter` at boot (a provider), never per request.
+ */
+
+/** One intended change to a gateway's `sqm` config. */
+export interface SqmQueueChange {
+  action: 'create' | 'update' | 'delete'
+  gatewayId: number
+  /** `qos_wan_queues.id`, null for a create. */
+  queueId: number | null
+  /** The section's ledger id, when it has one. */
+  perchId: string | null
+  /** The section's UCI name, when it exists on the router. */
+  uciSection: string | null
+  /** The full desired option map (null for a delete). */
+  options: UciOptions | null
+  /** Options that differ from the current map. */
+  changed: string[]
+  userId: number | null
+  requestedAt: string
+}
+
+/** What the plane answers when it accepts a change into the desired state. */
+export interface SqmPlaneAccepted {
+  /** The section's ledger id (a new one for a create). */
+  perchId: string | null
+  /** The section's UCI name; null until the router has it. */
+  uciSection: string | null
+  /** The gateway's desired-state revision after the change. */
+  revision: number
+}
+
+export interface SqmPlaneWriter {
+  /** Accepts the change into the desired state or throws `SqmPlaneError`. */
+  submit(change: SqmQueueChange): Promise<SqmPlaneAccepted>
+}
+
+/** A refusal from the plane; the endpoints send `status` + `{ error: code, message, ...extra }`. */
+export class SqmPlaneError extends Error {
+  constructor(
+    readonly status: 409 | 422 | 503,
+    readonly code: string,
+    message: string,
+    readonly extra: Record<string, unknown> = {}
+  ) {
+    super(message)
+  }
+}
+
+/** How many intended changes the stub keeps (CLAUDE.md: every in-process cache is bounded). */
+export const STUB_RECORD_LIMIT = 50
+
+/**
+ * The stand-in until the config plane's apply path exists: records the
+ * change and refuses it with 409 `plane_unavailable`.
+ */
+export class StubSqmPlaneWriter implements SqmPlaneWriter {
+  readonly recorded: SqmQueueChange[] = []
+
+  async submit(change: SqmQueueChange): Promise<SqmPlaneAccepted> {
+    this.recorded.push(structuredClone(change))
+    if (this.recorded.length > STUB_RECORD_LIMIT) {
+      this.recorded.splice(0, this.recorded.length - STUB_RECORD_LIMIT)
+    }
+    throw new SqmPlaneError(
+      409,
+      'plane_unavailable',
+      'Router writes need the config plane, which this controller does not run yet. Nothing was changed.'
+    )
+  }
+}
+
+let writer: SqmPlaneWriter = new StubSqmPlaneWriter()
+
+export function sqmPlaneWriter(): SqmPlaneWriter {
+  return writer
+}
+
+/** Installs a writer and returns the previous one (tests restore it). */
+export function setSqmPlaneWriter(next: SqmPlaneWriter): SqmPlaneWriter {
+  const previous = writer
+  writer = next
+  return previous
+}
