@@ -1,6 +1,7 @@
 import { DomainRegistry, type ConfigDomain } from '#services/gateway_config/domain'
 import { dhcpHostsDomain } from '#services/gateway_config/domains/dhcp_hosts'
 import { sqmDomain } from '#services/sqm_domain'
+import { perchQosDomain } from '#services/perch_qos_domain'
 import { dnsRecordsDomain } from '#services/gateway_config/domains/dns_records'
 
 /**
@@ -11,6 +12,7 @@ import { dnsRecordsDomain } from '#services/gateway_config/domains/dns_records'
 export const DOMAINS: readonly ConfigDomain[] = Object.freeze([
   dhcpHostsDomain as ConfigDomain,
   sqmDomain as ConfigDomain,
+  perchQosDomain as ConfigDomain,
   dnsRecordsDomain as ConfigDomain,
 ])
 

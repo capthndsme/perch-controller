@@ -38,13 +38,28 @@ export interface QosConfigChange {
 }
 
 export interface QosPlaneAccepted {
-  /** The gateway's desired-state revision after the change. */
+  /**
+   * The package's revision: the real writer writes it as `globals.revision`,
+   * and the router reports it back (`qos.configRevision`) once its shaper
+   * runs that package.
+   */
   revision: number
+  /** The config plane apply carrying the package, when one started. */
+  applyId?: string | null
+  /** Where the package stands (`queued` / `applying` / `in_sync`). */
+  state?: 'queued' | 'applying' | 'in_sync'
+  /** Why it waits (`apply_in_flight`, …); the draft is kept and retried. */
+  error?: string | null
 }
 
 export interface QosPlaneWriter {
   /** Accepts the package into the desired state or throws `QosPlaneError`. */
   submit(change: QosConfigChange): Promise<QosPlaneAccepted>
+  /**
+   * Starts the apply of a package accepted earlier that had to wait (another
+   * apply was open). Null = nothing waits. Optional.
+   */
+  resume?(gatewayId: number, userId: number | null): Promise<QosPlaneAccepted | null>
 }
 
 export class QosPlaneError extends Error {

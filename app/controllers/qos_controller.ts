@@ -63,24 +63,29 @@ export default class QosController {
     }
   }
 
-  /** POST /api/v1/qos/wan-queues → 201 `{ queue, warnings }`. */
+  /** POST /api/v1/qos/wan-queues → 201 `{ queue, warnings, apply, applyError }`. */
   async createWanQueue({ auth, request, response, serialize }: HttpContext) {
     const { gatewayId, collectorId, ...input } =
       await request.validateUsing(createWanQueueValidator)
     try {
-      const { record, warnings } = await createWanQueue(
+      const { record, warnings, apply, applyError } = await createWanQueue(
         { gatewayId, collectorId },
         input,
         auth.user?.id ?? null
       )
       response.status(201)
-      return serialize({ queue: QosWanQueueTransformer.transform(record), warnings })
+      return serialize({
+        queue: QosWanQueueTransformer.transform(record),
+        warnings,
+        apply,
+        applyError,
+      })
     } catch (error) {
       return refusal(response, error)
     }
   }
 
-  /** PATCH /api/v1/qos/wan-queues/:id → `{ queue, warnings }`. */
+  /** PATCH /api/v1/qos/wan-queues/:id → `{ queue, warnings, apply, applyError }`. */
   async updateWanQueue({ auth, params, request, response, serialize }: HttpContext) {
     const body = request.body()
     for (const field of ['gatewayId', 'collectorId'] as const) {
@@ -94,22 +99,38 @@ export default class QosController {
     }
     const patch = await request.validateUsing(updateWanQueueValidator)
     try {
-      const { record, warnings } = await updateWanQueue(
+      const { record, warnings, apply, applyError } = await updateWanQueue(
         Number(params.id),
         patch,
         auth.user?.id ?? null
       )
-      return serialize({ queue: QosWanQueueTransformer.transform(record), warnings })
+      return serialize({
+        queue: QosWanQueueTransformer.transform(record),
+        warnings,
+        apply,
+        applyError,
+      })
     } catch (error) {
       return refusal(response, error)
     }
   }
 
-  /** DELETE /api/v1/qos/wan-queues/:id → 204. */
-  async destroyWanQueue({ auth, params, response }: HttpContext) {
+  /**
+   * DELETE /api/v1/qos/wan-queues/:id → `{ queue, apply, applyError }`:
+   * `queue` null once gone, else the queue the router still runs (flag
+   * `pending_delete`) until its apply confirms.
+   */
+  async destroyWanQueue({ auth, params, response, serialize }: HttpContext) {
     try {
-      await deleteWanQueue(Number(params.id), auth.user?.id ?? null)
-      return response.noContent()
+      const { record, apply, applyError } = await deleteWanQueue(
+        Number(params.id),
+        auth.user?.id ?? null
+      )
+      return serialize({
+        queue: record ? QosWanQueueTransformer.transform(record) : null,
+        apply,
+        applyError,
+      })
     } catch (error) {
       return refusal(response, error)
     }

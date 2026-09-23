@@ -364,7 +364,28 @@ async function runConfig(gatewayId: number): Promise<void> {
   const fingerprint = plan.fingerprints.config
   const row = await stateRow(gatewayId)
   const force = state.forceConfig
+  const writer = qosPlaneWriter()
   if (!force && row.configFingerprint === fingerprint) {
+    if (state.config.error === 'apply_in_flight' && writer.resume) {
+      // The package is in the draft and waited for another apply.
+      try {
+        const resumed = await writer.resume(gatewayId, state.userId)
+        if (resumed) {
+          if (resumed.applyId) row.configApplyKey = resumed.applyId
+          await row.save()
+          set({
+            state: resumed.state ?? 'queued',
+            revision: resumed.revision,
+            error: resumed.error ?? null,
+          })
+          return
+        }
+      } catch (error) {
+        if (!(error instanceof QosPlaneError)) throw error
+        set({ state: 'failed', error: error.code })
+        return
+      }
+    }
     if (state.config.error !== null || state.config.revision === 0) {
       set({ state: 'queued', revision: row.configRevision ?? 0, error: null })
     }
@@ -374,6 +395,7 @@ async function runConfig(gatewayId: number): Promise<void> {
     !force &&
     state.config.attemptedFingerprint === fingerprint &&
     state.config.error !== null &&
+    state.config.error !== 'apply_in_flight' &&
     state.config.attemptedAt !== null &&
     Date.now() - state.config.attemptedAt < CONFIG_RETRY_MS
   ) {
@@ -382,7 +404,7 @@ async function runConfig(gatewayId: number): Promise<void> {
   state.forceConfig = false
   const overrideRouterPause = state.overrideRouterPause
   try {
-    const accepted = await qosPlaneWriter().submit({
+    const accepted = await writer.submit({
       gatewayId,
       sections: plan.sections,
       fingerprint,
@@ -393,19 +415,23 @@ async function runConfig(gatewayId: number): Promise<void> {
     row.configFingerprint = fingerprint
     row.configRevision = accepted.revision
     row.configSubmittedAt = DateTime.utc()
+    if (accepted.applyId !== undefined) row.configApplyKey = accepted.applyId
     await row.save()
     state.overrideRouterPause = false
     set({
-      state: 'queued',
+      state: accepted.state ?? 'queued',
       revision: accepted.revision,
-      error: null,
+      error: accepted.error ?? null,
       attemptedFingerprint: fingerprint,
       attemptedAt: Date.now(),
     })
   } catch (error) {
     if (!(error instanceof QosPlaneError)) throw error
     set({
-      state: error.code === 'plane_unavailable' ? 'queued' : 'failed',
+      state:
+        error.code === 'plane_unavailable' || error.code === 'apply_in_flight'
+          ? 'queued'
+          : 'failed',
       error: error.code,
       attemptedFingerprint: fingerprint,
       attemptedAt: Date.now(),
@@ -527,6 +553,54 @@ export async function sweepQosSync(): Promise<number[]> {
     swept.push(gateway.id)
   }
   return swept
+}
+
+/**
+ * A config plane apply carrying the package moved (the plane's apply
+ * listener, `qos_plane_writers.ts`): queued → applying → applied / rolled
+ * back. The router's report still decides `in_sync` (it runs the package).
+ */
+export function noteQosConfigApply(
+  gatewayId: number,
+  apply: { applyKey: string; state: string; outcome: { reason?: string; error?: string } | null }
+): void {
+  const state = states.get(gatewayId)
+  if (!state) return
+  const at = nowIso()
+  switch (apply.state) {
+    case 'queued':
+      state.config = { ...state.config, state: 'queued', at }
+      break
+    case 'sending':
+    case 'pending_confirm':
+      state.config = { ...state.config, state: 'applying', error: null, at }
+      break
+    case 'confirmed':
+      state.config = { ...state.config, state: 'applying', error: null, at }
+      break
+    case 'rolled_back':
+      state.config = {
+        ...state.config,
+        state: 'rolled_back',
+        error: apply.outcome?.reason ?? 'rolled_back',
+        at,
+      }
+      break
+    case 'failed':
+    case 'expired':
+      state.config = {
+        ...state.config,
+        state: 'failed',
+        error: apply.outcome?.error ?? apply.outcome?.reason ?? apply.state,
+        at,
+      }
+      break
+  }
+}
+
+/** The package waits for another apply to end (`apply_in_flight`). */
+export function qosConfigWaiting(gatewayId: number): boolean {
+  return states.get(gatewayId)?.config.error === 'apply_in_flight'
 }
 
 /** What the sender knows about a gateway's deliveries (for `GET /qos` and `/qos/devices`). */

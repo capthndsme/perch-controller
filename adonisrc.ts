@@ -68,6 +68,10 @@ export default defineConfig({
       file: () => import('#providers/agent_gateway_provider'),
       environment: ['web'],
     },
+    {
+      file: () => import('#providers/qos_plane_provider'),
+      environment: ['web'],
+    },
     () => import('@adonisjs/static/static_provider'),
   ],
 
