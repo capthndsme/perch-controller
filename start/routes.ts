@@ -58,6 +58,8 @@ const PortalApiClientsController = () => import('#controllers/portal_api_clients
 const PortalGrantsController = () => import('#controllers/portal_grants_controller')
 const PortalAuthorizationsController = () => import('#controllers/portal_authorizations_controller')
 const QosController = () => import('#controllers/qos_controller')
+const GatewaysController = () => import('#controllers/gateways_controller')
+const GatewayNamesController = () => import('#controllers/gateway_names_controller')
 
 /**
  * Setup wizard endpoints. INTENTIONALLY outside the requireSetupComplete
@@ -338,6 +340,24 @@ router
         router.get(':mac/presence', [DevicesController, 'presence']).as('presence')
         router.get(':mac/protocols', [DevicesController, 'protocols']).as('protocols')
         router.get(':mac/network', [GatewayObservationsController, 'deviceNetwork']).as('network')
+        /**
+         * The device's DHCP reservation and DNS name on the managed gateway
+         * (docs/gateway/config-plane.md section 10.3). Reads for any user,
+         * writes admin-only.
+         */
+        router
+          .get(':mac/reservation', [GatewayNamesController, 'showReservation'])
+          .as('reservation')
+        router
+          .group(() => {
+            router
+              .put(':mac/reservation', [GatewayNamesController, 'putReservation'])
+              .as('putReservation')
+            router
+              .delete(':mac/reservation', [GatewayNamesController, 'deleteReservation'])
+              .as('deleteReservation')
+          })
+          .use(middleware.requireAdmin())
       })
       .prefix('devices')
       .as('devices')
@@ -605,6 +625,96 @@ router
       })
       .prefix('qos')
       .as('qos')
+      .use([middleware.auth(), middleware.requirePasswordChange()])
+
+    /**
+     * The managed gateway's config plane (docs/gateway/config-plane.md
+     * section 10). `:id` is `gateways.id`. Reads for any signed-in user,
+     * writes admin-only; entering managed mode and Authoritative Mode ON also
+     * take the admin's current password. The observation routes
+     * (docs/gateway/observation.md: observation, dhcp/leases, neighbors,
+     * interfaces, upnp, wan-status, system, wireguard, observe, backups) share
+     * this prefix and are not defined here.
+     */
+    router
+      .group(() => {
+        router.get('', [GatewaysController, 'index']).as('index')
+        router.get(':id', [GatewaysController, 'show']).as('show')
+        router.get(':id/sync-status', [GatewaysController, 'syncStatus']).as('syncStatus')
+        router.get(':id/sections', [GatewaysController, 'sections']).as('sections')
+        router.get(':id/sections/:perchId', [GatewaysController, 'section']).as('section')
+        router.get(':id/draft', [GatewaysController, 'draft']).as('draft')
+        router.get(':id/applies', [GatewaysController, 'applies']).as('applies')
+        router.get(':id/applies/:applyId', [GatewaysController, 'apply']).as('apply')
+        router.get(':id/revisions', [GatewaysController, 'revisions']).as('revisions')
+        router
+          .get(':id/revisions/:number', [GatewaysController, 'revision'])
+          .as('revision')
+          .where('number', router.matchers.number())
+        router.get(':id/events', [GatewaysController, 'events']).as('events')
+        router.get(':id/pairing', [GatewaysController, 'pairing']).as('pairing')
+        router.get(':id/dns', [GatewayNamesController, 'dns']).as('dns')
+        router.get(':id/dns/label-names', [GatewayNamesController, 'labelNames']).as('labelNames')
+        router
+          .group(() => {
+            router.patch(':id', [GatewaysController, 'update']).as('update')
+            router.post(':id/bind', [GatewaysController, 'bind']).as('bind')
+            router.post(':id/refresh', [GatewaysController, 'refresh']).as('refresh')
+            router
+              .patch(':id/sections/:perchId', [GatewaysController, 'updateSection'])
+              .as('updateSection')
+            router.post(':id/sections/resolve', [GatewaysController, 'resolve']).as('resolve')
+            router.delete(':id/draft', [GatewaysController, 'discardDraft']).as('discardDraft')
+            router.post(':id/applies', [GatewaysController, 'createApply']).as('createApply')
+            router
+              .post(':id/packages', [GatewaysController, 'installPackages'])
+              .as('installPackages')
+            router.put(':id/sign-key', [GatewaysController, 'setSignKey']).as('setSignKey')
+            router.post(':id/pairing', [GatewaysController, 'startPairing']).as('startPairing')
+            router
+              .post(':id/pairing/confirm', [GatewaysController, 'confirmPairing'])
+              .as('confirmPairing')
+            router.delete(':id/pairing', [GatewaysController, 'unpair']).as('unpair')
+            router.delete(':id/sign-key', [GatewaysController, 'clearSignKey']).as('clearSignKey')
+            router
+              .post(':id/applies/:applyId/confirm', [GatewaysController, 'confirmApply'])
+              .as('confirmApply')
+            router
+              .post(':id/applies/:applyId/revert', [GatewaysController, 'revertApply'])
+              .as('revertApply')
+            router
+              .post(':id/revisions/:number/restore', [GatewaysController, 'restoreRevision'])
+              .as('restoreRevision')
+              .where('number', router.matchers.number())
+            router
+              .post(':id/rejoin/dismiss', [GatewaysController, 'dismissRejoin'])
+              .as('dismissRejoin')
+            router.post(':id/drift/accept', [GatewaysController, 'acceptDrift']).as('acceptDrift')
+            router
+              .post(':id/drift/revert-now', [GatewaysController, 'revertDrift'])
+              .as('revertDrift')
+            router
+              .post(':id/enforcement/resume', [GatewaysController, 'resumeEnforcement'])
+              .as('resumeEnforcement')
+            router.patch(':id/dns', [GatewayNamesController, 'updateDns']).as('updateDns')
+            router
+              .post(':id/dns/records', [GatewayNamesController, 'createRecord'])
+              .as('createRecord')
+            router
+              .patch(':id/dns/records/:perchId', [GatewayNamesController, 'updateRecord'])
+              .as('updateRecord')
+            router
+              .delete(':id/dns/records/:perchId', [GatewayNamesController, 'deleteRecord'])
+              .as('deleteRecord')
+            router
+              .post(':id/dns/label-names/apply', [GatewayNamesController, 'applyLabelNames'])
+              .as('applyLabelNames')
+          })
+          .use(middleware.requireAdmin())
+      })
+      .prefix('gateways')
+      .as('gateways')
+      .where('id', router.matchers.number())
       .use([middleware.auth(), middleware.requirePasswordChange()])
   })
   .prefix('/api/v1')

@@ -158,7 +158,8 @@ export type GatewaySyncState = (typeof GATEWAY_SYNC_STATES)[number]
 export const AGENT_ACCESS_LEVELS = ['none', 'read', 'write'] as const
 export type AgentAccess = (typeof AGENT_ACCESS_LEVELS)[number]
 
-export const APPLY_KINDS = ['apply', 'revert', 'adopt'] as const
+/** `package`: a `gateway.package.install` job (README 7.7), confirmed like an apply. */
+export const APPLY_KINDS = ['apply', 'revert', 'adopt', 'package'] as const
 export type ApplyKind = (typeof APPLY_KINDS)[number]
 
 export const APPLY_STATES = [
@@ -211,6 +212,22 @@ export const GATEWAY_EVENTS = [
   'read_refused',
   'revision_restored',
   'unmodeled_changed',
+  'rejoin_offered',
+  'rejoin_dismissed',
+  'cancelled',
+  'draft_discarded',
+  'draft_edited',
+  'bound',
+  'dns_label_names_changed',
+  'sign_key_changed',
+  'pairing_started',
+  'pairing_code_rejected',
+  'pairing_code_accepted',
+  'pairing_router_confirmed',
+  'paired',
+  'pairing_failed',
+  'pairing_lost',
+  'unpaired',
 ] as const
 export type GatewayEventName = (typeof GATEWAY_EVENTS)[number]
 
@@ -282,7 +299,15 @@ export type ApplyOp =
       options: Record<string, WireValue>
       position?: OpPosition
     }
-  | { op: 'adopt'; config: string; section: string; perchId: string; renameTo?: string }
+  | {
+      op: 'adopt'
+      config: string
+      section: string
+      perchId: string
+      renameTo?: string
+      /** The ledger entry's domain (perch-collector writes it into `perch-managed`). */
+      domain?: string
+    }
   | { op: 'delete'; config: string; section: string }
   | { op: 'order'; config: string; type: string; sections: string[] }
 

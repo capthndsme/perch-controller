@@ -1,3 +1,4 @@
+import { ensureGatewayForCollector } from '#services/gateway_config/gateway_registry'
 import Collector, { type CollectorStatus } from '#models/collector'
 import {
   closeSessionOnKeyMismatch,
@@ -275,6 +276,8 @@ export async function adoptCollector(
   const probe = await probeRow(collector)
   applyProbe(collector, probe)
   await collector.save()
+  // A gateway collector gets its `gateways` row now (docs/gateway/config-plane.md 2).
+  await ensureGatewayForCollector(collector)
 
   if (collector.transport === 'agent' && !closeSessionOnKeyMismatch(collector)) {
     if (sendCollectorConfigure(collector)) void syncCollectorProtocols(collector.id)

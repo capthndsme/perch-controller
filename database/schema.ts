@@ -664,7 +664,7 @@ export class DeviceTrafficBucketsHourlySchema extends BaseModel {
 }
 
 export class GatewaySchema extends BaseModel {
-  static $columns = ['agentAccess', 'authoritative', 'authoritativeByUserId', 'authoritativeSince', 'capabilitiesAt', 'collectorId', 'createdAt', 'enforcement', 'enforcementChangedAt', 'headRevision', 'id', 'localStateFlushSeconds', 'localStatePath', 'mode', 'observedAt', 'syncState', 'updatedAt'] as const
+  static $columns = ['agentAccess', 'authoritative', 'authoritativeByUserId', 'authoritativeSince', 'capabilitiesAt', 'collectorId', 'createdAt', 'dnsLabelNames', 'enforcement', 'enforcementChangedAt', 'headRevision', 'id', 'localStateFlushSeconds', 'localStatePath', 'mode', 'observedAt', 'syncState', 'updatedAt'] as const
   $columns = GatewaySchema.$columns
   @column()
   declare agentAccess: string | null
@@ -680,6 +680,8 @@ export class GatewaySchema extends BaseModel {
   declare collectorId: number | null
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
+  @column()
+  declare dnsLabelNames: string
   @column()
   declare enforcement: string
   @column.dateTime()
@@ -703,16 +705,20 @@ export class GatewaySchema extends BaseModel {
 }
 
 export class GatewayApplySchema extends BaseModel {
-  static $columns = ['adminConfirmedAt', 'adminConfirmedBy', 'agentReconnectedAt', 'applyKey', 'confirmMode', 'confirmTimeoutSeconds', 'deadlineAt', 'finishedAt', 'gatewayId', 'id', 'kind', 'note', 'protected', 'queueExpiresAt', 'requestedAt', 'requestedByUserId', 'revisionNumber', 'sentAt', 'state'] as const
+  static $columns = ['adminConfirmedAt', 'adminConfirmedBy', 'agentConfirmedAt', 'agentReconnectedAt', 'applyKey', 'chainStep', 'confirmMode', 'confirmTimeoutSeconds', 'deadlineAt', 'finishedAt', 'gatewayId', 'id', 'kind', 'note', 'protected', 'queueExpiresAt', 'requestedAt', 'requestedByUserId', 'retried', 'revisionNumber', 'sentAt', 'signed', 'state'] as const
   $columns = GatewayApplySchema.$columns
   @column.dateTime()
   declare adminConfirmedAt: DateTime | null
   @column()
   declare adminConfirmedBy: number | null
   @column.dateTime()
+  declare agentConfirmedAt: DateTime | null
+  @column.dateTime()
   declare agentReconnectedAt: DateTime | null
   @column()
   declare applyKey: string
+  @column()
+  declare chainStep: number
   @column()
   declare confirmMode: string
   @column()
@@ -738,9 +744,13 @@ export class GatewayApplySchema extends BaseModel {
   @column()
   declare requestedByUserId: number | null
   @column()
+  declare retried: boolean
+  @column()
   declare revisionNumber: number | null
   @column.dateTime()
   declare sentAt: DateTime | null
+  @column()
+  declare signed: boolean
   @column()
   declare state: string
 }

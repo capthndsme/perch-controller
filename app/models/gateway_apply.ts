@@ -1,6 +1,11 @@
 import { GatewayApplySchema } from '#database/schema'
 import { jsonColumn } from '#models/json_column'
-import type { ApplyOp, SectionContent } from '#services/gateway_config/types'
+import type {
+  ApplyOp,
+  ConfigDiffEntry,
+  LedgerChange,
+  SectionContent,
+} from '#services/gateway_config/types'
 
 /**
  * What an apply ended with (section 10 `GatewayApply.outcome`), plus the
@@ -36,4 +41,29 @@ export default class GatewayApply extends GatewayApplySchema {
   /** Revert only: the router's content that the revert replaced, by perchId. */
   @jsonColumn('replaced_router_content')
   declare replacedRouterContent: Record<string, SectionContent | null> | null
+
+  /** The content each section has once confirmed, by perchId (`markConfirmed`). */
+  @jsonColumn('written')
+  declare written: Record<string, SectionContent | null> | null
+
+  @jsonColumn('ledger')
+  declare ledger: LedgerChange | null
+
+  @jsonColumn('secret_refs')
+  declare secretRefs: string[] | null
+
+  @jsonColumn('configs')
+  declare configs: string[] | null
+
+  /** What the job changes on the router (section 10 `changes`). */
+  @jsonColumn('changes')
+  declare changes: ConfigDiffEntry[] | null
+
+  /** A `package` job's packages (README 7.7). */
+  @jsonColumn('packages')
+  declare packages: string[] | null
+
+  /** The request's section filter for the next job of the chain (null = all). */
+  @jsonColumn('chain_perch_ids')
+  declare chainPerchIds: string[] | null
 }

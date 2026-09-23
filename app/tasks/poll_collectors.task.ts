@@ -1,5 +1,6 @@
 import Collector from '#models/collector'
 import { checkCollectorPushFreshness } from '#services/collector_agent'
+import { gatewayConfigTick } from '#services/gateway_config/apply_lifecycle'
 import { nextAttemptAtFor, pollOnce } from '#services/collector_poller'
 import logger from '@adonisjs/core/services/logger'
 import { Task, type TaskOptions } from '@outloud/adonis-scheduler'
@@ -43,6 +44,14 @@ export default class PollCollectorsTask extends Task {
       await checkCollectorPushFreshness()
     } catch (err) {
       logger.error({ err }, 'collector_poller: socket freshness check failed')
+    }
+
+    // The config plane's timers: queued applies, confirm deadlines and
+    // Authoritative Mode's enforcement (docs/gateway/config-plane.md 5.3).
+    try {
+      await gatewayConfigTick()
+    } catch (err) {
+      logger.error({ err }, 'gateway_config: tick failed')
     }
 
     /**

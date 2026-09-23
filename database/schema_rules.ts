@@ -23,7 +23,18 @@ export default {
     // columns parsed by their models (app/models/gateway*.ts), and the
     // APP_KEY-encrypted secret value.
     gateways: {
-      skipColumns: ['pinned_hashes', 'capabilities', 'observed_hashes', 'management_path'],
+      skipColumns: [
+        'pinned_hashes',
+        'capabilities',
+        'observed_hashes',
+        'management_path',
+        'observed_ledger',
+        'observed_state',
+        'rejoin_offer',
+        'config_sign_key',
+        'pairing',
+        'pairing_key',
+      ],
     },
     gateway_sections: {
       skipColumns: [
@@ -39,7 +50,20 @@ export default {
       skipColumns: ['value'],
     },
     gateway_applies: {
-      skipColumns: ['ops', 'base_hashes', 'perch_ids', 'outcome', 'replaced_router_content'],
+      skipColumns: [
+        'ops',
+        'base_hashes',
+        'perch_ids',
+        'outcome',
+        'replaced_router_content',
+        'written',
+        'ledger',
+        'secret_refs',
+        'configs',
+        'changes',
+        'chain_perch_ids',
+        'packages',
+      ],
     },
     gateway_revisions: {
       skipColumns: ['router_author', 'snapshot', 'diff', 'hashes'],

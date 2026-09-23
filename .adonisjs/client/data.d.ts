@@ -8,6 +8,7 @@ import type { InferData, InferVariants } from '@adonisjs/core/types/transformers
 import type CollectorSummaryTransformer from '#transformers/collector_summary_transformer'
 import type CollectorTransformer from '#transformers/collector_transformer'
 import type DeviceSummaryTransformer from '#transformers/device_summary_transformer'
+import type GatewayTransformer from '#transformers/gateway_transformer'
 import type PortalTransformer from '#transformers/portal'
 import type QosViewTransformer from '#transformers/qos_view_transformer'
 import type QosWanQueueTransformer from '#transformers/qos_wan_queue_transformer'
@@ -26,6 +27,10 @@ export namespace Data {
   export type DeviceSummary = InferData<DeviceSummaryTransformer>
   export namespace DeviceSummary {
     export type Variants = InferVariants<DeviceSummaryTransformer>
+  }
+  export type Gateway = InferData<GatewayTransformer>
+  export namespace Gateway {
+    export type Variants = InferVariants<GatewayTransformer>
   }
   export type Portal = InferData<PortalTransformer>
   export namespace Portal {
