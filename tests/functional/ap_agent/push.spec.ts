@@ -7,6 +7,8 @@ import {
   checkAgentPushFreshness,
   handleMetricsPush,
 } from '#services/ap_agent_metrics'
+import { _resetInfraPortsState } from '#services/infra_ports'
+import { updatePresenceSettings } from '#services/presence_settings'
 import { _resetWifiPollerState, pollWifiOnce } from '#services/wifi_metrics_poller'
 import PollWifiAccessPointsTask from '#tasks/poll_wifi_access_points.task'
 import { FakeAgent, eventually, seedAgentAp, seedSetupComplete } from '#tests/helpers/ap_agent'
@@ -115,6 +117,7 @@ test.group('perch-apd metrics push', (group) => {
   group.each.setup(() => {
     _resetWifiPollerState()
     _resetAgentMetricsState()
+    _resetInfraPortsState()
     return () => {
       hub.closeAll(1000, 'test reset')
     }
@@ -141,8 +144,10 @@ test.group('perch-apd metrics push', (group) => {
     await agent.waitFor('system.info')
 
     agent.notifyServer('metrics.push', pushParams(1))
+    // The ingest writes the snapshots, then the latest tables (networks, then
+    // stations): wait for its last write, or a busy run reads in between.
     await eventually(
-      () => countRows('wifi_station_snapshots'),
+      () => countRows('wifi_station_latest'),
       (count) => count === 1
     )
 
@@ -365,6 +370,18 @@ test.group('perch-apd metrics push', (group) => {
     const connectedAt = hub.session(ap.id)!.connectedAt
     assert.deepEqual(await checkAgentPushFreshness(connectedAt.plus({ seconds: 29 })), [])
     assert.deepEqual(await checkAgentPushFreshness(connectedAt.plus({ seconds: 31 })), [ap.id])
+    await agent.close()
+  })
+
+  test('the silence bound follows Settings → Presence', async ({ assert }) => {
+    const { ap, agentId, agentSecret } = await seedAgentAp()
+    await setPollInterval(ap.id, 5)
+    await updatePresenceSettings({ apStaleMinSeconds: 60 })
+    const agent = await FakeAgent.connect({ agentId, agentSecret })
+    await agent.waitFor('system.info')
+    const connectedAt = hub.session(ap.id)!.connectedAt
+    assert.deepEqual(await checkAgentPushFreshness(connectedAt.plus({ seconds: 31 })), [])
+    assert.deepEqual(await checkAgentPushFreshness(connectedAt.plus({ seconds: 61 })), [ap.id])
     await agent.close()
   })
 

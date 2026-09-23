@@ -118,11 +118,23 @@ export default class PurgeCollector extends BaseCommand {
       table.row([child, String(affected)])
     }
 
+    // Its node on the infrastructure view is layout, not history: the FK
+    // (ON DELETE SET NULL) detaches it, with its ports, cables and position.
+    const node = await db.from('infra_nodes').where('collector_id', collector.id).first()
+
     if (!dryRun) {
       await collector.delete()
     }
     table.row(['collectors', '1'])
     table.render()
+
+    if (node) {
+      this.logger.info(
+        `Infrastructure view: node #${node.id} ${dryRun ? 'would be' : 'is'} detached, not ` +
+          'deleted: it keeps its ports, cables and position (delete or re-bind it on the ' +
+          'Infrastructure page).'
+      )
+    }
 
     if (dryRun) {
       this.logger.success(

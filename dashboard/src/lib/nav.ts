@@ -1,4 +1,13 @@
-import { ArrowsLeftRight, Broadcast, ChartBar, Devices, Gauge, GearSix, HardDrives } from '@phosphor-icons/react'
+import {
+  ArrowsLeftRight,
+  Broadcast,
+  ChartBar,
+  Devices,
+  Gauge,
+  GearSix,
+  HardDrives,
+  TreeStructure,
+} from '@phosphor-icons/react'
 
 export type NavItem = {
   to: string
@@ -15,5 +24,6 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/devices', label: 'Devices', icon: Devices },
   { to: '/servers', label: 'Servers', icon: HardDrives },
   { to: '/wifi', label: 'WiFi', icon: Broadcast },
+  { to: '/infrastructure', label: 'Infrastructure', icon: TreeStructure },
   { to: '/settings', label: 'Settings', icon: GearSix },
 ]

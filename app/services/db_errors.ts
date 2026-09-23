@@ -12,3 +12,20 @@ export function isLockContentionError(err: unknown): boolean {
     candidate?.errno === 1205
   )
 }
+
+/** A unique index refused the row (ER_DUP_ENTRY): someone else wrote the same key first. */
+export function isDuplicateEntryError(err: unknown): boolean {
+  const candidate = err as { code?: unknown; errno?: unknown } | null
+  return candidate?.code === 'ER_DUP_ENTRY' || candidate?.errno === 1062
+}
+
+/** A foreign key names a row that is not there (any more): ER_NO_REFERENCED_ROW(_2). */
+export function isMissingParentError(err: unknown): boolean {
+  const candidate = err as { code?: unknown; errno?: unknown } | null
+  return (
+    candidate?.code === 'ER_NO_REFERENCED_ROW_2' ||
+    candidate?.code === 'ER_NO_REFERENCED_ROW' ||
+    candidate?.errno === 1452 ||
+    candidate?.errno === 1216
+  )
+}

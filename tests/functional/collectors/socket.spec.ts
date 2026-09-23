@@ -13,6 +13,7 @@ import {
   apiKeyFingerprint,
 } from '#services/collector_announce'
 import { _resetPollerState, nextAttemptAtFor, pollOnce } from '#services/collector_poller'
+import { _resetInfraPortsState } from '#services/infra_ports'
 import { _resetApAgentRateLimits } from '#services/ap_agent_rate_limit'
 import { _resetRouterState } from '#services/router_metrics'
 import PollCollectorsTask from '#tasks/poll_collectors.task'
@@ -47,6 +48,7 @@ function resetState() {
   _resetCollectorAgentState()
   _resetPollerState()
   _resetRouterState()
+  _resetInfraPortsState()
 }
 
 /** An adopted socket collector row, as if it had been adopted earlier. */

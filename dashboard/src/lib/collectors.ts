@@ -162,11 +162,14 @@ export function collectorConnectionLine(
   return `Connected${from} for ${since}`
 }
 
-/** "Gateway · wan0, wan2" for a collector that reports gateway stats. */
+/**
+ * "Gateway agent · wan0, wan2" for a collector that reports gateway stats: the
+ * collector on the router is the Gateway agent (a role, not a product name).
+ */
 export function collectorGatewayLabel(gateway: CollectorGatewayReport): string {
   return gateway.wanInterfaces.length > 0
-    ? `Gateway · ${gateway.wanInterfaces.join(', ')}`
-    : 'Gateway'
+    ? `Gateway agent · ${gateway.wanInterfaces.join(', ')}`
+    : 'Gateway agent'
 }
 
 export function collectorLifecycleLabel(lifecycle: CollectorLifecycle): string {

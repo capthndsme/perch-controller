@@ -1,6 +1,12 @@
 import WifiAccessPoint from '#models/wifi_access_point'
 import hub from '#services/ap_agent_hub'
+import { recordAgentPorts } from '#services/infra_ports'
+import { getPresenceSettings } from '#services/presence_settings'
 import { ingestWifiMetrics, type WifiPollOutcome } from '#services/wifi_metrics_poller'
+// Stale after the AP silence bound (Settings → Presence, default max(3
+// intervals, 30 s)) without an accepted push; the same bound decides when a
+// station its AP stopped listing is no longer a client.
+import { apStaleSeconds } from '#services/wifi_presence'
 import logger from '@adonisjs/core/services/logger'
 import { DateTime } from 'luxon'
 
@@ -33,9 +39,6 @@ export const AGENT_METRIC_COLLECTORS = [
 const EARLY_PUSH_SLACK_MS = 1500
 /** A push carries one exposition; anything bigger is not one. */
 export const MAX_PUSH_TEXT_BYTES = 4 * 1024 * 1024
-/** Stale after max(3 intervals, 30 s) without an accepted push. */
-const STALE_INTERVALS = 3
-const STALE_MIN_SECONDS = 30
 
 type PushState = {
   /** Server receive time (ms) of the last accepted push. */
@@ -88,6 +91,8 @@ type PushParams = {
   format?: unknown
   text?: unknown
   durationMs?: unknown
+  /** perch-apd ≥ 1.0.0: the device's Ethernet ports (docs/infrastructure-view.md 4.2). */
+  ports?: unknown
 }
 
 /**
@@ -123,7 +128,8 @@ export function handleMetricsPush(
       : undefined
 
   const state = stateFor(apId)
-  const run = state.chain.then(() => ingestPush(apId, state, text, latencyMs, receivedAt))
+  const ports = push.ports
+  const run = state.chain.then(() => ingestPush(apId, state, text, latencyMs, ports, receivedAt))
   state.chain = run.catch(() => {})
   return run
 }
@@ -133,6 +139,7 @@ async function ingestPush(
   state: PushState,
   text: string,
   latencyMs: number | undefined,
+  ports: unknown,
   receivedAt: DateTime
 ): Promise<PushOutcome> {
   const ap = await WifiAccessPoint.find(apId)
@@ -160,24 +167,36 @@ async function ingestPush(
   if (outcome.status === 'failed') {
     logger.warn({ apId, error: outcome.error }, 'ap_agent_metrics: push ingestion failed')
   }
+
+  // The device's ports, after the Wi-Fi data and never at its expense. A push
+  // without `ports` (perch-apd ≤ 0.1.2) writes nothing.
+  try {
+    await recordAgentPorts({ type: 'ap', id: apId }, ports, receivedAt)
+  } catch (error) {
+    logger.warn({ apId, error: String(error) }, 'ap_agent_metrics: port report failed (non-fatal)')
+  }
   return { status: 'ingested', outcome }
 }
 
 /**
  * The 5 s task's liveness check: an agent that is connected and enabled but
- * has not had a push accepted for max(3 × interval, 30 s) — counted from
- * its last accepted push, or from the connect if it never pushed — gets a
- * failed `last_status`. Once per episode: a new push or a new session starts
- * the next one. Returns the ids it reported.
+ * has not had a push accepted for its silence bound (`apStaleSeconds`,
+ * default max(3 × interval, 30 s)) — counted from its last accepted push, or
+ * from the connect if it never pushed — gets a failed `last_status`. Once per
+ * episode: a new push or a new session starts the next one. Returns the ids
+ * it reported.
  */
 export async function checkAgentPushFreshness(now: DateTime = DateTime.utc()): Promise<number[]> {
   const online = hub.onlineIds()
   if (online.length === 0) return []
 
-  const rows = await WifiAccessPoint.query()
-    .whereIn('id', online)
-    .where('transport', 'agent')
-    .where('enabled', true)
+  const [rows, thresholds] = await Promise.all([
+    WifiAccessPoint.query()
+      .whereIn('id', online)
+      .where('transport', 'agent')
+      .where('enabled', true),
+    getPresenceSettings(),
+  ])
   const reported: number[] = []
 
   for (const ap of rows) {
@@ -187,7 +206,7 @@ export async function checkAgentPushFreshness(now: DateTime = DateTime.utc()): P
     const connectedAt = session.connectedAt.toMillis()
     const reference = Math.max(state.lastAcceptedAt ?? 0, connectedAt)
     const ageMs = now.toMillis() - reference
-    const thresholdMs = Math.max(STALE_INTERVALS * ap.pollIntervalSeconds, STALE_MIN_SECONDS) * 1000
+    const thresholdMs = apStaleSeconds(thresholds, ap.pollIntervalSeconds) * 1000
     if (ageMs < thresholdMs || state.staleReportedFor === reference) continue
 
     state.staleReportedFor = reference

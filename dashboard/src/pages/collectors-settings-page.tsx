@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   ArrowsClockwise,
   Broadcast,
@@ -148,13 +149,13 @@ function CollectorUnencryptedBadge({ collector }: { collector: Collector }) {
   )
 }
 
-/** This collector runs on the router and reports its gateway stats. */
+/** This collector runs on the router: it is the Gateway agent. */
 function GatewayBadge({ gateway }: { gateway: CollectorGatewayReport }) {
   const hint = wanSourceHint(gateway.wanSource)
   return (
     <Badge
       variant="outline"
-      title={`Reports the router's conntrack, WAN rate and load${hint ? `; WAN interfaces ${hint}` : ''}. Last report ${formatLastSeen(gateway.reportedAt)}.`}
+      title={`This collector runs on the router: it is the Gateway agent. It reports the router's connection tracking, WAN rate, load and its Ethernet ports${hint ? ` (WAN interfaces ${hint})` : ''}. Last report ${formatLastSeen(gateway.reportedAt)}.`}
     >
       <Globe aria-hidden className="size-3" />
       {collectorGatewayLabel(gateway)}
@@ -320,6 +321,15 @@ export function CollectorsSettingsPage() {
           Every device, protocol and byte on this dashboard comes from a collector (Perch Network
           Collector). Adopt the ones that connect or announce themselves, register polled ones by
           address, and check their health.
+        </p>
+        <p className="text-muted-foreground">
+          A collector that runs on the router is the{' '}
+          <strong className="font-medium text-foreground">Gateway agent</strong>: it also reports the
+          router&rsquo;s health and its ports, and it is the root of the{' '}
+          <Link to="/infrastructure" className="text-brand underline-offset-2 hover:underline">
+            infrastructure view
+          </Link>
+          .
         </p>
       </div>
 

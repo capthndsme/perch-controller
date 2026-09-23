@@ -60,6 +60,22 @@ export function useUsage(options: {
 }
 
 /**
+ * The instance timezone (set up with the site name) that the usage buckets
+ * follow, for pages that draw their own calendar periods (the Infrastructure
+ * page's device summary). No endpoint serves it alone; the smallest usage
+ * report, one hourly slot for the last minute, echoes it. Read once per visit.
+ */
+export function useInstanceTimezone(options: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ['usage', 'timezone'] as const,
+    queryFn: async () =>
+      (await apiFetch<UsageIntervalsResponse>('/api/v1/usage/intervals?range=1m&interval=1h')).timezone,
+    staleTime: Number.POSITIVE_INFINITY,
+    enabled: options.enabled ?? true,
+  })
+}
+
+/**
  * Sub-day slots for the hourly breakdown under the daily view (1 h / 4 h /
  * 8 h / 12 h, aligned to local midnight). `auto` lets the API pick by span
  * (1 h up to a week, then coarser); read `data.interval` for the result.

@@ -1,11 +1,24 @@
 import { enrichIp, type AsnInfo } from '#services/asn_enrichment'
 import { HOURLY_ROLLUP_SECONDS, PROTOCOL_NATIVE_GRAIN_SECONDS } from '#services/bucket_writer'
-import { getDeviceLabels, type DeviceType } from '#services/device_labels'
+import {
+  getDeviceLabels,
+  normalizeMac,
+  type DeviceConnection,
+  type DeviceType,
+} from '#services/device_labels'
+import {
+  queryDevicePresence,
+  queryLatestWifiContext,
+  queryTrafficSeenAt,
+} from '#services/device_presence_query'
 import { getHostnameMatches } from '#services/hostname_enrichment'
+import { loadDeviceAttachments } from '#services/infra_topology'
+import { getPresenceSettings } from '#services/presence_settings'
 import { categoryFor, getProtocolCategoryMap } from '#services/protocol_categories'
 import { cacheKey, cachedQuery, windowCache } from '#services/query_cache'
 import { pickAggregateTier, pickSeriesTier, windowSpanSeconds } from '#services/rollup_tiers'
 import { queryTopDevicesHistory } from '#services/top_devices_history'
+import { devicePresence } from '#services/wifi_presence'
 import { classifySignalQuality } from '#services/wifi_signal_quality'
 import DeviceSummaryTransformer, {
   type DeviceSummaryRow,
@@ -211,6 +224,8 @@ type IdentityView = IdentityViewBase & {
   /** From `device_labels`: what an operator called this device. */
   customName: string | null
   deviceType: DeviceType | null
+  /** `ethernet` when the operator marked it as wired. */
+  connection: DeviceConnection | null
   tags: string[]
   notes: string | null
 }
@@ -262,20 +277,6 @@ type ProtocolTopDeviceRow = {
   packetsOut: bigint | number | string
 }
 
-type WifiContextRow = {
-  mac: string
-  apId: number
-  apName: string
-  ssid: string | null
-  band: string | null
-  signalDbm: number | null
-  snrDb: number | null
-  txRateKbps: number | null
-  rxRateKbps: number | null
-  inactiveMs: number | null
-  recordedAt: Date | string | null
-}
-
 export default class DevicesController {
   async index({ request, response, serialize }: HttpContext) {
     const qs = await devicesIndexValidator.validate(request.qs())
@@ -310,7 +311,11 @@ export default class DevicesController {
     //      the window* so live Mbps columns reflect a recent slice rather
     //      than the whole window. Devices with no traffic in the window are
     //      dropped, matching `/api/v1/protocols` behavior — an idle device on
-    //      a "Last 1h" view shouldn't pretend to have a current rate.
+    //      a "Last 1h" view shouldn't pretend to have a current rate. Nor
+    //      should one whose latest bucket lies more than `nowRateIntervals`
+    //      intervals before the window's end (Settings → Presence, applied
+    //      per request from `latestLagSeconds`): it went quiet, and its last
+    //      rate from hours ago is not "now".
     const sql = `
       SELECT
         agg.mac                  AS mac,
@@ -330,6 +335,7 @@ export default class DevicesController {
         latest.bytes_out_lan     AS latestBytesOutLan,
         latest.${timeCol}        AS bucketStart,
         ${resolutionSecondsExpr} AS resolutionSeconds,
+        TIMESTAMPDIFF(SECOND, latest.${timeCol}, ?) AS latestLagSeconds,
         i.primary_ip             AS primaryIp,
         i.ips                    AS ips,
         i.last_seen_at           AS identityLastSeenAt,
@@ -365,18 +371,24 @@ export default class DevicesController {
     `
 
     const { ttlMs, segment } = windowCache(null, window.since, window.until, Date.now())
-    const rows = await cachedQuery(
-      cacheKey(['devices:index', segment, qs.collectorId ?? '']),
-      ttlMs,
-      async () => rawRows<DeviceSummaryRow>(await db.rawQuery(sql, bindings))
-    )
-    // All three enrichments are batched: wifi context in one query, hostnames
-    // in one state lookup, labels in one cached table read. The per-row map
-    // below is then pure CPU — no awaits, no N+1 settings reads, no per-row
-    // chance of triggering the lxc/ssh refresh.
+    const [rows, thresholds] = await Promise.all([
+      cachedQuery(cacheKey(['devices:index', segment, qs.collectorId ?? '']), ttlMs, async () =>
+        rawRows<DeviceSummaryRow>(await db.rawQuery(sql, [untilSql, ...bindings]))
+      ),
+      getPresenceSettings(),
+    ])
+    // All five enrichments are batched: wifi context and traffic times in one
+    // query each, hostnames in one state lookup, labels in one cached table
+    // read, and where the map puts the devices in a fixed handful of queries
+    // (`loadDeviceAttachments`). The per-row map below is then pure CPU — no
+    // awaits, no N+1 settings reads, no per-row chance of triggering the
+    // lxc/ssh refresh. Wi-Fi, traffic times and attachments describe now, so
+    // they are read per request, never from the cached rows above (a past
+    // window's rows are kept for hours).
     const macs = rows.map((row) => row.mac)
-    const [wifiByMac, hostnameMatches, labelsByMac] = await Promise.all([
-      queryLatestWifiContext(macs),
+    const [wifiByMac, trafficSeenAt, hostnameMatches, labelsByMac, placements] = await Promise.all([
+      queryLatestWifiContext(macs, thresholds),
+      queryTrafficSeenAt(macs),
       getHostnameMatches(
         rows.map((row) => ({
           mac: row.mac,
@@ -385,19 +397,35 @@ export default class DevicesController {
         }))
       ),
       getDeviceLabels(macs),
+      loadDeviceAttachments(macs, thresholds),
     ])
     const rowsWithHostnames = rows.map((row, i) => {
       const match = hostnameMatches[i]
       const wifi = wifiByMac.get(row.mac.toLowerCase())
       const label = labelsByMac.get(row.mac.toLowerCase())
+      const placement = placements.get(row.mac.toLowerCase())
+      const presence = devicePresence(
+        {
+          wifi: wifi ? { connected: wifi.connected, heardAt: wifi.heardAt } : null,
+          trafficAt: trafficSeenAt.get(`${row.collectorId}:${row.mac.toLowerCase()}`) ?? null,
+          ethernet: label?.connection === 'ethernet',
+          onMap: placement?.onMap ?? null,
+        },
+        thresholds
+      )
       return {
         ...row,
+        latestIsCurrent:
+          Number(row.latestLagSeconds) <=
+          thresholds.nowRateIntervals * Number(row.resolutionSeconds),
         hostname: match?.hostname ?? null,
         hostnameSource: match?.source ?? null,
         customName: label?.name ?? null,
         deviceType: label?.deviceType ?? null,
+        connection: label?.connection ?? null,
         tags: label?.tags ?? [],
         notes: label?.notes ?? null,
+        wifiConnected: wifi?.connected ?? false,
         wifiApId: wifi?.apId ?? null,
         wifiApName: wifi?.apName ?? null,
         wifiSsid: wifi?.ssid ?? null,
@@ -408,7 +436,9 @@ export default class DevicesController {
         wifiTxRateKbps: wifi?.txRateKbps ?? null,
         wifiRxRateKbps: wifi?.rxRateKbps ?? null,
         wifiInactiveMs: wifi?.inactiveMs ?? null,
-        wifiRecordedAt: wifi?.recordedAt ?? null,
+        wifiHeardAt: wifi ? new Date(wifi.heardAt).toISOString() : null,
+        presence,
+        attachment: placement?.attachment ?? null,
       } satisfies DeviceSummaryRow
     })
 
@@ -843,6 +873,29 @@ export default class DevicesController {
       })),
     })
   }
+
+  /**
+   * GET /api/v1/devices/:mac/presence
+   *
+   * Connected right now or not, and how (`wifi_presence.ts`), plus where the
+   * network map puts the device (`attachment`, null when no node carries
+   * it). Separate from the window-bound overview so the device page can poll
+   * it whatever it shows.
+   */
+  async presence({ params, response, serialize }: HttpContext) {
+    if (!(await macExists(params.mac))) {
+      return response.notFound({
+        error: 'mac_not_found',
+        message: `MAC ${params.mac} has never been seen by any collector.`,
+      })
+    }
+    const thresholds = await getPresenceSettings()
+    const mac = normalizeMac(params.mac) ?? String(params.mac).toLowerCase()
+    const placements = await loadDeviceAttachments([mac], thresholds)
+    const placement = placements.get(mac)
+    const presence = await queryDevicePresence(params.mac, thresholds, placement?.onMap ?? null)
+    return serialize({ ...presence, attachment: placement?.attachment ?? null })
+  }
 }
 
 /**
@@ -903,35 +956,6 @@ function resolveTimeWindow(
 
 function rawRows<T>(result: unknown): T[] {
   return (Array.isArray(result) ? result[0] : result) as T[]
-}
-
-async function queryLatestWifiContext(macs: string[]): Promise<Map<string, WifiContextRow>> {
-  const normalized = [...new Set(macs.map((mac) => mac.toLowerCase()))]
-  if (normalized.length === 0) return new Map()
-
-  const placeholders = normalized.map(() => '?').join(', ')
-  const sql = `
-    SELECT
-      s.mac                                  AS mac,
-      s.ap_id                                AS apId,
-      COALESCE(ap.friendly_name, ap.name)    AS apName,
-      s.ssid                                 AS ssid,
-      s.band                                 AS band,
-      s.signal_dbm                           AS signalDbm,
-      s.snr_db                               AS snrDb,
-      s.tx_rate_kbps                         AS txRateKbps,
-      s.rx_rate_kbps                         AS rxRateKbps,
-      s.inactive_ms                          AS inactiveMs,
-      s.recorded_at                          AS recordedAt
-    FROM wifi_station_latest s
-    INNER JOIN wifi_access_points ap ON ap.id = s.ap_id
-    WHERE s.mac IN (${placeholders})
-  `
-
-  const rows = rawRows<WifiContextRow>(await db.rawQuery(sql, normalized))
-  const byMac = new Map<string, WifiContextRow>()
-  for (const row of rows) byMac.set(row.mac.toLowerCase(), row)
-  return byMac
 }
 
 async function macExists(mac: string): Promise<boolean> {
@@ -1132,6 +1156,7 @@ async function enrichIdentityRows(rows: IdentityViewBase[]): Promise<IdentityVie
       hostnameSource: matches[i]?.source ?? null,
       customName: label?.name ?? null,
       deviceType: label?.deviceType ?? null,
+      connection: label?.connection ?? null,
       tags: label?.tags ?? [],
       notes: label?.notes ?? null,
     } satisfies IdentityView

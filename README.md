@@ -282,6 +282,9 @@ socket or in the polled summary. The controller writes one `router_samples` row
 per 30 s and names that collector on the Gateway page. Nothing else on the
 router needs to run (no node_exporter).
 
+A collector that runs on the router is the **Gateway agent**: it also reports
+the router's Ethernet ports, and it is the root of the infrastructure view.
+
 ## AP agents
 
 Access points either get scraped over HTTP (a node_exporter `/metrics` URL,
@@ -339,7 +342,12 @@ Validated in `start/env.ts`; templates in `.env.example` and
 
 Collector endpoints, their API keys and poll intervals live in the
 `collectors` table (setup wizard), Wi-Fi access points in `wifi_access_points`
-(Settings → Wi-Fi sources), site name and timezone in `system_settings`.
+(Settings → Wi-Fi sources), site name and timezone in `system_settings`, and
+so do the thresholds that decide when a device counts as connected (Settings →
+Presence: how long a wired device may stay quiet, how long an AP may stay
+silent, how recent a "now" rate must be). A device drawn on the network map
+with an Ethernet or fibre cable to a port an agent reports is also connected
+while that port has link, however quiet it is.
 
 ## Scheduler tasks (`app/tasks/`)
 
@@ -384,7 +392,8 @@ Ace commands (`commands/`): `dev:token` (bearer token for curl),
 - **Identity**: `device_identities` (IPs seen per MAC), hostnames resolved at
   read time from the configured sources (Settings → Hostname enrichment), and
   `device_labels` — the operator's own name, device type, tags and notes for a
-  MAC. Labels are keyed by MAC alone (not per collector) so they survive a
+  MAC, and whether it is an Ethernet device (then it reads "Ethernet" rather
+  than "Wired / unknown" while no AP lists it). Labels are keyed by MAC alone (not per collector) so they survive a
   collector being re-registered, are cached in memory and merged into every
   device read path; the UI prefers the operator's name over the hostname.
 

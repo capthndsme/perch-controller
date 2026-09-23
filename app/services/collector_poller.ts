@@ -17,6 +17,7 @@ import {
   type ServiceBucketDelta,
 } from '#services/bucket_writer'
 import { upsertDeviceIdentities, type DeviceIdentityInput } from '#services/device_identity_writer'
+import { recordAgentPorts } from '#services/infra_ports'
 import { upsertProtocolCategories, type ProtocolCategoryInput } from '#services/protocol_categories'
 import { recordGatewaySample, type GatewayReport } from '#services/router_metrics'
 import logger from '@adonisjs/core/services/logger'
@@ -776,6 +777,19 @@ async function ingest(
         )
         gateway = collector.lastStatus?.gateway
       }
+      // The router's ports belong to its gateway report (the Gateway agent,
+      // docs/infrastructure-view.md 4.3). Non-fatal the same way; a report
+      // without `ports` (a collector older than the feature) writes nothing.
+      const ports = snapshot.gateway.ports
+      try {
+        await recordAgentPorts({ type: 'collector', id: collector.id }, ports, now)
+      } catch (portsErr) {
+        logger.warn(
+          { collectorId: collector.id, error: String(portsErr) },
+          'collector_poller: port report failed (non-fatal)'
+        )
+      }
+      if (gateway) gateway = withPortsReported(gateway, Array.isArray(ports))
     }
 
     collector.lastSeenAt = now
@@ -815,6 +829,16 @@ async function ingest(
     const message = err instanceof Error ? err.message : String(err)
     return persistFailure(collector, now, message)
   }
+}
+
+/** The stored gateway block, saying whether its report carried the port list. */
+function withPortsReported(
+  gateway: NonNullable<CollectorStatus['gateway']>,
+  reported: boolean
+): NonNullable<CollectorStatus['gateway']> {
+  const rest = { ...gateway }
+  delete rest.portsReported
+  return reported ? { ...rest, portsReported: true } : rest
 }
 
 /**

@@ -60,6 +60,8 @@ import { DateTime } from 'luxon'
  * table registry is checked against `information_schema` first: a new table
  * referencing `collectors`, or a new column on a known one, makes the merge
  * refuse instead of letting `ON DELETE CASCADE` or a silent overwrite eat it.
+ * Tables that reference `collectors` without holding history
+ * (`NON_HISTORY_TABLES`) are exempt and moved by their own rule.
  */
 
 export const MERGE_OVERLAP_POLICIES = ['replace', 'into', 'sum'] as const
@@ -118,6 +120,14 @@ export type MergeTable = CounterTable | SnapshotTable | IdentityTable
 
 /** Columns every registry table may carry that the merge never interprets. */
 const META_COLUMNS = new Set(['id', 'created_at', 'updated_at'])
+
+/**
+ * Tables that reference `collectors` but hold no history: the merge moves
+ * them with a rule of their own instead of the counter/snapshot machinery.
+ * `infra_nodes`: the Gateway agent's node on the infrastructure view
+ * (`repointInfraNode`).
+ */
+export const NON_HISTORY_TABLES = new Set(['infra_nodes'])
 const IDENTITY_COLUMNS = ['primary_ip', 'ips', 'first_seen_at', 'last_seen_at']
 const SERVICE_SUMS = ['bytes_served', 'bytes_received', 'packets_served', 'packets_received']
 const BYTE_PACKET_SUMS = ['bytes_in', 'bytes_out', 'packets_in', 'packets_out']
@@ -341,7 +351,9 @@ export async function assertMergeRegistryMatchesSchema(client: Client = db.conne
       )
     ).map((r) => r.t)
   )
-  const unknown = [...referencing].filter((t) => !names.includes(t)).sort()
+  const unknown = [...referencing]
+    .filter((t) => !names.includes(t) && !NON_HISTORY_TABLES.has(t))
+    .sort()
   if (unknown.length > 0) {
     throw new CollectorMergeError(
       `${unknown.join(', ')} reference collectors, but collectors:merge does not know how to ` +
@@ -540,6 +552,133 @@ function retentionFromEnv(): BucketTierRetention | null {
   return bucketTierRetentionDays(nativeDays, retentionOptionsFromEnv())
 }
 
+// ── infrastructure nodes ─────────────────────────────────────────────────
+
+/**
+ * The Gateway agent's node (`infra_nodes.collector_id`) is layout, not
+ * history. Afterwards the merged collector has at most one node:
+ *   - only the removed row has one: it moves to the survivor;
+ *   - both have one: the one with more cables stays bound (on a tie, the one
+ *     of `into`, whose ports are the running collector's), the other is
+ *     detached (`collector_id = NULL`): it keeps its ports, cables and
+ *     position, and the operator deletes or re-binds it;
+ *   - otherwise nothing moves.
+ */
+export type InfraNodeMove = {
+  /** The node bound to the merged collector afterwards, if any. */
+  boundNodeId: number | null
+  /** The node that stays bound but changes rows (it was the removed collector's). */
+  movedNodeId: number | null
+  /** The node that loses its binding. */
+  detachedNodeId: number | null
+  /** Cables on each collector's node, for the plan output. */
+  links: Record<number, number>
+}
+
+async function collectorNodes(
+  client: Client,
+  collectorIds: number[]
+): Promise<{ id: number; collectorId: number; links: number }[]> {
+  return resultRows<{ id: number; collectorId: number; links: number | string }>(
+    await client.rawQuery(
+      `SELECT n.id AS id, n.collector_id AS collectorId,
+              (SELECT COUNT(*) FROM infra_links l
+                 JOIN infra_ports p ON p.id = l.a_port_id OR p.id = l.b_port_id
+                WHERE p.node_id = n.id) AS links
+         FROM infra_nodes n
+        WHERE n.collector_id IN (${placeholders(collectorIds)})`,
+      collectorIds
+    )
+  ).map((row) => ({
+    id: Number(row.id),
+    collectorId: Number(row.collectorId),
+    links: Number(row.links),
+  }))
+}
+
+export async function planInfraNodeMove(
+  client: Client,
+  sides: { survivorId: number; removedId: number; intoId: number }
+): Promise<InfraNodeMove> {
+  const nodes = await collectorNodes(client, [sides.survivorId, sides.removedId])
+  const survivor = nodes.find((n) => n.collectorId === sides.survivorId) ?? null
+  const removed = nodes.find((n) => n.collectorId === sides.removedId) ?? null
+  const links = Object.fromEntries(nodes.map((n) => [n.id, n.links]))
+  if (!removed) {
+    return { boundNodeId: survivor?.id ?? null, movedNodeId: null, detachedNodeId: null, links }
+  }
+  if (!survivor) {
+    return { boundNodeId: removed.id, movedNodeId: removed.id, detachedNodeId: null, links }
+  }
+  const intoNode = sides.intoId === sides.removedId ? removed : survivor
+  const keep =
+    survivor.links > removed.links ? survivor : removed.links > survivor.links ? removed : intoNode
+  const detach = keep === survivor ? removed : survivor
+  return {
+    boundNodeId: keep.id,
+    movedNodeId: keep === removed ? removed.id : null,
+    detachedNodeId: detach.id,
+    links,
+  }
+}
+
+/**
+ * Carries out `planInfraNodeMove` inside the merge transaction, before the
+ * removed collector row is deleted (its ON DELETE SET NULL would otherwise
+ * detach the removed side's node). The detach goes first: `collector_id` is
+ * unique.
+ */
+export async function repointInfraNode(
+  trx: Client,
+  sides: { survivorId: number; removedId: number; intoId: number }
+): Promise<InfraNodeMove> {
+  const move = await planInfraNodeMove(trx, sides)
+  const now = DateTime.utc().toFormat('yyyy-MM-dd HH:mm:ss')
+  if (move.detachedNodeId !== null) {
+    await trx.rawQuery('UPDATE infra_nodes SET collector_id = NULL, updated_at = ? WHERE id = ?', [
+      now,
+      move.detachedNodeId,
+    ])
+  }
+  if (move.movedNodeId !== null) {
+    await trx.rawQuery('UPDATE infra_nodes SET collector_id = ?, updated_at = ? WHERE id = ?', [
+      sides.survivorId,
+      now,
+      move.movedNodeId,
+    ])
+  }
+  return move
+}
+
+/** One line for the plan and result output, or null when no node is involved. */
+export function describeInfraNodeMove(
+  move: InfraNodeMove,
+  sides: { survivorId: number; removedId: number }
+): string | null {
+  const cables = (id: number) => {
+    const n = move.links[id] ?? 0
+    return `${n} cable${n === 1 ? '' : 's'}`
+  }
+  if (move.detachedNodeId !== null && move.boundNodeId !== null) {
+    return (
+      `Infrastructure view: both collectors have a node. Node #${move.boundNodeId} ` +
+      `(${cables(move.boundNodeId)}) stays bound to #${sides.survivorId}; node ` +
+      `#${move.detachedNodeId} (${cables(move.detachedNodeId)}) is detached and keeps its ` +
+      'ports, cables and position (delete or re-bind it on the Infrastructure page).'
+    )
+  }
+  if (move.movedNodeId !== null) {
+    return (
+      `Infrastructure view: node #${move.movedNodeId} moves from #${sides.removedId} to ` +
+      `#${sides.survivorId}.`
+    )
+  }
+  if (move.boundNodeId !== null) {
+    return `Infrastructure view: node #${move.boundNodeId} stays bound to #${sides.survivorId}.`
+  }
+  return null
+}
+
 // ── the plan ─────────────────────────────────────────────────────────────
 
 export type MergeSide = {
@@ -581,6 +720,8 @@ export type CollectorMergePlan = {
   refusals: string[]
   tables: MergeTablePlan[]
   rebuilds: MergeRebuild[]
+  /** What happens to the collectors' nodes on the infrastructure view. */
+  infraNodes: InfraNodeMove
   warnings: string[]
 }
 
@@ -730,6 +871,8 @@ export async function planCollectorMerge(options: PlanOptions): Promise<Collecto
     })
   }
 
+  const infraNodes = await planInfraNodeMove(client, { survivorId, removedId, intoId })
+
   const warnings: string[] = []
   if (!into.enabled) {
     warnings.push(
@@ -768,6 +911,7 @@ export async function planCollectorMerge(options: PlanOptions): Promise<Collecto
     refusals,
     tables: tablePlans,
     rebuilds: policy ? rebuildWindows(overlap) : [],
+    infraNodes,
     warnings,
   }
 }
@@ -788,6 +932,7 @@ export type CollectorMergeResult = {
   removedId: number
   tables: MergeTableResult[]
   rebuilds: RollupRunResult[]
+  infraNodes: InfraNodeMove
   collector: Collector
 }
 
@@ -955,6 +1100,13 @@ export async function executeCollectorMerge(
     }
   }
 
+  // Layout, not history: the Gateway agent's node follows the merged collector.
+  const infraNodes = await repointInfraNode(trx, {
+    survivorId,
+    removedId,
+    intoId: plan.into.id,
+  })
+
   const intoRow = intoIsRemoved ? removed : survivor
   const identity: Record<string, unknown> = {}
   for (const attribute of Collector.$columnsDefinitions.keys()) {
@@ -975,5 +1127,5 @@ export async function executeCollectorMerge(
   survivor.createdAt = createdAt
   await survivor.save()
 
-  return { survivorId, removedId, tables, rebuilds, collector: survivor }
+  return { survivorId, removedId, tables, rebuilds, infraNodes, collector: survivor }
 }

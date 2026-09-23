@@ -174,6 +174,77 @@ function isoWeekStart(year: number, week: number): Date {
   return monday
 }
 
+// ── The running period, in the instance timezone ──────────────────────
+
+/** What the running bucket of each period is called (`bucketHint` says it in lower case). */
+export const RUNNING_PERIOD_LABELS: Record<UsagePeriod, string> = {
+  day: 'Today',
+  week: 'This week',
+  month: 'This month',
+}
+
+const wallClockFormatters = new Map<string, Intl.DateTimeFormat>()
+
+/** Calendar date and time of `ms` on the wall clocks of `timeZone`. */
+function wallClock(ms: number, timeZone: string) {
+  let formatter = wallClockFormatters.get(timeZone)
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+    })
+    wallClockFormatters.set(timeZone, formatter)
+  }
+  const fields = { year: 0, month: 0, day: 0, hour: 0, minute: 0, second: 0 }
+  for (const part of formatter.formatToParts(ms)) {
+    if (part.type in fields) fields[part.type as keyof typeof fields] = Number(part.value)
+  }
+  return fields
+}
+
+/** How far the wall clocks of `timeZone` are ahead of UTC at `ms`. */
+function zoneOffsetMs(ms: number, timeZone: string): number {
+  const w = wallClock(ms, timeZone)
+  return Date.UTC(w.year, w.month - 1, w.day, w.hour % 24, w.minute, w.second) - Math.floor(ms / 1000) * 1000
+}
+
+/** The first instant of the calendar date y-m-d in `timeZone`. */
+function zonedDayStart(y: number, m: number, d: number, timeZone: string): number {
+  const wall = Date.UTC(y, m - 1, d)
+  const first = wall - zoneOffsetMs(wall, timeZone)
+  const second = wall - zoneOffsetMs(first, timeZone)
+  if (first === second) return first
+  // A clock change around midnight. Skipped midnight: the day starts after the gap (01:00).
+  // Midnight twice: the day starts at the first one.
+  const onDay = [first, second].filter((ms) => {
+    const w = wallClock(ms, timeZone)
+    return w.year === y && w.month === m && w.day === d
+  })
+  return onDay.length > 0 ? Math.min(...onDay) : Math.max(first, second)
+}
+
+/**
+ * Start (UTC ms) of the local day, ISO week (Monday, as the weekly buckets) or
+ * month that contains `nowMs`, on the calendar of `timeZone`: the instance
+ * timezone the Usage buckets follow (`UsageResponse.timezone`), so "today" is
+ * the day of the Usage page's running bucket whatever zone the browser is in.
+ * Same result as the API's luxon `startOf()`.
+ */
+export function periodStart(period: UsagePeriod, timeZone: string, nowMs: number): number {
+  const { year, month, day } = wallClock(nowMs, timeZone)
+  if (period === 'day') return zonedDayStart(year, month, day, timeZone)
+  if (period === 'month') return zonedDayStart(year, month, 1, timeZone)
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay() || 7
+  const monday = new Date(Date.UTC(year, month - 1, day - weekday + 1))
+  return zonedDayStart(monday.getUTCFullYear(), monday.getUTCMonth() + 1, monday.getUTCDate(), timeZone)
+}
+
 function utcDate(parts: DateParts, addDays = 0): Date {
   return new Date(Date.UTC(parts.y, parts.m - 1, parts.d + addDays))
 }

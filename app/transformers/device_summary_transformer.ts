@@ -1,6 +1,7 @@
 import type { CollectorStatus } from '#models/collector'
+import type { DeviceAttachment } from '#services/infra_topology'
+import type { DevicePresence } from '#services/wifi_presence'
 import { BaseTransformer } from '@adonisjs/core/transformers'
-import { DateTime } from 'luxon'
 
 /**
  * Joined row shape for the `/api/v1/devices` index endpoint. Not a Lucid
@@ -20,7 +21,7 @@ import { DateTime } from 'luxon'
  * MAC appears under multiple collectors (e.g. a roaming laptop on two
  * LAN segments).
  *
- * `customName` / `deviceType` / `tags` / `notes` come from `device_labels` —
+ * `customName` / `deviceType` / `connection` / `tags` / `notes` come from `device_labels` —
  * what an operator called this device, as opposed to `hostname`, which is
  * what DHCP calls it. The dashboard prefers the former when both exist.
  */
@@ -31,6 +32,8 @@ export type DeviceSummaryRow = {
   /** Operator-supplied identity (`device_labels`), null when unnamed. */
   customName?: string | null
   deviceType?: string | null
+  /** `ethernet` when the operator marked it as wired; `presence` already reflects it. */
+  connection?: string | null
   tags?: string[] | null
   notes?: string | null
   windowBytesIn: bigint | number
@@ -49,12 +52,21 @@ export type DeviceSummaryRow = {
   latestBytesOutLan: bigint | number | null
   bucketStart: Date | string
   resolutionSeconds: number
+  /** Seconds from that latest bucket to the window's end. */
+  latestLagSeconds?: number | string | null
+  /**
+   * That latest bucket is recent enough to be "now" (within the presence
+   * setting's `nowRateIntervals` of the window's end); false zeroes the rates.
+   */
+  latestIsCurrent?: boolean
   primaryIp: string | null
   ips: string | null
   identityLastSeenAt: Date | string | null
   collectorId: number
   collectorName: string
   collectorLastStatus: string | null
+  /** Connected right now; when false, the `wifi*` fields describe where it was last. */
+  wifiConnected?: boolean
   wifiApId?: number | null
   wifiApName?: string | null
   wifiSsid?: string | null
@@ -65,7 +77,11 @@ export type DeviceSummaryRow = {
   wifiTxRateKbps?: number | null
   wifiRxRateKbps?: number | null
   wifiInactiveMs?: number | null
-  wifiRecordedAt?: Date | string | null
+  /** When its AP last heard from it (ISO). */
+  wifiHeardAt?: string | null
+  presence?: DevicePresence
+  /** Where the network map puts the device, read per request; null when no node carries it. */
+  attachment?: DeviceAttachment | null
 }
 
 /**
@@ -107,15 +123,6 @@ function parseIps(raw: string | null): string[] {
   }
 }
 
-function toIso(value: Date | string | null | undefined): string | null {
-  if (!value) return null
-  if (value instanceof Date) return DateTime.fromJSDate(value, { zone: 'utc' }).toISO()
-  const sql = DateTime.fromSQL(value, { zone: 'utc' })
-  if (sql.isValid) return sql.toISO()
-  const iso = DateTime.fromISO(value, { setZone: true })
-  return iso.isValid ? iso.toUTC().toISO() : String(value)
-}
-
 export default class DeviceSummaryTransformer extends BaseTransformer<DeviceSummaryRow> {
   toObject() {
     const windowBytesIn = toNumber(this.resource.windowBytesIn)
@@ -132,10 +139,13 @@ export default class DeviceSummaryTransformer extends BaseTransformer<DeviceSumm
     const latestBytesOutLan = toNumber(this.resource.latestBytesOutLan)
     const resolutionSeconds = Number(this.resource.resolutionSeconds ?? 15)
     // Mbps columns express "current rate" — they divide the latest
-    // bucket's bytes by the poll interval. The byte columns themselves
-    // express "windowed total" so the UI can render both a live rate
-    // and a total over the selected range from one response.
-    const bitsPerSec = (bytes: number) => (bytes * 8) / resolutionSeconds / 1_000_000
+    // bucket's bytes by the poll interval, and read 0 once that bucket is
+    // no longer recent. The byte columns themselves express "windowed
+    // total" so the UI can render both a live rate and a total over the
+    // selected range from one response.
+    const current = this.resource.latestIsCurrent ?? true
+    const bitsPerSec = (bytes: number) =>
+      current ? (bytes * 8) / resolutionSeconds / 1_000_000 : 0
 
     return {
       mac: this.resource.mac,
@@ -143,6 +153,7 @@ export default class DeviceSummaryTransformer extends BaseTransformer<DeviceSumm
       hostnameSource: this.resource.hostnameSource ?? null,
       customName: this.resource.customName ?? null,
       deviceType: this.resource.deviceType ?? null,
+      connection: this.resource.connection ?? null,
       tags: this.resource.tags ?? [],
       notes: this.resource.notes ?? null,
       primaryIp: this.resource.primaryIp,
@@ -169,25 +180,47 @@ export default class DeviceSummaryTransformer extends BaseTransformer<DeviceSumm
         name: this.resource.collectorName,
         lastStatus: parseStatus(this.resource.collectorLastStatus),
       },
-      wifi:
-        this.resource.wifiApId !== null && this.resource.wifiApId !== undefined
-          ? {
-              connected: true,
-              apId: this.resource.wifiApId,
-              ap: this.resource.wifiApName ?? 'Unknown AP',
-              ssid: this.resource.wifiSsid ?? null,
-              band: this.resource.wifiBand ?? null,
-              signalDbm: this.resource.wifiSignalDbm ?? null,
-              signalQuality: this.resource.wifiSignalQuality ?? null,
-              snrDb: this.resource.wifiSnrDb ?? null,
-              txRateKbps: this.resource.wifiTxRateKbps ?? null,
-              rxRateKbps: this.resource.wifiRxRateKbps ?? null,
-              inactiveMs: this.resource.wifiInactiveMs ?? null,
-              lastSeenAt: toIso(this.resource.wifiRecordedAt),
-            }
-          : {
-              connected: false,
-            },
+      wifi: this.wifi(),
+      presence: this.resource.presence ?? { status: 'disconnected', via: 'lan', lastSeenAt: null },
+      attachment: this.resource.attachment ?? null,
+    }
+  }
+
+  /**
+   * Where it is connected, or, for a device that left (kept for the snapshot
+   * retention), `last`: the AP it was last heard on. Its signal then is not
+   * worth showing; it was usually walking away.
+   */
+  private wifi() {
+    const apId = this.resource.wifiApId
+    if (apId === null || apId === undefined) return { connected: false, last: null }
+    const ap = this.resource.wifiApName ?? 'Unknown AP'
+    const lastSeenAt = this.resource.wifiHeardAt ?? null
+    if (!this.resource.wifiConnected) {
+      return {
+        connected: false,
+        last: {
+          apId,
+          ap,
+          ssid: this.resource.wifiSsid ?? null,
+          band: this.resource.wifiBand ?? null,
+          lastSeenAt,
+        },
+      }
+    }
+    return {
+      connected: true,
+      apId,
+      ap,
+      ssid: this.resource.wifiSsid ?? null,
+      band: this.resource.wifiBand ?? null,
+      signalDbm: this.resource.wifiSignalDbm ?? null,
+      signalQuality: this.resource.wifiSignalQuality ?? null,
+      snrDb: this.resource.wifiSnrDb ?? null,
+      txRateKbps: this.resource.wifiTxRateKbps ?? null,
+      rxRateKbps: this.resource.wifiRxRateKbps ?? null,
+      inactiveMs: this.resource.wifiInactiveMs ?? null,
+      lastSeenAt,
     }
   }
 }

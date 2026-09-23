@@ -41,6 +41,12 @@ export type CollectorGatewayStatus = {
   reportedAt: string
   wanInterfaces: string[]
   wanSource: GatewayWanSource
+  /**
+   * Set when the last report carried the router's port list, i.e. the
+   * collector reports ports (docs/infrastructure-view.md 4.3). Absent for
+   * older collectors, which the infrastructure view reads as "unknown".
+   */
+  portsReported?: true
 }
 
 /**

@@ -131,6 +131,17 @@ export type WifiSignalQuality =
 export type DeviceWifiSummary =
   | {
       connected: false
+      /**
+       * The AP it was last heard on (kept 14 days); null when not seen on a Perch AP in that time.
+       * Can be set while `presence.via` is `lan` or `ethernet`: on a cable now, on Wi-Fi yesterday.
+       */
+      last: {
+        apId: number
+        ap: string
+        ssid: string | null
+        band: string | null
+        lastSeenAt: string | null
+      } | null
     }
   | {
       connected: true
@@ -144,8 +155,59 @@ export type DeviceWifiSummary =
       txRateKbps: number | null
       rxRateKbps: number | null
       inactiveMs: number | null
+      /** When its AP last heard from it. */
       lastSeenAt: string | null
     }
+
+/**
+ * Whether a device is around right now; the API applies one rule for every device view, in this
+ * order. `wifi`: an AP lists it right now (connected), whatever its label's mark; or it is
+ * unmarked and its traffic ended within the Wi-Fi grace of its last sighting (it left over Wi-Fi,
+ * "Last seen on WiFi"). `ethernet`: marked Ethernet in its label and no AP lists it right now;
+ * connected while its traffic is within the wired timeout, never "Last seen on WiFi". `lan`:
+ * unmarked, anything else, a cable or Wi-Fi Perch does not read ("Wired / unknown"), connected
+ * while its traffic is within the wired timeout. Both limits are in Settings → Presence.
+ */
+export type DevicePresence = {
+  status: 'connected' | 'disconnected'
+  via: 'wifi' | 'ethernet' | 'lan'
+  /** `wifi`: when its AP last heard it (as `/wifi/clients/:mac`); `ethernet` / `lan`: its last traffic. Null if never. */
+  lastSeenAt: string | null
+}
+
+/**
+ * Where a device is on the network map (docs/infrastructure-view.md A4): its box, and the cable
+ * that leaves its lowest cabled port. Read per request, never from the device list's cache.
+ */
+export type DeviceAttachment = {
+  nodeId: number
+  /** The box's resolved name. */
+  nodeName: string
+  /** Its cabled port with the lowest position, seen from the far end; null when the box has no cable. */
+  uplink: DeviceUplink | null
+}
+
+export type DeviceUplink = {
+  linkId: number
+  medium: InfraLinkMedium
+  /** The far end of the cable. */
+  nodeId: number
+  nodeName: string
+  nodeKind: InfraNodeKind
+  portId: number
+  portKey: string
+  portLabel: string
+  /** The far port is a live agent port (§7.3): `up` and `speedMbps` may be believed. */
+  live: boolean
+  up: boolean | null
+  speedMbps: number | null
+  duplex: 'full' | 'half' | null
+}
+
+/** `GET /api/v1/devices/:mac/presence`: the presence, plus where the device is on the map (A4). */
+export type DevicePresenceResponse = DevicePresence & {
+  attachment?: DeviceAttachment | null
+}
 
 /**
  * Fixed device taxonomy (`device_labels.device_type`). Mirrors
@@ -170,11 +232,18 @@ export type DeviceType =
   | 'vehicle'
   | 'other'
 
+/**
+ * How a device attaches, when the operator says so (`device_labels.connection`, mirrors
+ * `DEVICE_CONNECTIONS` in the API). Null lets Perch work it out (`DevicePresence`).
+ */
+export type DeviceConnection = 'ethernet'
+
 /** What an operator called a device, as opposed to what DHCP calls it. */
 export type DeviceLabel = {
   mac: string
   name: string | null
   deviceType: DeviceType | null
+  connection: DeviceConnection | null
   tags: string[]
   notes: string | null
   updatedAt: string | null
@@ -196,6 +265,7 @@ export type DeviceLabelsResponse = {
 export type DeviceLabelPayload = {
   name?: string | null
   deviceType?: DeviceType | null
+  connection?: DeviceConnection | null
   tags?: string[] | null
   notes?: string | null
 }
@@ -207,6 +277,8 @@ export type DeviceSummary = {
   /** From `device_labels`; the UI prefers `customName` over `hostname`. */
   customName?: string | null
   deviceType?: DeviceType | null
+  /** The operator's mark; `presence` already reflects it. */
+  connection?: DeviceConnection | null
   tags?: string[]
   notes?: string | null
   primaryIp: string | null
@@ -234,6 +306,9 @@ export type DeviceSummary = {
     lastStatus: CollectorStatus | null
   }
   wifi: DeviceWifiSummary
+  presence: DevicePresence
+  /** Its box on the network map, if it has one (A4; absent from controllers before it). */
+  attachment?: DeviceAttachment | null
 }
 
 export type WifiSignalDistribution = {
@@ -325,6 +400,10 @@ export type WifiOverviewResponse = {
   range: string | null
   from: string
   to: string
+  /**
+   * Clients connected now: their AP listed them within max(3 × its report interval, 30 s), idle < 200 s.
+   * `ssids[].clientCount`, `accessPoints[].clientCount` and `signalDistribution` each sum to this.
+   */
   totalClients: number
   ssidCount: number
   accessPointCount: number
@@ -380,7 +459,15 @@ export type WifiClientSummary = {
   txRateKbps: number | null
   rxRateKbps: number | null
   inactiveMs: number | null
+  /**
+   * Connected now, as counted by `WifiOverviewResponse.totalClients`. `?activeOnly=true` lists only these;
+   * without it a row can be a client's last known state (kept up to 14 days).
+   */
   active: boolean
+  /**
+   * When its AP last heard from it (its last listing minus the idle time); for a client that
+   * left, about when it left.
+   */
   lastSeenAt: string | null
 }
 
@@ -700,6 +787,9 @@ export type TrafficBucket = {
 export type DeviceTrafficResponse = {
   mac: string
   range: string
+  /** The window the API read (UTC ISO); `to` is its "now" for a relative range. */
+  from?: string
+  to?: string
   resolution: string
   resolutionSeconds: number
   scope: TrafficScope
@@ -797,6 +887,9 @@ export type ProtocolTimeSeriesPoint = {
 export type ProtocolsResponse = {
   mac?: string
   range: string
+  /** The window the API read (UTC ISO). */
+  from?: string
+  to?: string
   resolution: string
   resolutionSeconds: number
   protocols: ProtocolBreakdown[]
@@ -850,6 +943,7 @@ export type DeviceIdentity = {
   hostnameSource?: string | null
   customName?: string | null
   deviceType?: DeviceType | null
+  connection?: DeviceConnection | null
   tags?: string[]
   notes?: string | null
   primaryIp: string | null
@@ -1332,3 +1426,260 @@ export type RouterResponse = {
   latest: RouterLatest | null
   series: RouterSeriesBucket[]
 }
+
+// ── Infrastructure view (docs/infrastructure-view.md §7) ─────────────────
+
+/** What a node on the network map is. `gateway` is only ever created by the server. */
+export type InfraNodeKind =
+  | 'gateway'
+  | 'access_point'
+  | 'switch'
+  | 'router'
+  | 'modem'
+  | 'isp'
+  | 'host'
+  | 'device'
+
+export type InfraPortRole = 'wan' | 'lan'
+export type InfraPortMedium = 'copper' | 'sfp' | 'virtual' | 'wireless'
+export type InfraLinkMedium = 'ethernet' | 'fiber' | 'virtual' | 'wireless'
+
+/** The agent row a node is bound to: a collector (the Gateway agent) or an access point. */
+export type InfraBinding = {
+  type: 'collector' | 'ap'
+  id: number
+  /** The agent row's name (friendlyName ?? name). */
+  name: string
+  transport: 'agent' | 'poll' | 'scrape'
+  /** Agent / collector build, when known. */
+  version: string | null
+  /** true = it reports ports, false = it cannot, null = unknown (old collector). */
+  portsSupported: boolean | null
+}
+
+export type InfraPort = {
+  id: number
+  nodeId: number
+  key: string
+  origin: 'agent' | 'manual'
+  /** label ?? reportedLabel ?? key */
+  label: string
+  labelOverride: string | null
+  /** role ?? reportedRole */
+  role: InfraPortRole | null
+  roleOverride: InfraPortRole | null
+  medium: InfraPortMedium | null
+  mac: string | null
+  position: number
+  hidden: boolean
+  /** false once the agent stopped reporting this port. */
+  present: boolean
+  missingSince: string | null
+  linkId: number | null
+}
+
+export type InfraNode = {
+  id: number
+  kind: InfraNodeKind
+  /** Resolved display name: the operator's, else the agent's, else the kind's. */
+  name: string
+  nameOverride: string | null
+  /** 'agent' once it has ever been bound. */
+  source: 'agent' | 'manual'
+  /** null on manual and detached nodes. */
+  binding: InfraBinding | null
+  /** source === 'agent' && binding === null: the agent row is gone. */
+  detached: boolean
+  virtual: boolean
+  model: string | null
+  notes: string | null
+  /** Only when the node is bound to a MAC from Perch's device list. */
+  device: {
+    mac: string
+    /** The device label's name. */
+    name: string | null
+    deviceType: DeviceType | null
+    connection: DeviceConnection | null
+    /** Hostname enrichment by MAC, as `/wifi/clients` does it (A4). */
+    hostname?: string | null
+    /** Its most recent address across collectors (A4). */
+    primaryIp?: string | null
+  } | null
+  parentId: number | null
+  /** null = unplaced (the page lays it out); relative to the parent when parentId is set. */
+  position: { x: number; y: number } | null
+  /** Host frames only. */
+  size: { width: number; height: number } | null
+  hidden: boolean
+  /** The Gateway agent the Gateway panel reads. */
+  isRoot: boolean
+  /** In display order. */
+  ports: InfraPort[]
+  createdAt: string
+  updatedAt: string | null
+}
+
+export type InfraLink = {
+  id: number
+  medium: InfraLinkMedium
+  label: string | null
+  notes: string | null
+  a: { nodeId: number; portId: number }
+  b: { nodeId: number; portId: number }
+}
+
+/** One entry of the kinds catalog; the "Add device" menu is built from these. */
+export type InfraKindInfo = {
+  kind: InfraNodeKind
+  label: string
+  manual: boolean
+  container: boolean
+  ports: { default: number; min: number; max: number }
+  supportsSfp: boolean
+}
+
+/** `GET /api/v1/infra/layout` */
+export type InfraLayoutResponse = {
+  generatedAt: string
+  rootNodeId: number | null
+  nodes: InfraNode[]
+  links: InfraLink[]
+  kinds: InfraKindInfo[]
+  limits: { nodes: number; portsPerNode: number; links: number }
+}
+
+export type InfraNodeStatus = 'online' | 'stale' | 'offline' | 'unmanaged' | 'detached'
+
+export type InfraNodeState = {
+  id: number
+  status: InfraNodeStatus
+  /** The port state below may be believed. */
+  live: boolean
+  lastSeenAt: string | null
+  version: string | null
+  /** Nodes bound to a device MAC: whether that device is around right now. */
+  presence: DevicePresence | null
+}
+
+export type InfraPortState = {
+  id: number
+  nodeId: number
+  present: boolean
+  live: boolean
+  /** carrier ?? (operstate === 'up'); null when nothing is known. */
+  up: boolean | null
+  adminUp: boolean | null
+  operstate: string | null
+  speedMbps: number | null
+  duplex: 'full' | 'half' | null
+  carrierChanges: number | null
+  changedAt: string | null
+  /** Manual ports: the link whose live far end this state was taken from. */
+  derivedFrom: number | null
+}
+
+export type InfraLinkStateValue = 'up' | 'down' | 'unknown' | 'mismatch'
+
+export type InfraLinkState = {
+  id: number
+  state: InfraLinkStateValue
+  speedMbps: number | null
+  /** Set on `mismatch`: the two live ends disagree on carrier or on speed. */
+  detail: 'carrier' | 'speed' | null
+}
+
+/** `GET /api/v1/infra/state`, polled every 5 s. */
+export type InfraStateResponse = {
+  generatedAt: string
+  nodes: InfraNodeState[]
+  ports: InfraPortState[]
+  links: InfraLinkState[]
+}
+
+export type InfraPortInput = {
+  key: string
+  label?: string | null
+  role?: InfraPortRole | null
+  medium?: InfraPortMedium | null
+  position?: number
+}
+
+/**
+ * A4: cable the new node's `ownPortKey` (default: its first port by position) to `portId` in the
+ * same transaction as the create; any refusal rolls the whole create back.
+ */
+export type InfraLinkTo = {
+  portId: number
+  ownPortKey?: string
+  medium?: InfraLinkMedium
+}
+
+/** `POST /api/v1/infra/nodes` */
+export type CreateInfraNodePayload = {
+  kind: Exclude<InfraNodeKind, 'gateway'>
+  /** Optional when `deviceMac` is set: the box then follows the device's name (A4). */
+  name?: string
+  virtual?: boolean
+  model?: string | null
+  notes?: string | null
+  deviceMac?: string | null
+  parentId?: number | null
+  position?: { x: number; y: number }
+  size?: { width: number; height: number }
+  portCount?: number
+  sfpPorts?: number
+  ports?: InfraPortInput[]
+  linkTo?: InfraLinkTo
+}
+
+/** `201` of `POST /api/v1/infra/nodes`: `link` is the cable `linkTo` drew (A4), else null. */
+export type CreateInfraNodeResponse = {
+  node: InfraNode
+  link?: InfraLink | null
+}
+
+/** `PATCH /api/v1/infra/nodes/:id`: an omitted key keeps the stored value, `null` clears it. */
+export type UpdateInfraNodePayload = {
+  name?: string | null
+  model?: string | null
+  notes?: string | null
+  virtual?: boolean
+  deviceMac?: string | null
+  parentId?: number | null
+  position?: { x: number; y: number } | null
+  size?: { width: number; height: number } | null
+  hidden?: boolean
+  portCount?: number
+}
+
+export type BindInfraNodePayload = { apId: number } | { collectorId: number }
+
+/** `PATCH /api/v1/infra/ports/:id` */
+export type UpdateInfraPortPayload = {
+  key?: string
+  label?: string | null
+  role?: InfraPortRole | null
+  medium?: InfraPortMedium | null
+  hidden?: boolean
+  position?: number
+}
+
+/** `POST /api/v1/infra/links` */
+export type CreateInfraLinkPayload = {
+  aPortId: number
+  bPortId: number
+  medium?: InfraLinkMedium
+  label?: string | null
+  notes?: string | null
+}
+
+/** `PATCH /api/v1/infra/links/:id`: moves one end (aPortId / bPortId), or edits the cable's facts. */
+export type UpdateInfraLinkPayload = {
+  aPortId?: number
+  bPortId?: number
+  medium?: InfraLinkMedium
+  label?: string | null
+  notes?: string | null
+}
+
+export type InfraPositionEntry = { nodeId: number; x: number; y: number; parentId: number | null }

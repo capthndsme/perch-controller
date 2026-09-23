@@ -261,8 +261,10 @@ export class DeviceIdentitySchema extends BaseModel {
 }
 
 export class DeviceLabelSchema extends BaseModel {
-  static $columns = ['createdAt', 'deviceType', 'id', 'mac', 'name', 'notes', 'tags', 'updatedAt', 'updatedByUserId'] as const
+  static $columns = ['connection', 'createdAt', 'deviceType', 'id', 'mac', 'name', 'notes', 'tags', 'updatedAt', 'updatedByUserId'] as const
   $columns = DeviceLabelSchema.$columns
+  @column()
+  declare connection: string | null
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
   @column()
@@ -621,6 +623,123 @@ export class DeviceTrafficBucketsHourlySchema extends BaseModel {
   declare packetsOutWan: bigint | number
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime
+}
+
+export class InfraLinkSchema extends BaseModel {
+  static $columns = ['aPortId', 'bPortId', 'createdAt', 'id', 'label', 'medium', 'notes', 'updatedAt'] as const
+  $columns = InfraLinkSchema.$columns
+  @column()
+  declare aPortId: number
+  @column()
+  declare bPortId: number
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare label: string | null
+  @column()
+  declare medium: string
+  @column()
+  declare notes: string | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class InfraNodeSchema extends BaseModel {
+  static $columns = ['apId', 'collectorId', 'createdAt', 'deviceMac', 'height', 'hidden', 'id', 'kind', 'model', 'name', 'notes', 'origin', 'parentId', 'posX', 'posY', 'updatedAt', 'virtual', 'width'] as const
+  $columns = InfraNodeSchema.$columns
+  @column()
+  declare apId: number | null
+  @column()
+  declare collectorId: number | null
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare deviceMac: string | null
+  @column()
+  declare height: number | null
+  @column()
+  declare hidden: boolean
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare kind: string
+  @column()
+  declare model: string | null
+  @column()
+  declare name: string | null
+  @column()
+  declare notes: string | null
+  @column()
+  declare origin: string
+  @column()
+  declare parentId: number | null
+  @column()
+  declare posX: number | null
+  @column()
+  declare posY: number | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+  @column()
+  declare virtual: boolean
+  @column()
+  declare width: number | null
+}
+
+export class InfraPortSchema extends BaseModel {
+  static $columns = ['adminUp', 'carrier', 'carrierChanges', 'createdAt', 'duplex', 'hidden', 'id', 'label', 'mac', 'medium', 'missingSince', 'nodeId', 'operstate', 'origin', 'portKey', 'position', 'present', 'reportedAt', 'reportedLabel', 'reportedMedium', 'reportedRole', 'role', 'speedMbps', 'stateChangedAt', 'updatedAt'] as const
+  $columns = InfraPortSchema.$columns
+  @column()
+  declare adminUp: boolean | null
+  @column()
+  declare carrier: boolean | null
+  @column()
+  declare carrierChanges: number | null
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare duplex: string | null
+  @column()
+  declare hidden: boolean
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare label: string | null
+  @column()
+  declare mac: string | null
+  @column()
+  declare medium: string | null
+  @column.dateTime()
+  declare missingSince: DateTime | null
+  @column()
+  declare nodeId: number
+  @column()
+  declare operstate: string | null
+  @column()
+  declare origin: string
+  @column()
+  declare portKey: string
+  @column()
+  declare position: number
+  @column()
+  declare present: boolean
+  @column.dateTime()
+  declare reportedAt: DateTime | null
+  @column()
+  declare reportedLabel: string | null
+  @column()
+  declare reportedMedium: string | null
+  @column()
+  declare reportedRole: string | null
+  @column()
+  declare role: string | null
+  @column()
+  declare speedMbps: number | null
+  @column.dateTime()
+  declare stateChangedAt: DateTime | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
 }
 
 export class ProtocolCategorySchema extends BaseModel {

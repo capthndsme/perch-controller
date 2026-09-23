@@ -20,18 +20,21 @@ import { Panel } from '@/components/ui/panel'
 import { ShareBar } from '@/components/ui/share-bar'
 import { useDashboardScope, useDashboardTime } from '@/hooks/use-dashboard-time'
 import { useDeviceLabel } from '@/hooks/use-device-labels'
-import { useDeviceOverview, useDeviceProtocols, useDeviceTraffic } from '@/hooks/use-devices'
+import { useDeviceOverview, useDevicePresence, useDeviceProtocols, useDeviceTraffic } from '@/hooks/use-devices'
 import { useDeviceDestinations } from '@/hooks/use-destinations'
 import { useDevicePeerHistory } from '@/hooks/use-peers'
 import { useDeviceServices } from '@/hooks/use-services'
 import { useWifiClient, useWifiClientSignal } from '@/hooks/use-wifi'
+import { infraNodePath, uplinkLine } from '@/lib/attachment'
+import { formatLastSeen } from '@/lib/collectors'
 import { deviceDisplayName, deviceTypeMeta } from '@/lib/device-labels'
 import { formatBytes, formatMbps } from '@/lib/format-bytes'
+import { connectionLabel, presenceDotClass, presenceLabel } from '@/lib/presence'
 import { formatProtocolLabel } from '@/lib/protocols'
 import { DEFAULT_DEVICE_WINDOW } from '@/lib/time-window'
 import { bucketsToChartPoints, macFromPath } from '@/lib/traffic'
 import { formatSignal, formatWifiBand, wifiSignalQualityDotClass, wifiSignalQualityLabel } from '@/lib/wifi'
-import type { PeerScope } from '@/types/api'
+import type { DevicePresenceResponse, PeerScope, WifiClientSummary } from '@/types/api'
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return '—'
@@ -47,6 +50,52 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <span className="min-w-0 text-right">{children}</span>
     </div>
   )
+}
+
+/**
+ * The Location tile follows the device's presence: the AP it is on, or the one it was last on
+ * after it left Wi-Fi; "Ethernet" when marked so or cabled on the network map (then with where the
+ * cable goes, A4); "Wired / unknown" for everything else. A dash until presence loads.
+ */
+function locationTile(
+  presence: DevicePresenceResponse | undefined,
+  latestWifi: WifiClientSummary | undefined,
+  collectorId: number | undefined,
+): { value: string; sub?: string; onWifi: boolean } {
+  if (!presence) return { value: '—', onWifi: false }
+  const cable = presence.via !== 'wifi' ? uplinkLine(presence.attachment) : null
+  if (cable) {
+    return {
+      value: connectionLabel(presence.via),
+      sub:
+        presence.status === 'disconnected' && presence.lastSeenAt
+          ? `${cable} · last seen ${formatLastSeen(presence.lastSeenAt)}`
+          : cable,
+      onWifi: false,
+    }
+  }
+  if (presence.via !== 'wifi') {
+    return {
+      value: connectionLabel(presence.via),
+      sub:
+        presence.status === 'disconnected'
+          ? presenceLabel(false, presence.lastSeenAt)
+          : collectorId
+            ? `Seen by collector #${collectorId}`
+            : 'No WiFi association',
+      onWifi: false,
+    }
+  }
+  return {
+    value: latestWifi?.ap ?? '—',
+    sub:
+      presence.status === 'disconnected'
+        ? presenceLabel(false, presence.lastSeenAt)
+        : latestWifi
+          ? `${latestWifi.ssid ?? 'Unknown SSID'} · ${formatWifiBand(latestWifi.band)} · ${formatSignal(latestWifi.signalDbm)}`
+          : undefined,
+    onWifi: true,
+  }
 }
 
 export function DevicePage() {
@@ -72,6 +121,7 @@ export function DevicePage() {
   const services = useDeviceServices(mac, { window, limit: 25, refreshInterval })
   const destinations = useDeviceDestinations(mac, { window, limit: 25, refreshInterval })
   const wifi = useWifiClient(mac)
+  const devicePresence = useDevicePresence(mac)
   const deviceLabel = useDeviceLabel(mac)
   const wifiSignal = useWifiClientSignal(wifi.data?.latest ? mac : undefined, { window, resolution, refreshInterval })
   const overlayTraffic = useDeviceTraffic(mac, {
@@ -120,6 +170,9 @@ export function DevicePage() {
 
   const identity = overview.data?.identity[0]
   const latestWifi = wifi.data?.latest
+  const presence = devicePresence.data
+  const location = locationTile(presence, latestWifi, identity?.collectorId)
+  const mapNodeId = presence?.attachment?.nodeId ?? null
   const label = deviceLabel.data?.label ?? null
   // The label query is authoritative (and refetches on save); the overview's
   // copy of the same fields keeps the title right on first paint.
@@ -150,6 +203,15 @@ export function DevicePage() {
               {mac}
               {identity?.ips.length ? ` · ${identity.ips.join(', ')}` : ''}
             </span>
+            {presence ? (
+              <Badge variant="outline" className="rounded text-[10px]">
+                <span
+                  aria-hidden
+                  className={`inline-block size-1.5 rounded-full ${presenceDotClass(presence.status === 'connected')}`}
+                />
+                {presenceLabel(presence.status === 'connected', presence.lastSeenAt)}
+              </Badge>
+            ) : null}
             {(label?.tags ?? []).map((tag) => (
               <Badge key={tag} variant="outline" className="rounded text-[10px]">
                 {tag}
@@ -188,15 +250,20 @@ export function DevicePage() {
         />
         <KpiTile
           label="Location"
-          value={<span className="text-lg">{latestWifi ? latestWifi.ap : 'Wired / unknown'}</span>}
+          value={<span className="text-lg">{location.value}</span>}
           sub={
-            latestWifi
-              ? `${latestWifi.ssid ?? 'Unknown SSID'} · ${formatWifiBand(latestWifi.band)} · ${formatSignal(latestWifi.signalDbm)}`
-              : identity?.collectorId
-                ? `Seen by collector #${identity.collectorId}`
-                : 'No WiFi association'
+            mapNodeId !== null ? (
+              <span className="flex min-w-0 items-center gap-2" data-location-sub>
+                {location.sub ? <span className="min-w-0 truncate">{location.sub}</span> : null}
+                <Link to={infraNodePath(mapNodeId)} className="shrink-0 text-brand underline-offset-2 hover:underline">
+                  Show on the map
+                </Link>
+              </span>
+            ) : (
+              location.sub
+            )
           }
-          icon={latestWifi ? <Broadcast className="size-4" /> : <MapPin className="size-4" />}
+          icon={location.onWifi ? <Broadcast className="size-4" /> : <MapPin className="size-4" />}
         />
         <KpiTile
           label="Served"
@@ -289,17 +356,24 @@ export function DevicePage() {
           >
             {latestWifi ? (
               <div className="divide-y divide-border/70">
-                <Row label="Access point">{latestWifi.ap}</Row>
+                <Row label="Status">
+                  <span
+                    aria-hidden
+                    className={`mr-1.5 inline-block size-2 rounded-full ${presenceDotClass(latestWifi.active)}`}
+                  />
+                  {presenceLabel(latestWifi.active, latestWifi.lastSeenAt)}
+                </Row>
+                <Row label={latestWifi.active ? 'Access point' : 'Last access point'}>{latestWifi.ap}</Row>
                 <Row label="SSID">{latestWifi.ssid ?? 'Unknown'}</Row>
                 <Row label="Band">{formatWifiBand(latestWifi.band)}</Row>
-                <Row label="Signal">
+                <Row label={latestWifi.active ? 'Signal' : 'Last signal'}>
                   <span
                     aria-hidden
                     className={`mr-1.5 inline-block size-2 rounded-full ${wifiSignalQualityDotClass(latestWifi.signalQuality)}`}
                   />
                   {formatSignal(latestWifi.signalDbm)} · {wifiSignalQualityLabel(latestWifi.signalQuality)}
                 </Row>
-                <Row label="PHY rate">
+                <Row label={latestWifi.active ? 'PHY rate' : 'Last PHY rate'}>
                   <span className="font-mono">
                     {(latestWifi.txRateKbps ?? 0) / 1000} / {(latestWifi.rxRateKbps ?? 0) / 1000} Mbps
                   </span>

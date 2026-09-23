@@ -2,6 +2,7 @@ import Collector from '#models/collector'
 import SystemSetting from '#models/system_setting'
 import User from '#models/user'
 import { _resetPollerState, pollOnce } from '#services/collector_poller'
+import { _resetInfraPortsState } from '#services/infra_ports'
 import { _resetQueryCache } from '#services/query_cache'
 import {
   _resetRouterState,
@@ -20,6 +21,7 @@ async function resetDb() {
   _resetQueryCache()
   _resetRouterState()
   _resetPollerState()
+  _resetInfraPortsState()
   return teardown
 }
 

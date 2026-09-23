@@ -46,6 +46,7 @@ const CollectorsController = () => import('#controllers/collectors_controller')
 const ApAgentsController = () => import('#controllers/ap_agents_controller')
 const ApJoinTokensController = () => import('#controllers/ap_join_tokens_controller')
 const AgentSocketsController = () => import('#controllers/agent_sockets_controller')
+const InfraController = () => import('#controllers/infra_controller')
 
 /**
  * Setup wizard endpoints. INTENTIONALLY outside the requireSetupComplete
@@ -143,6 +144,8 @@ router
       .group(() => {
         router.get('hostname-enrichment', [SettingsController, 'hostnameEnrichment'])
         router.patch('hostname-enrichment', [SettingsController, 'updateHostnameEnrichment'])
+        router.get('presence', [SettingsController, 'presence']).as('presence')
+        router.patch('presence', [SettingsController, 'updatePresence']).as('updatePresence')
         router.get('wifi-sources', [SettingsController, 'wifiSources'])
         router.post('wifi-sources/probe', [SettingsController, 'probeWifiSourceDraft'])
         router.post('wifi-sources', [SettingsController, 'createWifiSource'])
@@ -293,6 +296,7 @@ router
         router.get(':mac/services', [ServicesController, 'device']).as('services')
         router.get(':mac/destinations', [DestinationsController, 'device']).as('destinations')
         router.get(':mac/overview', [DevicesController, 'overview']).as('overview')
+        router.get(':mac/presence', [DevicesController, 'presence']).as('presence')
         router.get(':mac/protocols', [DevicesController, 'protocols']).as('protocols')
       })
       .prefix('devices')
@@ -326,6 +330,59 @@ router
       .prefix('wifi')
       .as('wifi')
       .use([middleware.auth(), middleware.requirePasswordChange()])
+
+    /**
+     * Infrastructure view (docs/infrastructure-view.md section 7): the network
+     * map's devices, ports and cables. Any signed-in user reads it; the layout
+     * is shared work, so every write is admin-only.
+     */
+    router
+      .group(() => {
+        router.get('layout', [InfraController, 'layout']).as('layout')
+        router.get('state', [InfraController, 'state']).as('state')
+        router
+          .group(() => {
+            router.post('nodes', [InfraController, 'createNode']).as('nodes.store')
+            router
+              .patch('nodes/:id', [InfraController, 'updateNode'])
+              .as('nodes.update')
+              .where('id', router.matchers.number())
+            router
+              .delete('nodes/:id', [InfraController, 'destroyNode'])
+              .as('nodes.destroy')
+              .where('id', router.matchers.number())
+            router
+              .post('nodes/:id/bind', [InfraController, 'bindNode'])
+              .as('nodes.bind')
+              .where('id', router.matchers.number())
+            router
+              .post('nodes/:id/ports', [InfraController, 'addPorts'])
+              .as('nodes.ports.store')
+              .where('id', router.matchers.number())
+            router
+              .patch('ports/:id', [InfraController, 'updatePort'])
+              .as('ports.update')
+              .where('id', router.matchers.number())
+            router
+              .delete('ports/:id', [InfraController, 'destroyPort'])
+              .as('ports.destroy')
+              .where('id', router.matchers.number())
+            router.post('links', [InfraController, 'createLink']).as('links.store')
+            router
+              .patch('links/:id', [InfraController, 'updateLink'])
+              .as('links.update')
+              .where('id', router.matchers.number())
+            router
+              .delete('links/:id', [InfraController, 'destroyLink'])
+              .as('links.destroy')
+              .where('id', router.matchers.number())
+            router.put('positions', [InfraController, 'savePositions']).as('positions')
+          })
+          .use(middleware.requireAdmin())
+      })
+      .prefix('infra')
+      .as('infra')
+      .use([middleware.auth(), middleware.requirePasswordChange()])
   })
   .prefix('/api/v1')
   .use(middleware.requireSetupComplete())
@@ -341,6 +398,14 @@ const dashboardIndex = app.publicPath('index.html')
 const serveDashboard = async ({ request, response }: HttpContext) => {
   if (request.url().startsWith('/api/')) {
     throw new errors.E_ROUTE_NOT_FOUND([request.method(), request.url()])
+  }
+  // A built asset the static server did not find is gone, not a page: a tab
+  // open across a redeploy asks for the chunks of the build it loaded. A real
+  // 404 makes its dynamic import fail cleanly (and the app reload) instead of
+  // receiving index.html as "JavaScript".
+  if (request.url().startsWith('/assets/')) {
+    response.header('Cache-Control', 'no-cache')
+    return response.notFound('Not found')
   }
   try {
     await access(dashboardIndex)

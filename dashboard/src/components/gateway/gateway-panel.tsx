@@ -50,12 +50,12 @@ function Stat({ label, value, hint }: { label: string; value: string; hint?: str
   )
 }
 
-/** "Reported by gateway, the collector on your router · online". */
+/** "Reported by gateway, the Gateway agent on your router · online". */
 function SourceLine({ source }: { source: RouterSource }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
       <span>
-        Reported by <span className="font-medium text-foreground">{source.name}</span>, the collector on your router
+        Reported by <span className="font-medium text-foreground">{source.name}</span>, the Gateway agent on your router
       </span>
       <span aria-hidden>·</span>
       <span className="inline-flex items-center gap-1">
@@ -72,8 +72,8 @@ function SourceLine({ source }: { source: RouterSource }) {
 /**
  * The edge router's own view: conntrack table fill (how many connections the
  * house holds open), the WAN rate from its interface counters, and a health
- * strip. Everything here is what the collector on the router reads from its
- * own kernel every 30 s, not from the LAN capture.
+ * strip. Everything here is what the Gateway agent (the collector on the router)
+ * reads from its own kernel every 30 s, not from the LAN capture.
  */
 export function GatewayPanel({ data, isPending, isPlaceholderData = false, error }: GatewayPanelProps) {
   const series = useMemo(() => data?.series ?? [], [data])
@@ -94,13 +94,13 @@ export function GatewayPanel({ data, isPending, isPlaceholderData = false, error
     body = (
       <div className="px-4 pb-4">
         <EmptyState
-          title="No collector on the router yet"
+          title="No Gateway agent yet"
           description={
             <>
               Run Perch Network Collector on the router itself (OpenWrt package{' '}
-              <code className="whitespace-nowrap font-mono">perch-collector</code>). Gateway stats are on by
-              default there: connection tracking, the WAN rate and load show up here within 30 seconds of
-              adopting it.
+              <code className="whitespace-nowrap font-mono">perch-collector</code>); adopted, it becomes the
+              Gateway agent. Gateway stats are on by default there: connection tracking, the WAN rate and load
+              show up here within 30 seconds of adopting it.
             </>
           }
         />
@@ -110,8 +110,8 @@ export function GatewayPanel({ data, isPending, isPlaceholderData = false, error
     body = (
       <div className="px-4 pb-4">
         <EmptyState
-          title="Waiting for the first gateway report"
-          description="The collector on the router reports every 30 seconds; this fills in with its first report."
+          title="Waiting for the first report from the Gateway agent"
+          description="The Gateway agent reports every 30 seconds; this fills in with its first report."
         />
       </div>
     )
@@ -121,8 +121,8 @@ export function GatewayPanel({ data, isPending, isPlaceholderData = false, error
         {!source ? (
           <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
             <Info aria-hidden className="mt-px size-3.5 shrink-0" />
-            No collector reports gateway stats right now, so this is recorded history. It resumes once
-            the collector on the router reports again.
+            No Gateway agent is reporting right now, so this is recorded history. It resumes once the
+            Gateway agent reports again.
           </p>
         ) : null}
         <div className="grid gap-4 lg:grid-cols-2">

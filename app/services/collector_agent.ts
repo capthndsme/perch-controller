@@ -29,6 +29,15 @@ const EARLY_PUSH_SLACK_MS = 1500
 /** Stale after max(3 intervals, 30 s) without an accepted push. */
 const STALE_INTERVALS = 3
 const STALE_MIN_SECONDS = 30
+
+/**
+ * Seconds without an accepted report after which a collector with this
+ * interval is silent: the bound below, and the infrastructure view's.
+ */
+export function collectorStaleSeconds(pollIntervalSeconds: number): number {
+  return Math.max(STALE_INTERVALS * pollIntervalSeconds, STALE_MIN_SECONDS)
+}
+
 /** `collector.status` stands in for the HTTP probe; same bound. */
 export const COLLECTOR_STATUS_TIMEOUT_MS = 5000
 const PROTOCOLS_TIMEOUT_MS = 15_000
@@ -380,8 +389,7 @@ export async function checkCollectorPushFreshness(
       state.scheduleSetAt ?? 0
     )
     const ageMs = now.toMillis() - reference
-    const thresholdMs =
-      Math.max(STALE_INTERVALS * collector.pollIntervalSeconds, STALE_MIN_SECONDS) * 1000
+    const thresholdMs = collectorStaleSeconds(collector.pollIntervalSeconds) * 1000
     if (ageMs < thresholdMs || state.staleReportedFor === reference) continue
 
     state.staleReportedFor = reference

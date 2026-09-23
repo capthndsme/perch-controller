@@ -157,8 +157,10 @@ async function seedBuckets(collectorId: number, baseTs: DateTime) {
     ])
 }
 
-async function seedIdentity(collectorId: number) {
+/** `lastSeenAgoSeconds`: how long ago the collector last saw either device's traffic. */
+async function seedIdentity(collectorId: number, lastSeenAgoSeconds = 0) {
   const now = DateTime.utc().toFormat('yyyy-MM-dd HH:mm:ss')
+  const seen = DateTime.utc().minus({ seconds: lastSeenAgoSeconds }).toFormat('yyyy-MM-dd HH:mm:ss')
   await db
     .insertQuery()
     .table('device_identities')
@@ -168,8 +170,8 @@ async function seedIdentity(collectorId: number) {
         mac: 'aa:aa:aa:aa:aa:aa',
         primary_ip: '192.168.1.100',
         ips: JSON.stringify(['192.168.1.100', 'fe80::a']),
-        first_seen_at: now,
-        last_seen_at: now,
+        first_seen_at: seen,
+        last_seen_at: seen,
         created_at: now,
         updated_at: now,
       },
@@ -178,8 +180,8 @@ async function seedIdentity(collectorId: number) {
         mac: 'bb:bb:bb:bb:bb:bb',
         primary_ip: '192.168.1.101',
         ips: JSON.stringify(['192.168.1.101']),
-        first_seen_at: now,
-        last_seen_at: now,
+        first_seen_at: seen,
+        last_seen_at: seen,
         created_at: now,
         updated_at: now,
       },
@@ -307,7 +309,8 @@ async function seedAsnCache() {
     ])
 }
 
-async function seedWifiContext() {
+/** `stationAgeSeconds`: how long ago the AP last listed the station. */
+async function seedWifiContext(stationAgeSeconds = 0) {
   const now = DateTime.utc().toFormat('yyyy-MM-dd HH:mm:ss')
   await db
     .insertQuery()
@@ -333,6 +336,9 @@ async function seedWifiContext() {
     })
   const ap = await db.from('wifi_access_points').where('name', 'living-room-ap').firstOrFail()
 
+  const listedAt = DateTime.utc()
+    .minus({ seconds: stationAgeSeconds })
+    .toFormat('yyyy-MM-dd HH:mm:ss')
   await db.insertQuery().table('wifi_station_snapshots').insert({
     ap_id: ap.id,
     mac: 'aa:aa:aa:aa:aa:aa',
@@ -352,7 +358,7 @@ async function seedWifiContext() {
     rx_bytes: 20000,
     tx_packets: 100,
     rx_packets: 200,
-    recorded_at: now,
+    recorded_at: listedAt,
   })
   await rebuildWifiLatestTables()
 }
@@ -416,6 +422,28 @@ test.group('read API | GET /api/v1/devices', (group) => {
     assert.equal(rows[0].mbpsOut, (1_000_000 * 8) / 15 / 1_000_000)
   })
 
+  test('a device that went quiet reads 0 Mbps now, whatever its last bucket said', async ({
+    client,
+    assert,
+  }) => {
+    const { token, collector } = await bootstrap()
+    // Its last traffic was 10 minutes ago: far more than three 15 s intervals.
+    await seedBuckets(collector.id, DateTime.utc().minus({ minutes: 10 }))
+
+    const r = await client.get('/api/v1/devices?range=1h').bearerToken(token)
+    r.assertStatus(200)
+    const rows = r.body().data as Array<{
+      mac: string
+      bytesIn: number
+      mbpsIn: number
+      mbpsOut: number
+    }>
+    const aa = rows.find((row) => row.mac === 'aa:aa:aa:aa:aa:aa')!
+    assert.equal(aa.bytesIn, 100 + 500 + 1_000_000, 'the window total stays')
+    assert.equal(aa.mbpsIn, 0)
+    assert.equal(aa.mbpsOut, 0)
+  })
+
   test('enriches rows with latest wifi context when available', async ({ client, assert }) => {
     const { token, collector } = await bootstrap()
     await seedBuckets(collector.id, recentBase())
@@ -427,11 +455,110 @@ test.group('read API | GET /api/v1/devices', (group) => {
     const rows = response.body().data as Array<{
       mac: string
       wifi: { connected: boolean; ssid?: string }
+      presence: { status: string; via: string }
     }>
     const wifiRow = rows.find((row) => row.mac === 'aa:aa:aa:aa:aa:aa')
     assert.isDefined(wifiRow)
     assert.isTrue(wifiRow!.wifi.connected)
     assert.equal(wifiRow!.wifi.ssid, 'Home')
+    assert.containsSubset(wifiRow!.presence, { status: 'connected', via: 'wifi' })
+  })
+
+  test('a device that left Wi-Fi reads disconnected and keeps its last AP', async ({
+    client,
+    assert,
+  }) => {
+    const { token, collector } = await bootstrap()
+    await seedBuckets(collector.id, recentBase())
+    // An hour ago its AP (15 s reports) listed it for the last time, and its
+    // traffic stopped then too. The wired one has been quiet as long.
+    await seedIdentity(collector.id, 3600)
+    await seedWifiContext(3600)
+
+    const response = await client.get('/api/v1/devices').bearerToken(token)
+    response.assertStatus(200)
+    const rows = response.body().data as Array<{
+      mac: string
+      wifi: { connected: boolean; last?: { ap: string; ssid: string; band: string } | null }
+      presence: { status: string; via: string; lastSeenAt: string | null }
+    }>
+    const phone = rows.find((row) => row.mac === 'aa:aa:aa:aa:aa:aa')!
+    assert.isFalse(phone.wifi.connected)
+    assert.containsSubset(phone.wifi.last, { ap: 'Living Room AP', ssid: 'Home', band: '5' })
+    assert.containsSubset(phone.presence, { status: 'disconnected', via: 'wifi' })
+    assert.approximately(Date.parse(phone.presence.lastSeenAt!), Date.now() - 3_600_000, 60_000)
+
+    const wired = rows.find((row) => row.mac === 'bb:bb:bb:bb:bb:bb')!
+    assert.deepEqual(wired.wifi, { connected: false, last: null })
+    assert.containsSubset(wired.presence, { status: 'disconnected', via: 'lan' })
+  })
+
+  test('traffic long after its last Wi-Fi visit: connected over the LAN', async ({
+    client,
+    assert,
+  }) => {
+    const { token, collector } = await bootstrap()
+    await seedBuckets(collector.id, recentBase())
+    await seedIdentity(collector.id)
+    // On Wi-Fi three hours ago; talking now, so on a cable (or an AP Perch
+    // does not read) since.
+    await seedWifiContext(3 * 3600)
+
+    const response = await client.get('/api/v1/devices').bearerToken(token)
+    response.assertStatus(200)
+    const rows = response.body().data as Array<{
+      mac: string
+      wifi: { connected: boolean; last?: { ap: string } | null }
+      presence: { status: string; via: string }
+    }>
+    const laptop = rows.find((row) => row.mac === 'aa:aa:aa:aa:aa:aa')!
+    assert.isFalse(laptop.wifi.connected)
+    assert.equal(laptop.wifi.last?.ap, 'Living Room AP')
+    assert.containsSubset(laptop.presence, { status: 'connected', via: 'lan' })
+  })
+
+  test('Settings → Presence moves the wired quiet window and the "now" rate window', async ({
+    client,
+    assert,
+  }) => {
+    const { token, collector } = await bootstrap()
+    // The buckets end two minutes ago (eight 15 s intervals); the collector
+    // last saw either device 45 minutes ago.
+    await seedBuckets(collector.id, DateTime.utc().minus({ minutes: 2 }))
+    await seedIdentity(collector.id, 45 * 60)
+
+    type Row = { mac: string; mbpsIn: number; presence: { status: string; via: string } }
+    const read = async () => {
+      const response = await client.get('/api/v1/devices?range=1h').bearerToken(token)
+      response.assertStatus(200)
+      const rows = response.body().data as Row[]
+      return new Map(rows.map((row) => [row.mac, row]))
+    }
+
+    let rows = await read()
+    assert.equal(rows.get('aa:aa:aa:aa:aa:aa')!.mbpsIn, 0, 'not "now" at three intervals')
+    assert.containsSubset(rows.get('bb:bb:bb:bb:bb:bb')!.presence, {
+      status: 'disconnected',
+      via: 'lan',
+    })
+
+    const saved = await client
+      .patch('/api/v1/settings/presence')
+      .bearerToken(token)
+      .json({ lanQuietMinutes: 60, nowRateIntervals: 10 })
+    saved.assertStatus(200)
+
+    // Applies to the next request, although the device list itself is cached.
+    rows = await read()
+    assert.equal(rows.get('aa:aa:aa:aa:aa:aa')!.mbpsIn, (1_000_000 * 8) / 15 / 1_000_000)
+    assert.containsSubset(rows.get('bb:bb:bb:bb:bb:bb')!.presence, {
+      status: 'connected',
+      via: 'lan',
+    })
+    const presence = await client
+      .get('/api/v1/devices/bb:bb:bb:bb:bb:bb/presence')
+      .bearerToken(token)
+    assert.containsSubset(presence.body().data, { status: 'connected', via: 'lan' })
   })
 
   test('narrowing ?range= drops buckets older than the window', async ({ client, assert }) => {
@@ -575,6 +702,32 @@ test.group('read API | GET /api/v1/devices/:mac/overview', (group) => {
     assert.isAbove(body.protocols.length, 0)
     assert.equal(body.protocols[0].protocol, 'https')
     assert.isNumber(body.protocols[0].percentage)
+  })
+
+  test('GET :mac/presence: quiet for 30 minutes is disconnected, unless its AP lists it', async ({
+    client,
+    assert,
+  }) => {
+    const { token, collector } = await bootstrap()
+    await seedBuckets(collector.id, recentBase())
+    // Neither device has talked for 45 minutes; only aa:… is on an AP.
+    await seedIdentity(collector.id, 45 * 60)
+    await seedWifiContext()
+
+    const wired = await client.get('/api/v1/devices/bb:bb:bb:bb:bb:bb/presence').bearerToken(token)
+    wired.assertStatus(200)
+    const presence = wired.body().data
+    assert.containsSubset(presence, { status: 'disconnected', via: 'lan' })
+    assert.approximately(Date.parse(presence.lastSeenAt), Date.now() - 45 * 60_000, 60_000)
+
+    const onWifi = await client.get('/api/v1/devices/aa:aa:aa:aa:aa:aa/presence').bearerToken(token)
+    onWifi.assertStatus(200)
+    assert.containsSubset(onWifi.body().data, { status: 'connected', via: 'wifi' })
+
+    const unknown = await client
+      .get('/api/v1/devices/cc:cc:cc:cc:cc:cc/presence')
+      .bearerToken(token)
+    unknown.assertStatus(404)
   })
 })
 

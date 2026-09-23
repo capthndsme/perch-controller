@@ -7,6 +7,7 @@ import {
   rebuildWindows,
 } from '#services/collector_merge'
 import { backfillRollups, ROLLUP_SPECS } from '#services/rollup_maintainer'
+import { seedLink, seedManualNode } from '#tests/helpers/infra'
 import app from '@adonisjs/core/services/app'
 import testUtils from '@adonisjs/core/services/test_utils'
 import db from '@adonisjs/lucid/services/db'
@@ -798,5 +799,152 @@ test.group('collectors:merge', (group) => {
     const unpruned = rebuildWindows(overlap, { now, retention: null })
     const unclamped = unpruned.find((w) => w.spec === 'traffic:native→5m')!
     assert.equal(unclamped.since.toISO(), start.toISO())
+  })
+})
+
+/** A Gateway agent node for a collector, with `keys` as agent ports. */
+async function gatewayNode(collectorId: number, keys: string[]) {
+  return seedManualNode('gateway', null as unknown as string, keys, {
+    origin: 'agent',
+    collector_id: collectorId,
+  })
+}
+
+/** Cables from each of these ports to a fresh switch. */
+async function cable(portIds: number[]) {
+  const sw = await seedManualNode(
+    'switch',
+    'Switch',
+    portIds.map((_, i) => String(i + 1))
+  )
+  for (const [i, portId] of portIds.entries()) await seedLink(portId, sw.ports[String(i + 1)])
+}
+
+async function boundCollector(nodeId: number): Promise<number | null> {
+  const row = await db.from('infra_nodes').where('id', nodeId).first()
+  return row.collector_id === null ? null : Number(row.collector_id)
+}
+
+test.group('collectors:merge and :purge | infrastructure nodes', (group) => {
+  group.each.setup(resetDb)
+
+  test('infra_nodes references collectors, is exempt, and an unknown table still blocks', async ({
+    assert,
+  }) => {
+    const referencing = rows<{ t: string }>(
+      await db.rawQuery(
+        `SELECT table_name AS t FROM information_schema.referential_constraints
+          WHERE constraint_schema = DATABASE() AND referenced_table_name = 'collectors'`
+      )
+    ).map((row) => row.t)
+    assert.include(referencing, 'infra_nodes')
+    assert.notInclude(
+      mergeTables().map((t) => t.table),
+      'infra_nodes',
+      'not merged as history'
+    )
+    await assertMergeRegistryMatchesSchema()
+
+    await db.rawQuery(
+      `CREATE TABLE merge_guard_probe (
+         collector_id INT UNSIGNED NOT NULL,
+         CONSTRAINT merge_guard_probe_fk FOREIGN KEY (collector_id)
+           REFERENCES collectors (id) ON DELETE CASCADE
+       )`
+    )
+    try {
+      await assert.rejects(() => assertMergeRegistryMatchesSchema(), CollectorMergeError)
+    } finally {
+      await db.rawQuery('DROP TABLE merge_guard_probe')
+    }
+  })
+
+  test("the removed collector's node follows the merged collector", async ({ assert }) => {
+    const old = await makeCollector({ name: 'old-box', baseUrl: 'http://192.168.1.10:9800' })
+    const gw = await makeCollector({ name: 'gateway', baseUrl: 'http://192.168.1.1:9800' })
+    for (let i = 0; i < 6; i++) await bucket(old.id, MAC_A, at(10, 0, i * 5), 100)
+    await bucket(gw.id, MAC_A, at(10, 1), 7)
+    const node = await gatewayNode(gw.id, ['wan0', 'lan0'])
+    await cable([node.ports.lan0])
+
+    const plan = await planCollectorMerge({ fromId: old.id, intoId: gw.id, collectorUrl: null })
+    assert.equal(plan.survivorId, old.id, 'the old box has more rows')
+    assert.deepInclude(plan.infraNodes, {
+      boundNodeId: node.id,
+      movedNodeId: node.id,
+      detachedNodeId: null,
+    })
+
+    const dryRun = await merge([`--from=${old.id}`, `--into=${gw.id}`, '--dry-run'])
+    assert.equal(dryRun.exitCode, 0)
+    assert.equal(await boundCollector(node.id), gw.id, 'a dry run moves nothing')
+
+    const run = await merge([`--from=${old.id}`, `--into=${gw.id}`, '--grace=0'])
+    assert.equal(run.exitCode, 0)
+    assert.isNull(await Collector.find(gw.id))
+    assert.equal(await boundCollector(node.id), old.id, 'bound to the merged collector')
+    assert.lengthOf(await db.from('infra_ports').where('node_id', node.id), 2)
+    assert.lengthOf(await db.from('infra_links').select('id'), 1)
+  })
+
+  test('both collectors have a node: the one with more cables stays, the other is detached', async ({
+    assert,
+  }) => {
+    const old = await makeCollector({ name: 'old-box', baseUrl: 'http://192.168.1.10:9800' })
+    const gw = await makeCollector({ name: 'gateway', baseUrl: 'http://192.168.1.1:9800' })
+    for (let i = 0; i < 6; i++) await bucket(old.id, MAC_A, at(10, 0, i * 5), 100)
+    await bucket(gw.id, MAC_A, at(10, 1), 7)
+    const oldNode = await gatewayNode(old.id, ['eth0'])
+    const gwNode = await gatewayNode(gw.id, ['wan0', 'lan0'])
+    await cable([gwNode.ports.wan0, gwNode.ports.lan0])
+
+    const plan = await planCollectorMerge({ fromId: old.id, intoId: gw.id, collectorUrl: null })
+    assert.deepEqual(plan.infraNodes, {
+      boundNodeId: gwNode.id,
+      movedNodeId: gwNode.id,
+      detachedNodeId: oldNode.id,
+      links: { [oldNode.id]: 0, [gwNode.id]: 2 },
+    })
+
+    const run = await merge([`--from=${old.id}`, `--into=${gw.id}`, '--grace=0'])
+    assert.equal(run.exitCode, 0)
+    assert.equal(await boundCollector(gwNode.id), old.id)
+    assert.isNull(await boundCollector(oldNode.id), 'detached')
+    assert.lengthOf(await db.from('infra_ports').where('node_id', oldNode.id), 1, 'kept')
+    assert.lengthOf(await db.from('infra_links').select('id'), 2)
+  })
+
+  test("on a tie the target's node stays bound", async ({ assert }) => {
+    const old = await makeCollector({ name: 'old-box', baseUrl: 'http://192.168.1.10:9800' })
+    const gw = await makeCollector({ name: 'gateway', baseUrl: 'http://192.168.1.1:9800' })
+    for (let i = 0; i < 6; i++) await bucket(old.id, MAC_A, at(10, 0, i * 5), 100)
+    const oldNode = await gatewayNode(old.id, ['eth0'])
+    const gwNode = await gatewayNode(gw.id, ['lan0'])
+
+    const run = await merge([`--from=${old.id}`, `--into=${gw.id}`, '--grace=0'])
+    assert.equal(run.exitCode, 0)
+    assert.equal(await boundCollector(gwNode.id), old.id)
+    assert.isNull(await boundCollector(oldNode.id))
+  })
+
+  test('collectors:purge detaches the node instead of deleting it', async ({ assert }) => {
+    const gw = await makeCollector({ name: 'gateway', baseUrl: 'http://192.168.1.1:9800' })
+    await bucket(gw.id, MAC_A, at(10, 0), 100)
+    const node = await gatewayNode(gw.id, ['wan0', 'lan0'])
+    await cable([node.ports.lan0])
+    const ace = await app.container.make('ace')
+
+    const dryRun = await ace.exec('collectors:purge', [`--id=${gw.id}`, '--dry-run'])
+    assert.equal(dryRun.exitCode, 0)
+    assert.equal(await boundCollector(node.id), gw.id)
+
+    const run = await ace.exec('collectors:purge', [`--id=${gw.id}`, '--grace=0'])
+    assert.equal(run.exitCode, 0)
+    assert.isNull(await Collector.find(gw.id))
+    const detached = await db.from('infra_nodes').where('id', node.id).first()
+    assert.isNull(detached.collector_id)
+    assert.equal(detached.origin, 'agent')
+    assert.lengthOf(await db.from('infra_ports').where('node_id', node.id), 2)
+    assert.lengthOf(await db.from('infra_links').select('id'), 1)
   })
 })

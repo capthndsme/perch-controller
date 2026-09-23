@@ -33,6 +33,12 @@ export type GatewayReport = {
   memory?: { totalBytes?: number | null; availableBytes?: number | null } | null
   wan?: GatewayWanCounters[] | null
   wanSource?: string | null
+  /**
+   * The router's Ethernet ports (perch-collector with the ports feature,
+   * docs/infrastructure-view.md 4.3); absent from older collectors. Read by
+   * `infra_ports.ts`, not here.
+   */
+  ports?: unknown
 }
 
 export type ParsedRouterMetrics = {
