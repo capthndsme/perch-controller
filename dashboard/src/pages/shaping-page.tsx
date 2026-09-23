@@ -173,7 +173,7 @@ export function ShapingPage() {
             />
             <KpiTile label="Policies" value={policyList.length} sub={`${policyList.filter((p) => p.shared).length} shared buckets`} />
           </div>
-          <WanQueuesPanel queues={o.wan} canEdit={canEdit} writes={writes} />
+          <WanQueuesPanel queues={o.wan} canEdit={canEdit} writes={writes} access={o.planeAccess?.sqm} />
           <LiveRatesChart samples={qosSamples(qosSampleKey(gatewayId))} wan={o.wan} policies={o.policies} />
         </>
       ) : null}

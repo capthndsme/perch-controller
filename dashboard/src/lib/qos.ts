@@ -1,5 +1,8 @@
 import { ApiError, apiErrorCode } from '@/lib/api'
+import { APPLY_STATE_META, OUTCOME_REASON } from '@/lib/gateway-config'
+import type { GatewayApply } from '@/types/gateway-config'
 import type {
+  QosApplyError,
   DeviceShaping,
   QosApplyState,
   QosDay,
@@ -495,6 +498,7 @@ export const WAN_FLAG_TEXT: Record<string, string> = {
   inert_opts: 'Advanced options are set but switched off on the router (sqm ignores them).',
   duplicate_device: 'Two enabled queues on this device: sqm runs only one of them.',
   router_paused: 'Switched off on the router.',
+  pending_delete: 'Being removed: the router drops it once the apply confirms.',
 }
 
 // ---------------------------------------------------------------------------
@@ -567,7 +571,90 @@ export function describeApply(
   if (error === 'qos_not_managed') {
     return { label: 'Queued: not managed', tone: 'warning', detail: 'The gateway is not in managed mode.' }
   }
+  if (error === 'config_not_allowed') {
+    return {
+      label: 'Not allowed on the router',
+      tone: 'critical',
+      detail:
+        kind === 'wan'
+          ? 'The router does not let Perch write its sqm config. See the note above the queues.'
+          : 'The router does not let Perch write the perch-qos config, so buckets, network defaults and schedules stay here until it does.',
+    }
+  }
+  if (error === 'apply_in_flight') {
+    return { label: 'Queued: another change first', tone: 'warning', detail: 'Another change is being applied on this gateway; this one goes out when it ends.' }
+  }
+  if (error === 'agent_offline' || error === 'offline') {
+    return { label: 'Queued: gateway offline', tone: 'warning', detail: 'The change is kept and goes out when the gateway is back.' }
+  }
+  if (error === 'qos_package_missing') {
+    return { label: 'perch-qos not installed', tone: 'critical', detail: 'Install perch-qos on the gateway (Gateway config → Packages); until then only per-device caps apply.' }
+  }
+  if (state.state === 'rolled_back') {
+    const why = error && error !== 'rolled_back' ? (OUTCOME_REASON[error] ?? error) : null
+    return {
+      label: 'Rolled back',
+      tone: 'critical',
+      detail: `The router took the change and then undid it${why ? `: ${why.charAt(0).toLowerCase()}${why.slice(1)}` : ''}. The router runs the previous version; Perch tries again with the next change.`,
+    }
+  }
+  if (state.state === 'failed') {
+    const why = error && error !== 'failed' ? (OUTCOME_REASON[error] ?? error) : null
+    return {
+      label: 'Failed',
+      tone: 'critical',
+      detail: `The router did not take the change${why ? ` (${why.charAt(0).toLowerCase()}${why.slice(1)})` : ''}. Nothing changed on the router.`,
+    }
+  }
   return { label: base.label, tone: base.tone, detail: error }
+}
+
+/**
+ * A write's config-plane apply in words (WAN queue writes answer
+ * `{apply, applyError}`): what happened to the change right after saving.
+ */
+export function describeWriteApply(
+  apply: GatewayApply | null,
+  applyError: QosApplyError | null,
+): { tone: Tone; title: string; detail: string } {
+  if (applyError) {
+    const known: Record<string, string> = {
+      apply_in_flight: 'Another change is being applied on this gateway. This one is kept as a draft and goes out when that one ends.',
+      agent_offline: 'The gateway is offline. The change is kept as a draft and goes out when it is back.',
+    }
+    return {
+      tone: 'warning',
+      title: 'Saved, not sent yet',
+      detail: known[applyError.error] ?? `${applyError.message} The change is kept as a draft; apply it from the gateway's Changes tab.`,
+    }
+  }
+  if (!apply) return { tone: 'good', title: 'Saved', detail: 'Nothing had to change on the router.' }
+  const state = APPLY_STATE_META[apply.state]?.label ?? apply.state
+  switch (apply.state) {
+    case 'queued':
+      return { tone: 'warning', title: 'Queued', detail: 'The change waits its turn and goes to the router shortly.' }
+    case 'sending':
+      return { tone: 'info', title: 'Sending to the router', detail: 'The router is writing the change.' }
+    case 'pending_confirm':
+      return {
+        tone: 'info',
+        title: 'Applying on the router',
+        detail: `${state}: the router runs the change and rolls it back by itself unless it is confirmed within ${apply.confirmTimeoutSeconds} s.`,
+      }
+    case 'confirmed':
+      return { tone: 'good', title: 'Applied', detail: 'The router runs the change.' }
+    case 'rolled_back':
+    case 'failed': {
+      const reason = apply.outcome?.message ?? (apply.outcome?.reason ? OUTCOME_REASON[apply.outcome.reason] : null) ?? apply.outcome?.error
+      return {
+        tone: 'critical',
+        title: apply.state === 'rolled_back' ? 'Rolled back on the router' : 'The router refused the change',
+        detail: `${reason ? `${reason}. ` : ''}The router keeps its previous version.`,
+      }
+    }
+    default:
+      return { tone: 'muted', title: state, detail: 'The change did not go out.' }
+  }
 }
 
 /** The body of an API refusal (`{error, message, issues?, …}`), or null. */
@@ -616,6 +703,9 @@ const REFUSAL_TEXT: Record<string, string> = {
   qos_duplicate_device: 'That device already has a queue.',
   qos_field_needs_cake: 'That setting needs the cake qdisc.',
   qos_overhead_needs_linklayer: 'Overhead and MPU need a link layer.',
+  sqm_below_floor: 'The router refused rates this low for a WAN queue.',
+  qos_package_missing: 'perch-qos is not installed on the gateway. Install it from the gateway config page (Packages).',
+  apply_in_flight: 'Another change is being applied on this gateway. Try again in a moment.',
   plane_unavailable:
     'Queued: config plane unavailable. The router config cannot be written from this controller yet, so nothing was stored or sent.',
   admin_required: 'Only admins can change traffic shaping.',
@@ -629,6 +719,11 @@ export function refusalText(error: unknown): string {
     const min = typeof body?.min === 'number' ? formatKbit(body.min) : 'the floor'
     return `Rates must be at least ${min} (Settings → Traffic shaping), or empty for unlimited.`
   }
+  if (code === 'sqm_below_floor' && typeof body?.minWanKbit === 'number') {
+    return `The router refused it: a WAN queue needs at least ${formatKbit(body.minWanKbit)} each way.`
+  }
+  // The server's words carry the router owner's next step (README 7.7).
+  if (code === 'config_not_allowed' && typeof body?.message === 'string') return body.message
   if (code && REFUSAL_TEXT[code]) return REFUSAL_TEXT[code]
   if (error instanceof ApiError && error.status === 403) return REFUSAL_TEXT.admin_required
   if (error instanceof Error) return error.message

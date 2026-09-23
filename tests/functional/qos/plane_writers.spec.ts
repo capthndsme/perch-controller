@@ -13,6 +13,8 @@ import { gatewayConfigTick } from '#services/gateway_config/apply_lifecycle'
 import { GATEWAY_CONFIG_SETTING_KEY } from '#services/gateway_config/gateway_config_settings'
 import { _resetGatewaySessions } from '#services/gateway_config/gateway_registry'
 import { gatewayQueue } from '#services/gateway_config/serial_queue'
+import { pauseHeld, reclaimPending } from '#services/gateway_config/sync_engine'
+import type { SectionOwnership } from '#services/gateway_config/types'
 import { _resetQosLive } from '#services/qos_live'
 import { bucketSectionName } from '#services/qos_plan'
 import { setQosPlaneWriter, StubQosPlaneWriter } from '#services/qos_plane'
@@ -588,6 +590,119 @@ test.group('qos | plane writers (fake gateway)', (group) => {
     assert.equal(routerSection(env.gw, 'perch-qos', globals.name)!.options.enabled, '0')
 
     // An explicit resume over the router's pause writes enabled '1'.
+    const resumed = await client
+      .post('/api/v1/qos/resume')
+      .bearerToken(env.adminToken)
+      .json({ gatewayId: env.gatewayId, overrideRouter: true })
+    resumed.assertStatus(200)
+    await onRouter(env.gw, 'perch-qos', 'globals', (o) => o.enabled === '1')
+    await idle(env.gatewayId)
+    const after = await eventually(
+      () => sectionRow(env.gatewayId, 'perch-qos', 'globals'),
+      (row) => row.routerContent?.options.enabled === '1'
+    )
+    assert.isNull(after.ownership)
+  })
+
+  test('a resume over the router’s pause that rolls back or fails leaves the pause with the router', async ({
+    client,
+    assert,
+  }) => {
+    const env = await setup()
+    await toManaged(client, env)
+    const policy = bodyOf(
+      await client
+        .post('/api/v1/qos/policies')
+        .bearerToken(env.adminToken)
+        .json({
+          gatewayId: env.gatewayId,
+          name: 'Guests',
+          shared: { downloadKbit: 50000, uploadKbit: 10000 },
+        })
+    ).data
+    await client
+      .post('/api/v1/qos/assignments')
+      .bearerToken(env.adminToken)
+      .json({
+        gatewayId: env.gatewayId,
+        target: { type: 'network', network: 'guest' },
+        policyId: policy.id,
+      })
+    await onRouter(env.gw, 'perch-qos', 'guest')
+    await idle(env.gatewayId)
+
+    env.gw.routerEdit(
+      'perch-qos',
+      (sections) => {
+        sections.find((s) => s.name === 'globals')!.options.enabled = '0'
+      },
+      { kind: 'cli', via: 'trigger' }
+    )
+    await eventually(
+      () => sectionRow(env.gatewayId, 'perch-qos', 'globals'),
+      (row) =>
+        row.routerContent?.options.enabled === '0' &&
+        pauseHeld(row.ownership as SectionOwnership | null, 'enabled'),
+      5000
+    )
+
+    for (const failure of ['rolled_back', 'failed'] as const) {
+      if (failure === 'rolled_back') env.gw.failNextApplyAfterCommit = true
+      else env.gw.failNextApply = { error: 'commit_failed', message: 'uci commit failed' }
+      const before = await GatewayApply.query().where('gateway_id', env.gatewayId).max('id as m')
+      const resumed = await client
+        .post('/api/v1/qos/resume')
+        .bearerToken(env.adminToken)
+        .json({ gatewayId: env.gatewayId, overrideRouter: true })
+      resumed.assertStatus(200)
+      await eventually(
+        () =>
+          GatewayApply.query()
+            .where('gateway_id', env.gatewayId)
+            .where('id', '>', Number(before[0].$extras.m ?? 0))
+            .where('state', failure)
+            .first(),
+        (apply) => apply !== null,
+        8000
+      )
+      await idle(env.gatewayId)
+
+      // The option is the router's again: held, C keeps its '0', nothing pending.
+      const row = await sectionRow(env.gatewayId, 'perch-qos', 'globals')
+      const ownership = row.ownership as SectionOwnership | null
+      assert.isTrue(pauseHeld(ownership, 'enabled'), failure)
+      assert.isFalse(reclaimPending(ownership, 'enabled'), failure)
+      assert.equal(row.desiredContent?.options.enabled, '0', failure)
+      assert.equal(routerSection(env.gw, 'perch-qos', 'globals')!.options.enabled, '0')
+
+      const overview = bodyOf(
+        await client.get(`/api/v1/qos?gatewayId=${env.gatewayId}`).bearerToken(env.operatorToken)
+      ).data
+      assert.equal(overview.config.state, failure)
+    }
+
+    // Enforcement does not write the resume either (one-way domain, grace 0).
+    await gatewayConfigTick()
+    await gatewayQueue.drain(env.gatewayId)
+    await idle(env.gatewayId)
+    assert.equal(routerSection(env.gw, 'perch-qos', 'globals')!.options.enabled, '0')
+
+    // The next package keeps the router's pause.
+    const revision = Number(routerSection(env.gw, 'perch-qos', 'globals')!.options.revision)
+    await client
+      .patch(`/api/v1/qos/policies/${policy.id}`)
+      .bearerToken(env.adminToken)
+      .json({ shared: { downloadKbit: 40000, uploadKbit: 10000 } })
+    const globals = await onRouter(
+      env.gw,
+      'perch-qos',
+      'globals',
+      (o) => Number(o.revision) > revision
+    )
+    await idle(env.gatewayId)
+    assert.equal(globals.options.enabled, '0')
+
+    // An override that lands still resumes.
     const resumed = await client
       .post('/api/v1/qos/resume')
       .bearerToken(env.adminToken)

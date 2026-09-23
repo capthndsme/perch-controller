@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Panel } from '@/components/ui/panel'
 import { Segmented } from '@/components/ui/segmented'
 import { Spinner } from '@/components/ui/spinner'
+import { ActorName } from '@/components/gateway-config/actor'
 import { ConfirmDialog, DiffList, ErrorLine, IssueList, ToneBadge } from '@/components/gateway-config/bits'
 import { useDialog } from '@/hooks/use-dialog'
 import {
@@ -218,7 +219,7 @@ function AppliesList({ gateway }: { gateway: Gateway }) {
                 {a.protected ? <ToneBadge tone="serious">Management path</ToneBadge> : null}
                 <span className="font-mono text-[11px] text-muted-foreground">{a.configs.join(', ')}</span>
                 <span className="ml-auto text-muted-foreground">
-                  {a.requestedBy?.email ?? 'Perch'} · {formatDateTime(a.requestedAt)}
+                  <ActorName actor={a.requestedBy} fallback="Perch" /> · {formatDateTime(a.requestedAt)}
                 </span>
               </button>
               {open === a.id ? <ApplyDetail gatewayId={gateway.id} apply={a} /> : null}

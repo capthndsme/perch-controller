@@ -101,7 +101,19 @@ export type SectionIssue = (typeof SECTION_ISSUES)[number]
  */
 export type SectionOwnership =
   | { kind: 'section' }
-  | { kind: 'options'; options: string[]; items?: Record<string, string[]> }
+  | {
+      kind: 'options'
+      options: string[]
+      items?: Record<string, string[]>
+      /**
+       * Decision-15 pause options an admin took back from the router (a put
+       * with `reclaim`) whose apply has not landed yet. Owned meanwhile; the
+       * apply confirming makes them Perch's for good, the apply rolling back,
+       * failing, expiring or being cancelled (or the draft discarded) hands
+       * them back to the router (`settleReclaim`).
+       */
+      reclaimed?: string[]
+    }
 
 export const WHOLE_SECTION: SectionOwnership = Object.freeze({
   kind: 'section',

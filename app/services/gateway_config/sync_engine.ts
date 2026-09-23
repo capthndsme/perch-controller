@@ -19,6 +19,7 @@ import {
   LEDGER_CONFIG,
   roundTripsSection,
   syncedFromRouter,
+  type ConfigDomain,
   type DomainRegistry,
 } from '#services/gateway_config/domain'
 import { routerSecretSlots } from '#services/gateway_config/secrets'
@@ -907,6 +908,112 @@ export function pauseTransition(
             .sort(),
         }
   return { kind: 'hold', ownership }
+}
+
+/**
+ * The domain's ownership of a paused-type section as if it were not paused:
+ * what Perch owns once it holds the pause option again (an admin's reclaim,
+ * decision 15). Null = the whole section.
+ */
+export function claimedPauseOwnership(
+  domain: ConfigDomain,
+  row: Pick<SectionState, 'config' | 'name' | 'anonymous'>,
+  content: SectionContent,
+  option: string
+): SectionOwnership | null {
+  const options = { ...content.options }
+  delete options[option]
+  const claimed = domain.ownership?.({
+    name: row.name,
+    type: content.type,
+    anonymous: row.anonymous,
+    index: 0,
+    options,
+    config: row.config,
+  })
+  return claimed && claimed.kind === 'options' ? claimed : null
+}
+
+/**
+ * An admin's explicit resume over a router pause (a put with `reclaim`):
+ * Perch owns the option from the draft on, marked `reclaimed` until the
+ * apply carrying it ends (`settleReclaim`). The rest stays as the hold had
+ * it, so handing the option back restores the hold exactly.
+ */
+export function reclaimOwnership(
+  held: Extract<SectionOwnership, { kind: 'options' }>,
+  option: string
+): SectionOwnership {
+  return {
+    ...held,
+    options: [...new Set([...held.options, option])].sort(),
+    reclaimed: [...new Set([...(held.reclaimed ?? []), option])].sort(),
+  }
+}
+
+/** Is a reclaim of `option` waiting for its apply? */
+export function reclaimPending(ownership: SectionOwnership | null, option: string): boolean {
+  return ownership?.kind === 'options' && (ownership.reclaimed ?? []).includes(option)
+}
+
+/**
+ * Settles a pending reclaim (decision 15) when the apply that carries it
+ * ends, or when the draft is discarded. `landed`: the router took the
+ * resumed value, the option is Perch's (the domain's full claim). Not
+ * landed (rolled back, failed, expired, cancelled, discarded): while the
+ * router still has it paused, the option goes back to the router, as
+ * before the resume: out of the ownership, and C keeps the router's value,
+ * so no later write (a package, an Authoritative Mode revert) carries the
+ * resume again. A router that resumed by itself meanwhile leaves it
+ * Perch's. Rows without a pending reclaim come back unchanged. Pure; the
+ * caller re-derives the status.
+ */
+export function settleReclaim(
+  state: SectionState,
+  domain: ConfigDomain | null,
+  landed: boolean
+): SectionState {
+  const rule = domain?.routerPause
+  const ownership = state.ownership
+  if (
+    !domain ||
+    !rule ||
+    !reclaimPending(ownership, rule.option) ||
+    ownership?.kind !== 'options'
+  ) {
+    return state
+  }
+  const content = state.desired ?? state.router ?? state.base
+  const router = state.router ?? state.base
+  const stillPaused =
+    router !== null && router.type === rule.type && rule.isPaused(router.options[rule.option])
+  if (landed || !stillPaused || !content) {
+    return {
+      ...state,
+      ownership: content
+        ? claimedPauseOwnership(domain, state, content, rule.option)
+        : withoutReclaim(ownership, rule.option),
+    }
+  }
+  return {
+    ...state,
+    ownership: {
+      ...withoutReclaim(ownership, rule.option),
+      options: ownership.options.filter((o) => o !== rule.option),
+    },
+    desired: state.desired
+      ? withOption(state.desired, rule.option, router.options[rule.option])
+      : state.desired,
+  }
+}
+
+function withoutReclaim(
+  ownership: Extract<SectionOwnership, { kind: 'options' }>,
+  option: string
+): Extract<SectionOwnership, { kind: 'options' }> {
+  const { reclaimed, ...rest } = ownership
+  const left = (reclaimed ?? []).filter((o) => o !== option)
+  return left.length > 0 ? { ...rest, reclaimed: left } : rest
 }
 
 function withOption(

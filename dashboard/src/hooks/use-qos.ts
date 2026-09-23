@@ -17,6 +17,7 @@ import type {
   QosScheduleInput,
   QosSettings,
   QosSettingsView,
+  QosWanQueueDelete,
   QosWanQueueInput,
   QosWanQueueWrite,
 } from '@/types/api'
@@ -170,6 +171,10 @@ export function useQosWrites(gatewayId: number | null) {
     ),
     updateWanQueue: useQosMutation(({ id, patch }: { id: number; patch: QosWanQueueInput }) =>
       apiFetch<QosWanQueueWrite>(`/api/v1/qos/wan-queues/${id}`, json('PATCH', patch)),
+    ),
+    /** 200 with the queue still listed (`pending_delete`) until the router's apply confirms. */
+    deleteWanQueue: useQosMutation((id: number) =>
+      apiFetch<QosWanQueueDelete>(`/api/v1/qos/wan-queues/${id}`, json('DELETE')),
     ),
     createPolicy: useQosMutation((body: QosPolicyInput) =>
       apiFetch<QosPolicy>('/api/v1/qos/policies', json('POST', withGateway(gatewayId, body))),

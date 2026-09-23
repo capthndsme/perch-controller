@@ -1,3 +1,5 @@
+import type { GatewayApply } from '@/types/gateway-config'
+
 export type User = {
   id: number
   fullName: string | null
@@ -2481,7 +2483,40 @@ export type QosWanQueueInput = {
   advanced?: Record<string, string | null>
 }
 
-export type QosWanQueueWrite = { queue: QosWanQueue; warnings: QosWarning[] }
+/** Why a WAN queue write started no apply (the draft is kept; apply it from the gateway page). */
+export type QosApplyError = { error: string; message: string }
+
+/**
+ * `POST` / `PATCH /qos/wan-queues`: the queue, warnings, and the config-plane
+ * apply carrying the change (docs/gateway/qos.md 2.4) when one started.
+ */
+export type QosWanQueueWrite = {
+  queue: QosWanQueue
+  warnings: QosWarning[]
+  apply: GatewayApply | null
+  applyError: QosApplyError | null
+}
+
+/**
+ * `DELETE /qos/wan-queues/:id` (200): `queue` null once gone, else the queue the
+ * router still runs (flag `pending_delete`) until its apply confirms.
+ */
+export type QosWanQueueDelete = {
+  queue: QosWanQueue | null
+  apply: GatewayApply | null
+  applyError: QosApplyError | null
+}
+
+/** Whether the router lets Perch write a config (its allowlist, README 7.7). */
+export type QosPlaneConfigAccess = {
+  config: string
+  package: string
+  /** null = unknown (no capabilities yet, or an older collector). */
+  allowed: boolean | null
+  installed: boolean | null
+  /** What the router owner does about it, when not allowed. */
+  hint: string | null
+}
 
 export type QosWarning = { code: string; message?: string; field?: string; observedKbit?: number } & Record<
   string,
@@ -2696,6 +2731,8 @@ export type QosOverview = {
   gatewayId: number
   collectorId: number | null
   managed: boolean
+  /** Whether the router lets Perch write `sqm` (WAN queues) and `perch-qos` (the shaper package). */
+  planeAccess?: { sqm: QosPlaneConfigAccess; perchQos: QosPlaneConfigAccess }
   authoritative: boolean
   online: boolean
   agentSupportsQos: boolean | null

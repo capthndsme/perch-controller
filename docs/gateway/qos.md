@@ -530,7 +530,8 @@ enforcement tick reverts them (config-plane.md 6.8); the first import of the fil
 installs is not drift. **Decision 15** (`routerPause` on `globals.enabled`): the router's `enabled '0'` is
 held as a pause (never drift, never reverted, every later package keeps `'0'`); the router switching it
 back releases it; `POST /qos/resume {overrideRouter: true}` (`overrideRouterPause`) sends the put with
-`reclaim: ['enabled']`, which writes `'1'`. Validation mirrors what perch-collector refuses: one globals,
+`reclaim: ['enabled']`, which writes `'1'`; when that apply rolls back or fails, the pause is the
+router's again (the next package keeps `'0'`; config-plane.md 6.8). Validation mirrors what perch-collector refuses: one globals,
 section names, whole-number rates, bucket `class` 0x02–0xff, known parent / bucket names, schedule
 windows (`<days> HH:MM-HH:MM`) and actions (unknown schedules are warnings).
 
@@ -718,11 +719,17 @@ ensureTierPolicy(i: { collectorId?; gatewayId?; key: string; name: string; share
   Devices list: a badge from the rows' `shaping`.
 - 409 `qos_not_managed` / `plane_unavailable` and the other refusals of section 5.2 are shown in
   plain words (`dashboard/src/lib/qos.ts`), with the planner's `issues` listed under a refused save.
+- WAN queue writes show their apply in words (`apply` / `applyError`: applying, rolled back, refused, or
+  kept as a draft), their warnings, and a link to the gateway's Changes tab; Remove answers with the queue
+  still listed as "Removing…" (`pending_delete`) until the router confirms. Cards say the sync state in a
+  sentence (queued, applying, rolled back, failed). `planeAccess` not allowed: a callout with the hint,
+  and the writes it blocks are disabled (sqm: every queue write; perch-qos: pause and resume). A plain
+  Resume refused with `qos_paused_on_router` offers "Resume anyway (override router)" (`overrideRouter`).
+- Config plane pages: every actor renders through `ActorName` (a user's email, or "Perch (system)" with
+  a badge naming `via`); `router_paused` / `router_resumed` events read "Paused / Resumed on the router".
 
 ## 9. Not built yet
 
-- A rolled-back reclaim (an admin's resume over a router pause that the router rolled back) leaves
-  the option owned by Perch again; the next package would then write `'1'`. Rare; the admin resumed.
 - The package is written once the gateway is managed (the sender's sweep); a gateway without the
   perch-qos package shows `config.error 'qos_package_missing'` until it is installed.
 - `usage.source: 'capture'` for MACs in a rest leaf; `collectors.last_status.qos` (plan 3 section 4:

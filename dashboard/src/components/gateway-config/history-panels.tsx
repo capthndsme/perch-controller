@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Panel } from '@/components/ui/panel'
 import { Spinner } from '@/components/ui/spinner'
+import { ActorName } from '@/components/gateway-config/actor'
 import { ConfirmDialog, DiffList, ToneBadge } from '@/components/gateway-config/bits'
 import { useDialog } from '@/hooks/use-dialog'
 import { useEvents, useRestoreRevision, useRevision, useRevisions } from '@/hooks/use-gateways'
@@ -14,6 +15,7 @@ import {
   formatDateTime,
   REVISION_SOURCE_LABEL,
   refusalMessage,
+  ROUTER_EVENTS,
   routerAuthorLabel,
 } from '@/lib/gateway-config'
 import type { Gateway, GatewayRevision } from '@/types/gateway-config'
@@ -56,7 +58,8 @@ export function HistoryPanel({ gateway, isAdmin }: { gateway: Gateway; isAdmin: 
                 </ToneBadge>
                 <span className="min-w-0 flex-1 truncate">{rev.summary}</span>
                 <span className="text-muted-foreground">
-                  {rev.author?.email ?? routerAuthorLabel(rev.routerAuthor) ?? '—'} · {formatDateTime(rev.createdAt)}
+                  <ActorName actor={rev.author} fallback={routerAuthorLabel(rev.routerAuthor) ?? '—'} /> ·{' '}
+                  {formatDateTime(rev.createdAt)}
                 </span>
               </button>
               {open === rev.number ? (
@@ -150,7 +153,7 @@ export function ActivityPanel({ gateway }: { gateway: Gateway }) {
               <ToneBadge tone={eventTone(e.event)}>{EVENT_LABEL[e.event] ?? e.event}</ToneBadge>
               <span className="min-w-0 flex-1 space-y-0.5">
                 <span className="block">
-                  {e.user?.email ?? 'Perch'}
+                  <ActorName actor={e.user} fallback={ROUTER_EVENTS.has(e.event) ? 'On the router' : 'Perch'} />
                   {e.applyId ? <span className="ml-2 font-mono text-[11px] text-muted-foreground">{e.applyId}</span> : null}
                   {e.revision !== null ? <span className="ml-2 text-muted-foreground">rev #{e.revision}</span> : null}
                 </span>
