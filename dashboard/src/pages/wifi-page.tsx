@@ -253,6 +253,7 @@ export function WifiPage() {
           <SeriesRateChart
             series={apRate.series}
             data={apRate.points}
+            range={apThroughput.data}
             mode={apMode}
             direction={apDirection}
             className="h-[320px] w-full"

@@ -419,6 +419,53 @@ export function protocolSeriesTiers(nativeGrainSeconds: number): SeriesTier[] {
 }
 
 /**
+ * Wi-Fi interface counters (`wifi_interface_buckets*`): per-push rows under
+ * five minutes, then the rollups. Same ladder as device traffic.
+ */
+export function wifiSeriesTiers(pushSeconds: number): SeriesTier[] {
+  return [
+    {
+      source: 'native',
+      grainSeconds: pushSeconds,
+      table: 'wifi_interface_buckets',
+      timeColumn: 'bucket_start',
+      maxBucketSeconds: NATIVE_MAX_BUCKET_SECONDS,
+      freshness: 'poll',
+    },
+    {
+      source: '5m',
+      grainSeconds: FIVE_MIN_ROLLUP_SECONDS,
+      table: 'wifi_interface_buckets_5m',
+      timeColumn: 'slot_start',
+      freshness: 'rollup',
+    },
+    {
+      source: '1h',
+      grainSeconds: HOURLY_ROLLUP_SECONDS,
+      table: 'wifi_interface_buckets_hourly',
+      timeColumn: 'hour_start',
+      freshness: 'rollup',
+    },
+    {
+      source: '1d',
+      grainSeconds: DAILY_ROLLUP_SECONDS,
+      table: 'wifi_interface_buckets_daily',
+      timeColumn: 'day_start',
+      freshness: 'rollup',
+    },
+  ]
+}
+
+/** Push / scrape interval of the access points (the longest, 5 s when none). */
+export async function apPollIntervalSeconds(apId?: number): Promise<number> {
+  const query = db.from('wifi_access_points').max('poll_interval_seconds as grain')
+  if (apId) query.where('id', apId)
+  const rows = (await query) as Array<{ grain: number | string | null }>
+  const grain = Number(rows[0]?.grain ?? 0)
+  return Number.isFinite(grain) && grain >= 1 ? Math.floor(grain) : 5
+}
+
+/**
  * Poll interval of the collector asked about, or the longest of all of them
  * (a bucket must hold whole polls of every collector it sums). 5 s when no
  * collector exists yet.

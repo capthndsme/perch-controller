@@ -481,16 +481,19 @@ export type WifiSsidClientsResponse = {
   >
 }
 
-export type WifiSsidThroughputResponse = {
+export type WifiSsidThroughputResponse = DenseSeriesMeta & {
   ssid: string
   range: string | null
   from: string
   to: string
-  resolution: TrafficResolution
-  resolutionSeconds: number
-  /** AP-side direction, like `WifiSsidSummary`: `*In` = client upload, `*Out` = client download. */
+  /**
+   * Every bucket of the window (quiet ones as zero). AP-side direction, like
+   * `WifiSsidSummary`: `*In` = client upload, `*Out` = client download.
+   */
   buckets: Array<{
     bucketStart: string
+    bucketEnd: string
+    seconds: number
     bytesIn: number
     bytesOut: number
     mbpsIn: number
@@ -511,12 +514,10 @@ export type WifiApThroughputPoint = {
  * `aps` is busiest-first and includes enabled APs with no traffic (zeros);
  * a bucket omits an AP that had no row in that slot.
  */
-export type WifiApThroughputResponse = {
+export type WifiApThroughputResponse = DenseSeriesMeta & {
   range: string | null
   from: string
   to: string
-  resolution: TrafficResolution
-  resolutionSeconds: number
   aps: Array<{
     id: number
     name: string
@@ -524,8 +525,11 @@ export type WifiApThroughputResponse = {
     downloadBytes: number
     uploadBytes: number
   }>
+  /** Every bucket of the window, every listed AP in each (zero when quiet). */
   buckets: Array<{
     bucketStart: string
+    bucketEnd: string
+    seconds: number
     aps: Record<string, WifiApThroughputPoint>
   }>
 }

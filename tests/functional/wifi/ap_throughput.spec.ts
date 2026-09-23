@@ -2,6 +2,7 @@ import Collector from '#models/collector'
 import SystemSetting from '#models/system_setting'
 import User from '#models/user'
 import { _resetQueryCache } from '#services/query_cache'
+import { _resetRollupPass } from '#services/series_buckets'
 import { clampWifiResolution } from '#services/wifi_ap_throughput'
 import db from '@adonisjs/lucid/services/db'
 import testUtils from '@adonisjs/core/services/test_utils'
@@ -12,6 +13,7 @@ async function resetDb() {
   const teardown = await testUtils.db().truncate()
   await teardown()
   _resetQueryCache()
+  _resetRollupPass()
   return teardown
 }
 
@@ -117,13 +119,14 @@ test.group('wifi | aps/throughput', (group) => {
   }) => {
     const ctx = await bootstrap()
     const r = await client
-      .get('/api/v1/wifi/aps/throughput?range=1h&resolution=5m')
+      .get('/api/v1/wifi/aps/throughput?range=1h&resolution=1m')
       .bearerToken(ctx.token)
     r.assertStatus(200)
     const body = r.body().data
 
-    assert.equal(body.resolution, '5m')
-    assert.equal(body.resolutionSeconds, 300)
+    assert.equal(body.resolution, '1m')
+    assert.equal(body.resolutionSeconds, 60)
+    assert.equal(body.source, 'native')
 
     // Busiest first, then the disabled-but-historic AP, then the idle one
     // with zero totals. The AP that never had data and is disabled is gone.
@@ -140,21 +143,33 @@ test.group('wifi | aps/throughput', (group) => {
     assert.equal(idle.downloadBytes, 0)
     assert.equal(idle.uploadBytes, 0)
 
-    assert.lengthOf(body.buckets, 2)
-    const first = body.buckets[0]
-    assert.equal(first.bucketStart, ctx.t1.toISO())
+    // Dense: every minute of the hour, every listed AP in each.
+    assert.isAtLeast(body.buckets.length, 59)
+    for (const bucket of body.buckets) {
+      assert.includeMembers(Object.keys(bucket.aps), [
+        String(ctx.busy),
+        String(ctx.retired),
+        String(ctx.idle),
+      ])
+    }
+    const at = (t: DateTime) =>
+      body.buckets.find((b: { bucketStart: string }) => b.bucketStart === t.toISO())
+    const first = at(ctx.t1)
+    assert.equal(first.seconds, 60)
     const busyPoint = first.aps[String(ctx.busy)]
     assert.equal(busyPoint.downloadBytes, 7_500_000, 'both radios summed')
     assert.equal(busyPoint.uploadBytes, 1_500_000)
-    assert.closeTo(busyPoint.downloadMbps, (7_500_000 * 8) / 300 / 1e6, 1e-9)
-    assert.closeTo(busyPoint.uploadMbps, (1_500_000 * 8) / 300 / 1e6, 1e-9)
+    assert.closeTo(busyPoint.downloadMbps, (7_500_000 * 8) / 60 / 1e6, 1e-9)
+    assert.closeTo(busyPoint.uploadMbps, (1_500_000 * 8) / 60 / 1e6, 1e-9)
     assert.equal(first.aps[String(ctx.retired)].downloadBytes, 40_000)
-    assert.isUndefined(first.aps[String(ctx.idle)], 'no row for an AP with no traffic')
+    assert.equal(first.aps[String(ctx.idle)].downloadBytes, 0, 'a quiet AP reads zero')
 
-    const second = body.buckets[1]
-    assert.equal(second.bucketStart, ctx.t2.toISO())
+    const second = at(ctx.t2)
     assert.equal(second.aps[String(ctx.busy)].downloadBytes, 3_000_000)
-    assert.isUndefined(second.aps[String(ctx.retired)])
+    assert.equal(second.aps[String(ctx.retired)].downloadBytes, 0)
+
+    // The quiet minutes between the two are there, as zero.
+    assert.equal(at(ctx.t1.plus({ minutes: 2 })).aps[String(ctx.busy)].downloadBytes, 0)
   })
 
   test('coarsens a too-fine grain over a wide window and echoes it back', async ({
@@ -166,8 +181,11 @@ test.group('wifi | aps/throughput', (group) => {
       .get('/api/v1/wifi/aps/throughput?range=30d&resolution=5s')
       .bearerToken(ctx.token)
     r.assertStatus(200)
-    assert.equal(r.body().data.resolution, '1h')
-    assert.equal(r.body().data.resolutionSeconds, 3600)
+    const body = r.body().data
+    // 30 d under the 1500-point cap: 30-minute buckets at least.
+    assert.isAtLeast(body.bucketSeconds, 1800)
+    assert.equal(body.resolutionSeconds, body.bucketSeconds)
+    assert.isAtMost(body.buckets.length, 1500)
   })
 
   test('clampWifiResolution keeps a grain that already fits', ({ assert }) => {

@@ -320,8 +320,11 @@ dhcp.kitchen.ip='192.168.2.100'
       .bearerToken(adminToken)
     throughput.assertStatus(200)
     assert.equal(throughput.body().data.ssid, 'Home')
-    assert.isAtLeast(throughput.body().data.buckets.length, 1)
+    // Dense: the whole day at one-minute buckets, quiet ones as zero.
+    assert.equal(throughput.body().data.bucketSeconds, 60)
+    assert.isAtLeast(throughput.body().data.buckets.length, 1439)
     assert.isNumber(throughput.body().data.buckets[0].mbpsIn)
+    assert.isNumber(throughput.body().data.buckets[0].seconds)
   })
 
   test('clients endpoint includes hostname enrichment labels when enabled', async ({

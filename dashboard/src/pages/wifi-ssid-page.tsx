@@ -21,6 +21,7 @@ export function WifiSsidPage() {
   const {
     window,
     resolutionMode,
+    resolution,
     refreshInterval,
     setWindow,
     setResolutionMode,
@@ -28,7 +29,7 @@ export function WifiSsidPage() {
   } = useDashboardTime(DEFAULT_DEVICE_WINDOW)
   const clients = useWifiSsidClients(ssid)
   const summaries = useWifiSsids({ window })
-  const throughput = useWifiSsidThroughput(ssid, { window, refreshInterval })
+  const throughput = useWifiSsidThroughput(ssid, { window, resolution, refreshInterval })
   const summary = summaries.data?.ssids.find((entry) => entry.ssid === ssid)
   const chartData = useMemo(
     () =>
@@ -98,6 +99,7 @@ export function WifiSsidPage() {
         ) : chartData.length > 0 ? (
           <BandwidthChart
             data={chartData}
+            range={throughput.data}
             className="h-[300px] w-full"
             onZoom={setWindow}
             onResetZoom={() => setWindow(DEFAULT_DEVICE_WINDOW)}
