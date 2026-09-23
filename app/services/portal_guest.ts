@@ -25,6 +25,7 @@ import { groupKey, isLiveState, normalizeMac } from '#services/portal/types'
 import hash from '@adonisjs/core/services/hash'
 import db from '@adonisjs/lucid/services/db'
 import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
+import { DateTime } from 'luxon'
 
 /**
  * Guest sign-in through the controller (docs/gateway/portal.md section 13.5):
@@ -167,6 +168,71 @@ export type GuestSignIn = {
   queued: boolean
   /** Pushes for everything else the sign-in changed; send after answering. */
   pushes: GrantPushes
+  /**
+   * Decision 31: the portal user's device group took the device. `moved`:
+   * the group has its own network and the device is moved there (no grant).
+   */
+  bound?: { groupId: number; groupName: string; moved: boolean; mac: string; evicted: string[] }
+}
+
+/**
+ * Binds a signing-in device to its portal user's device group (decision 31,
+ * docs/gateway/device-groups.md section 6), inside the sign-in's
+ * transaction: within the user's `maxDevices` among the group's bindings
+ * that user made; over it, `device_limit`, or with `replace` the oldest
+ * binding leaves. Null when the user has no group on this gateway.
+ */
+async function bindToUserGroup(
+  trx: TransactionClientContract,
+  gatewayId: number,
+  user: PortalUser,
+  mac: string,
+  replace: boolean
+): Promise<GuestSignIn['bound'] | null> {
+  if (user.deviceGroupId === null) return null
+  const group = (await trx
+    .from('device_groups')
+    .where('id', user.deviceGroupId)
+    .where('gateway_id', gatewayId)
+    .forUpdate()
+    .first()) as { id: number; name: string; network_perch_id: string | null } | null
+  if (!group) return null
+  const mine = (await trx
+    .from('device_group_members')
+    .where('group_id', group.id)
+    .where('portal_user_id', user.id)
+    .orderBy('created_at')
+    .orderBy('id')
+    .forUpdate()
+    .select('id', 'mac')) as Array<{ id: number; mac: string }>
+  const evicted: string[] = []
+  if (!mine.some((m) => m.mac === mac)) {
+    const over = mine.length + 1 - Math.max(1, user.maxDevices)
+    if (over > 0) {
+      if (!replace) throw guestRefusal('device_limit')
+      for (const old of mine.slice(0, over)) {
+        await trx.from('device_group_members').where('id', old.id).delete()
+        evicted.push(old.mac)
+      }
+    }
+    // A MAC is in one group per gateway: this binding moves it.
+    await trx.from('device_group_members').where('gateway_id', gatewayId).where('mac', mac).delete()
+    await trx.table('device_group_members').insert({
+      gateway_id: gatewayId,
+      group_id: group.id,
+      mac,
+      source: 'portal',
+      portal_user_id: user.id,
+      created_at: DateTime.utc().toSQL({ includeOffset: false }),
+    })
+  }
+  return {
+    groupId: group.id,
+    groupName: group.name,
+    moved: group.network_perch_id !== null,
+    mac,
+    evicted,
+  }
 }
 
 async function guestPortal(gatewayId: number, portalId: number): Promise<Portal> {
@@ -421,6 +487,16 @@ export async function loginPortalUser(
 
   const pushes = emptyPushes()
   return db.transaction(async (trx) => {
+    const bound = await bindToUserGroup(trx, gatewayId, user, client.mac, Boolean(client.replace))
+    if (bound?.moved) {
+      // The group's own network takes the device: no grant here, the
+      // access points move it (a Wi-Fi binding and a kick).
+      await trx
+        .from('portal_users')
+        .where('id', user.id)
+        .update({ last_login_at: utc(now).toSQL({ includeOffset: false }) })
+      return { gatewayId, grantId: null, queued: false, pushes, bound }
+    }
     const key = groupKey('user', user.id)
     const holders = await PortalGrant.query({ client: trx })
       .where('group_key', key)
@@ -499,6 +575,7 @@ export async function loginPortalUser(
       grantId: placement === 'queue' ? null : num(grant.id),
       queued: placement === 'queue',
       pushes,
+      ...(bound ? { bound } : {}),
     }
   })
 }

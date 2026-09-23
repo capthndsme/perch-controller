@@ -155,6 +155,8 @@ const portalUserFields = {
   downKbps: kbps().nullable().optional(),
   upKbps: kbps().nullable().optional(),
   portalIds: vine.array(id()).maxLength(256).nullable().optional(),
+  /** Decision 31: signing in binds the device to this device group. */
+  deviceGroupId: id().nullable().optional(),
 }
 
 export const createPortalUserValidator = vine.compile(

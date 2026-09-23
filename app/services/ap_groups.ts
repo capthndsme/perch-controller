@@ -6,6 +6,6 @@ import logger from '@adonisjs/core/services/logger'
  */
 
 /** Asks for the APs' desired state to be recomputed and sent (debounced). */
-export function requestApGroupsSync(reason: string): void {
-  logger.debug({ reason }, 'ap_groups: sync requested')
+export function requestApGroupsSync(reason: string, options: { kick?: string[] } = {}): void {
+  logger.debug({ reason, kick: options.kick }, 'ap_groups: sync requested')
 }

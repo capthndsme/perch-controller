@@ -1,4 +1,6 @@
 import Collector from '#models/collector'
+import DeviceGroup from '#models/device_group'
+import DeviceGroupMember from '#models/device_group_member'
 import Gateway from '#models/gateway'
 import PortalGatewayState from '#models/portal_gateway_state'
 import PortalGrant from '#models/portal_grant'
@@ -8,6 +10,7 @@ import {
   SocketPortalAgentSender,
   _resetPortalAgentState,
   _setPortalAgentTimings,
+  buildConfigureParams,
   isPortalGatewayReady,
 } from '#services/portal_agent'
 import { setPortalAgentSender } from '#services/portal_agent_sender'
@@ -496,6 +499,99 @@ test.group('portal | collector socket', (group) => {
       password: 'guest-pass-123',
     })
     assert.equal(rpcErrorOf(disabled), 'disabled')
+  })
+
+  test("portal.login binds to the user's device group (decision 31); bypass in configure", async ({
+    assert,
+  }) => {
+    const portal = await seedPortal(world.gatewayId, GUEST_NET, {
+      methods: { voucher: true, password: true },
+    })
+    // A unit with its own network: the device moves there, no grant here.
+    const unit = await DeviceGroup.create({
+      gatewayId: world.gatewayId,
+      name: 'Unit 1',
+      networkPerchId: 'n_iot',
+      internet: true,
+      portalBypass: false,
+    })
+    const tenant = await PortalUser.create({
+      username: 'tenant.one',
+      password: 'tenant-pass-123',
+      enabled: true,
+      maxDevices: 1,
+      sessionMinutes: null,
+      portalIds: null,
+      deviceGroupId: unit.id,
+    } as Partial<PortalUser>)
+    const router = await connected()
+    const login = (mac: string, replace = false) =>
+      router.collector.request('portal.login', {
+        portalId: portal.id,
+        mac,
+        ip: '192.168.30.20',
+        username: 'tenant.one',
+        password: 'tenant-pass-123',
+        ...(replace ? { replace: true } : {}),
+      })
+    const moved = await login(MAC_A)
+    assert.isNull((moved.result as any).grant)
+    assert.deepEqual((moved.result as any).bound, {
+      groupId: unit.id,
+      groupName: 'Unit 1',
+      moved: true,
+    })
+    const bound = await DeviceGroupMember.query().where('groupId', unit.id)
+    assert.deepEqual(
+      bound.map((m) => [m.mac, m.source, m.portalUserId]),
+      [[MAC_A, 'portal', tenant.id]]
+    )
+    assert.lengthOf(await PortalGrant.query().where('portal_user_id', tenant.id), 0)
+    // Again from the same device: still one binding.
+    await login(MAC_A)
+    assert.lengthOf(await DeviceGroupMember.query().where('groupId', unit.id), 1)
+    // One device only: a second is refused unless it replaces the first.
+    assert.equal(rpcErrorOf(await login(MAC_B)), 'device_limit')
+    await login(MAC_B, true)
+    const after = await DeviceGroupMember.query().where('groupId', unit.id)
+    assert.deepEqual(
+      after.map((m) => m.mac),
+      [MAC_B]
+    )
+
+    // A group without a network: the grant as before, plus the membership;
+    // with a portal bypass, the router gets the member in portal.configure.
+    const family = await DeviceGroup.create({
+      gatewayId: world.gatewayId,
+      name: 'Family',
+      networkPerchId: null,
+      internet: true,
+      portalBypass: true,
+    })
+    await PortalUser.create({
+      username: 'family.one',
+      password: 'family-pass-123',
+      enabled: true,
+      maxDevices: 2,
+      sessionMinutes: 60,
+      portalIds: null,
+      deviceGroupId: family.id,
+    } as Partial<PortalUser>)
+    const fam = await router.collector.request('portal.login', {
+      portalId: portal.id,
+      mac: MAC_C,
+      ip: '192.168.30.22',
+      username: 'family.one',
+      password: 'family-pass-123',
+    })
+    assert.isNumber((fam.result as any).grant.grantId)
+    assert.deepEqual((fam.result as any).bound, {
+      groupId: family.id,
+      groupName: 'Family',
+      moved: false,
+    })
+    const { params } = await buildConfigureParams(world.gatewayId, 1, null)
+    assert.deepEqual(params.portals.find((p) => p.portalId === portal.id)!.bypass, [MAC_C])
   })
 
   test('offline redemption is reconciled after the reconnect; no double spend', async ({

@@ -5,6 +5,7 @@ import Gateway from '#models/gateway'
 import Portal from '#models/portal'
 import QosAssignment from '#models/qos_assignment'
 import { requestApGroupsSync } from '#services/ap_groups'
+export { portalBypassMacs } from '#services/device_group_bypass'
 import { normalizeMac } from '#services/device_labels'
 import {
   reconcileGroupFirewall,
@@ -877,18 +878,6 @@ export async function allGroupKeys(): Promise<
 // ---------------------------------------------------------------------------
 // Effects
 
-/** The bound MACs of a gateway's groups that pass its portals. */
-export async function portalBypassMacs(gatewayId: number): Promise<string[]> {
-  const rows = (await db
-    .from('device_group_members as m')
-    .join('device_groups as g', 'g.id', 'm.group_id')
-    .where('g.gateway_id', gatewayId)
-    .where('g.portal_bypass', true)
-    .whereNull('g.network_perch_id')
-    .select('m.mac')) as Array<{ mac: string }>
-  return [...new Set(rows.map((r) => r.mac.toLowerCase()))].sort()
-}
-
 /** The firewall specs of a gateway's groups (every group; unblocked ones render nothing). */
 export async function groupFirewallSpecs(gatewayId: number): Promise<GroupFirewallSpec[]> {
   const groups = await DeviceGroup.query().where('gatewayId', gatewayId).orderBy('id')
@@ -1010,6 +999,20 @@ async function afterChange(gatewayId: number, ctx: WriteContext, effects: Effect
     }
   }
   if (effects.aps) requestApGroupsSync('groups changed')
+}
+
+/**
+ * After a portal sign-in bound a device (decision 31): the group's QoS,
+ * firewall and bypass follow the new member, and on a group with its own
+ * network the access points get the binding and kick the device so it
+ * rejoins in the group's VLAN (evicted bindings leave the APs too).
+ */
+export async function onPortalBinding(
+  gatewayId: number,
+  bound: { groupId: number; moved: boolean; mac: string; evicted: string[] }
+): Promise<void> {
+  await afterMembersChanged(gatewayId, [bound.groupId], { userId: null })
+  if (bound.moved) requestApGroupsSync('portal binding', { kick: [bound.mac] })
 }
 
 /** Refusals from the QoS side keep their own shape. */

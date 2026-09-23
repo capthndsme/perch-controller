@@ -1,3 +1,4 @@
+import { portalBypassMacs } from '#services/device_group_bypass'
 import ApiClient from '#models/portal_api_client'
 import Collector from '#models/collector'
 import Gateway from '#models/gateway'
@@ -295,6 +296,8 @@ export type PortalConfigureParams = {
     gatewayName: string
     walledGarden: string[]
     relay: boolean
+    /** Device-group members that pass the portal without a grant (device-groups.md section 6). */
+    bypass: string[]
   }>
 }
 
@@ -330,6 +333,7 @@ export async function buildConfigureParams(
   const revisions = new Map<number, number>()
   const skipped: number[] = []
   const out: PortalConfigureParams['portals'] = []
+  const bypass = await portalBypassMacs(gatewayId)
   for (const p of portals) {
     const section = sections.find((s) => s.perchId === p.networkPerchId)
     if (!section?.sectionName) {
@@ -357,6 +361,7 @@ export async function buildConfigureParams(
       gatewayName: collector?.name ?? '',
       walledGarden: [],
       relay: relayPortals.has(p.id),
+      bypass,
     })
   }
 
@@ -1144,6 +1149,8 @@ type SignedReply = {
   grant: Record<string, unknown> | null
   group: Record<string, unknown> | null
   queued: boolean
+  /** Decision 31: the device went to its user's device group (no grant when `moved`). */
+  bound?: { groupId: number; groupName: string; moved: boolean }
 }
 
 async function grantReply(gatewayId: number, grantId: number | null, queued: boolean) {
@@ -1179,7 +1186,15 @@ async function guestSignIn(
     if (abandoned) return null
     started = true
     const out = await run(gatewayId)
-    return { reply: await grantReply(gatewayId, out.grantId, out.queued), pushes: out.pushes }
+    const reply = await grantReply(gatewayId, out.grantId, out.queued)
+    const bound = out.bound
+      ? { groupId: out.bound.groupId, groupName: out.bound.groupName, moved: out.bound.moved }
+      : undefined
+    return {
+      reply: bound ? { ...reply, bound } : reply,
+      pushes: out.pushes,
+      bound: out.bound ?? null,
+    }
   })
   let timer: NodeJS.Timeout | undefined
   const deadline = new Promise<'late'>((resolve) => {
@@ -1195,7 +1210,19 @@ async function guestSignIn(
   clearTimeout(timer)
   const done = await work
   if (!done) throw guestRefusal('controller_unreachable')
-  const { reply, pushes } = done
+  const { reply, pushes, bound } = done
+  if (bound) {
+    // After the answer: the access points learn the binding (and kick the
+    // device into its group's VLAN); the group's QoS, firewall and bypass
+    // follow the new member.
+    setImmediate(() => {
+      void import('#services/device_groups')
+        .then(({ onPortalBinding }) => onPortalBinding(gatewayId, bound))
+        .catch((error) =>
+          logger.warn({ gatewayId, err: error }, 'portal_agent: binding follow-up failed')
+        )
+    })
+  }
   const list = grantPushList(pushes)
   if (list.length) {
     // After the answer: the router applies the new grant first.

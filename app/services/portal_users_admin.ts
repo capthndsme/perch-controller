@@ -25,6 +25,18 @@ export type PortalUserInput = {
   downKbps?: number | null
   upKbps?: number | null
   portalIds?: number[] | null
+  deviceGroupId?: number | null
+}
+
+async function checkDeviceGroup(id: number | null | undefined): Promise<number | null> {
+  if (id === null || id === undefined) return null
+  const row = await db.from('device_groups').where('id', id).first()
+  if (!row) {
+    throw new PortalError(422, 'device_group_not_found', `There is no device group ${id}.`, {
+      field: 'deviceGroupId',
+    })
+  }
+  return id
 }
 
 async function activeDevices(userIds: number[]): Promise<Map<number, number>> {
@@ -75,6 +87,7 @@ export async function createPortalUser(
   input: Required<Pick<PortalUserInput, 'username' | 'password'>> & PortalUserInput
 ) {
   const portalIds = await checkPortals(input.portalIds)
+  const deviceGroupId = await checkDeviceGroup(input.deviceGroupId)
   if (await PortalUser.findBy('username', input.username)) throw taken(input.username)
   try {
     const user = await PortalUser.create({
@@ -87,6 +100,7 @@ export async function createPortalUser(
       downKbps: input.downKbps ?? null,
       upKbps: input.upKbps ?? null,
       portalIds,
+      deviceGroupId,
       revision: 1,
       lastLoginAt: null,
     })
@@ -145,6 +159,9 @@ export async function updatePortalUser(id: number, input: PortalUserInput) {
   }
   if (input.displayName !== undefined) user.displayName = input.displayName
   if (input.portalIds !== undefined) user.portalIds = await checkPortals(input.portalIds)
+  if (input.deviceGroupId !== undefined) {
+    user.deviceGroupId = await checkDeviceGroup(input.deviceGroupId)
+  }
   if (input.sessionMinutes !== undefined) user.sessionMinutes = input.sessionMinutes
   for (const key of ['maxDevices', 'downKbps', 'upKbps'] as const) {
     if (input[key] !== undefined && input[key] !== user[key]) {

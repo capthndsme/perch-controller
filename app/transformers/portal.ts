@@ -344,6 +344,7 @@ export function portalUserView(u: PortalUser, activeDevices: number) {
     downKbps: u.downKbps,
     upKbps: u.upKbps,
     portalIds: u.portalIds,
+    deviceGroupId: u.deviceGroupId,
     lastLoginAt: iso(u.lastLoginAt),
     activeDevices,
     createdAt: iso(u.createdAt),
