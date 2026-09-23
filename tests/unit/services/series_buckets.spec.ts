@@ -1,8 +1,14 @@
 import {
+  _resetRollupPass,
   bucketLabel,
   denseBuckets,
+  denseSlots,
+  noteRollupPass,
   parseBucketLabel,
   planSeries,
+  protocolSeriesTiers,
+  trafficSeriesTiers,
+  withFreshness,
   type SeriesTierCandidate,
 } from '#services/series_buckets'
 import { test } from '@japa/runner'
@@ -203,5 +209,143 @@ test.group('series_buckets | labels', () => {
     assert.equal(bucketLabel(15), '15s')
     assert.equal(bucketLabel(600), '10m')
     assert.equal(bucketLabel(86400), '1d')
+  })
+})
+
+test.group('series_buckets | device tiers', () => {
+  const covered = (list: ReturnType<typeof trafficSeriesTiers>) =>
+    list.map((t) => ({ ...t, covers: true }))
+
+  test('top talkers: 15 s from per-poll rows for an hour, hourly for a month', ({ assert }) => {
+    const hour = planSeries({
+      sinceSec: NOW - 3600,
+      untilSec: NOW,
+      nowSec: NOW,
+      floorSeconds: 15,
+      maxPoints: 1500,
+      tiers: covered(trafficSeriesTiers(5)),
+    })
+    assert.equal(hour.tier.table, 'device_traffic_buckets')
+    assert.equal(hour.bucketSeconds, 15)
+
+    const month = planSeries({
+      sinceSec: NOW - 30 * 86400,
+      untilSec: NOW,
+      nowSec: NOW,
+      floorSeconds: 15,
+      maxPoints: 1500,
+      requestedSeconds: 3600,
+      tiers: covered(trafficSeriesTiers(5)),
+    })
+    assert.equal(month.tier.source, '1h')
+    assert.equal(month.bucketSeconds, 3600)
+
+    const year = planSeries({
+      sinceSec: NOW - 365 * 86400,
+      untilSec: NOW,
+      nowSec: NOW,
+      floorSeconds: 86400,
+      maxPoints: 1500,
+      tiers: covered(trafficSeriesTiers(5)),
+    })
+    assert.equal(year.tier.source, '1d')
+  })
+
+  test('protocols: never finer than the per-minute rows', ({ assert }) => {
+    const plan = planSeries({
+      sinceSec: NOW - 3600,
+      untilSec: NOW,
+      nowSec: NOW,
+      floorSeconds: 15,
+      maxPoints: 1500,
+      tiers: covered(protocolSeriesTiers(60)),
+    })
+    assert.equal(plan.tier.source, 'native')
+    assert.equal(plan.bucketSeconds, 60)
+  })
+
+  test('protocols: more than two days go to the hourly tier, not the 5-minute one', ({
+    assert,
+  }) => {
+    const plan = planSeries({
+      sinceSec: NOW - 3 * 86400,
+      untilSec: NOW,
+      nowSec: NOW,
+      floorSeconds: 15,
+      maxPoints: 1500,
+      tiers: covered(protocolSeriesTiers(60)),
+    })
+    // 3 d / 1500 points = 173 s; 300 or 600 s would need the 5-minute tier.
+    assert.equal(plan.tier.source, '1h')
+    assert.equal(plan.bucketSeconds, 3600)
+
+    const oneDay = planSeries({
+      sinceSec: NOW - 86400,
+      untilSec: NOW,
+      nowSec: NOW,
+      floorSeconds: 300,
+      maxPoints: 1500,
+      tiers: covered(protocolSeriesTiers(60)),
+    })
+    assert.equal(oneDay.tier.source, '5m')
+  })
+})
+
+test.group('series_buckets | freshness', (group) => {
+  group.each.teardown(() => _resetRollupPass())
+
+  test('per-poll tiers end at the previous poll; the live bucket counts only that', ({
+    assert,
+  }) => {
+    const now = NOW + 7 // two seconds into the second poll of the minute
+    const tiersFresh = withFreshness(tiers({ native: true, fiveMin: true }), {
+      nowSec: now,
+      pollSeconds: 5,
+    })
+    // Every tier here is unmarked except what the helper marks.
+    assert.isUndefined(tiersFresh[0].dataUntilSec)
+    const marked = withFreshness(
+      tiers({ native: true, fiveMin: true }).map((t) => ({ ...t, freshness: 'poll' as const })),
+      { nowSec: now, pollSeconds: 5 }
+    )
+    assert.equal(marked[0].dataUntilSec, NOW)
+    const plan = planSeries({
+      sinceSec: NOW - 60,
+      untilSec: now,
+      nowSec: now,
+      floorSeconds: 15,
+      maxPoints: 1500,
+      tiers: marked,
+    })
+    assert.equal(plan.effUntilSec, NOW)
+    const slots = denseSlots(plan)
+    assert.equal(slots.at(-1)!.bucketEnd, new Date(NOW * 1000).toISOString())
+    assert.equal(
+      slots.reduce((sum, b) => sum + b.seconds, 0),
+      60,
+      'no seconds past the last complete poll'
+    )
+  })
+
+  test('rollup tiers end at the last rollup pass, now before the first one', ({ assert }) => {
+    const rollup = tiers({ native: false, fiveMin: true }).map((t) => ({
+      ...t,
+      freshness: 'rollup' as const,
+    }))
+    assert.isUndefined(withFreshness(rollup, { nowSec: NOW, pollSeconds: 5 })[1].dataUntilSec)
+    noteRollupPass(NOW - 40)
+    const fresh = withFreshness(rollup, { nowSec: NOW, pollSeconds: 5 })
+    assert.equal(fresh[1].dataUntilSec, NOW - 40)
+    const plan = planSeries({
+      sinceSec: NOW - 3 * 86400,
+      untilSec: NOW,
+      nowSec: NOW,
+      floorSeconds: 600,
+      maxPoints: 1500,
+      tiers: fresh,
+    })
+    assert.equal(plan.tier.source, '5m')
+    assert.equal(plan.effUntilSec, NOW - 40)
+    assert.equal(denseSlots(plan).at(-1)!.seconds, 600 - 40)
   })
 })

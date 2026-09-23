@@ -447,7 +447,7 @@ admin role. Full list: `node ace list:routes`.
 | Device agents | `POST ap-agent/join` (join token in the body, no user auth), WebSocket `ap-agent/ws` (agent credentials); `POST collectors/announce` (polled collectors), WebSocket `collector-agent/ws` (the collector's API key + instance id) |
 | Network-wide traffic | `GET traffic` (series + summary), `GET traffic/top?limit&by` (top-N devices + rest), `GET protocols`, `GET protocols/:protocol/devices`, `GET peers/top?scope` |
 | Sites & applications | `GET destinations?limit` (names → domains, addresses → networks, categories), `GET destinations/:serverName/traffic`; `GET services?limit`, `GET services/:serverName/traffic` (5m/1h/1d) |
-| Usage | `GET usage?period=day\|week\|month&scope&protocols`, `GET usage/intervals?interval=auto\|1h\|4h\|8h\|12h` |
+| Usage | `GET usage?period=day\|week\|month&scope&protocols`, `GET usage/intervals?interval=auto\|1h\|4h\|8h\|12h`; both take `mac=` for one device (its rows only, `activeDevices` and `wifiClients` `null`, `mac` echoed; an unknown MAC is all zeros) |
 | Gateway | `GET router?resolution=auto\|1m\|5m\|15m\|1h` |
 | Devices | `GET devices`, `GET devices/:mac/overview`, `/traffic`, `/protocols`, `/peers`, `/peers/history`, `/services`, `/destinations` |
 | Device labels | `GET devices/labels` (stored labels + tags in use + type catalog), `GET devices/:mac/label`, `PATCH devices/:mac/label` (merge; `null` clears a field), `DELETE devices/:mac/label` |

@@ -144,11 +144,10 @@ function emptyRow(ts: number): ChartAggRow {
 
 /**
  * Sum buckets that share a timestamp into chart points. When `overlay` is
- * provided, those buckets are folded into the SAME row at the matching
- * timestamp (under the `lan*` keys) so Recharts can render the overlay
- * directly off the primary dataset. Overlay timestamps that don't appear
- * in the primary set still get a row — otherwise a 5 s gap on the WAN
- * series would silently drop the LAN overlay's matching point.
+ * provided, those buckets are folded into the row of the primary bucket that
+ * contains them (under the `lan*` keys) so Recharts can render the overlay
+ * directly off the primary dataset. The primary series is dense (every
+ * bucket of the window), so an overlay never needs a row of its own.
  *
  * Returned points carry the numeric epoch (`ts`) as the X-axis key so
  * Recharts can render a true time-scaled axis and the drag-to-zoom math
@@ -172,16 +171,40 @@ export function bucketsToChartPoints(
     byTime.set(key, row)
   }
 
+  // Overlays join the primary series' own bucket grid: a LAN bucket or a
+  // Wi-Fi signal bucket lands in the primary bucket that contains it. Before,
+  // an overlay-only timestamp got a row of its own with download = upload = 0,
+  // and at a daily page resolution with hourly signal buckets 23 of every 24
+  // rows were such zeros (the traffic area saw-toothed).
+  const grid = [...byTime.keys()].sort((a, b) => a - b)
+  const step = grid.length > 1 ? grid[1] - grid[0] : 0
+  const rowFor = (ts: number): ChartAggRow | undefined => {
+    if (grid.length === 0) {
+      const row = byTime.get(ts) ?? emptyRow(ts)
+      byTime.set(ts, row)
+      return row
+    }
+    if (ts < grid[0] || (step > 0 && ts >= grid[grid.length - 1] + step)) return undefined
+    let lo = 0
+    let hi = grid.length - 1
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1
+      if (grid[mid] <= ts) lo = mid
+      else hi = mid - 1
+    }
+    return byTime.get(grid[lo])
+  }
+
   if (overlay) {
     for (const bucket of overlay) {
       const key = Date.parse(String(bucket.bucketStart))
       if (Number.isNaN(key)) continue
-      const row = byTime.get(key) ?? emptyRow(key)
+      const row = rowFor(key)
+      if (!row) continue
       row.lanDownload += bucket.mbpsIn
       row.lanUpload += bucket.mbpsOut
       row.lanDownloadBytes += bucket.bytesIn
       row.lanUploadBytes += bucket.bytesOut
-      byTime.set(key, row)
     }
   }
 
@@ -189,7 +212,8 @@ export function bucketsToChartPoints(
     for (const bucket of wifiOverlay) {
       const key = Date.parse(String(bucket.bucketStart))
       if (Number.isNaN(key)) continue
-      const row = byTime.get(key) ?? emptyRow(key)
+      const row = rowFor(key)
+      if (!row) continue
       if (bucket.txRateKbps !== null) {
         const downloadMbps = bucket.txRateKbps / 1000
         row.wifiDownload = Math.max(row.wifiDownload ?? 0, downloadMbps)
@@ -198,7 +222,6 @@ export function bucketsToChartPoints(
         const uploadMbps = bucket.rxRateKbps / 1000
         row.wifiUpload = Math.max(row.wifiUpload ?? 0, uploadMbps)
       }
-      byTime.set(key, row)
     }
   }
 

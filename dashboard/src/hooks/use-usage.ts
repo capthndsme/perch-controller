@@ -19,13 +19,16 @@ import type {
  * vnstat-style usage buckets (per local day / week / month) with the
  * active-device count, Wi-Fi client avg/peak and top protocols in each.
  * Without a window the API applies its own default look-back per period
- * (day → 30d, week → 182d, month → 365d).
+ * (day → 30d, week → 182d, month → 365d). With `mac` it is that device's
+ * usage (the device page's Usage card): `activeDevices` / `wifiClients` are
+ * then `null`.
  */
 export function useUsage(options: {
   period: UsagePeriod
   window?: TimeWindow
   scope?: UsageScope
   collectorId?: number
+  mac?: string
   protocols?: number
   refreshInterval?: RefreshInterval
   enabled?: boolean
@@ -35,6 +38,7 @@ export function useUsage(options: {
   if (options.scope) params.set('scope', options.scope)
   if (options.collectorId) params.set('collectorId', String(options.collectorId))
   if (options.protocols) params.set('protocols', String(options.protocols))
+  if (options.mac) params.set('mac', options.mac)
 
   const autoRefresh = options.window ? shouldAutoRefresh(options.window) : true
   const refetchInterval =
@@ -51,6 +55,7 @@ export function useUsage(options: {
       options.scope ?? 'all',
       options.collectorId ?? 'all',
       options.protocols ?? 'default',
+      options.mac ?? 'network',
     ] as const,
     queryFn: () => apiFetch<UsageResponse>(`/api/v1/usage?${params}`),
     // Buckets only move as the hourly rollup lands; a minute is plenty.
@@ -85,6 +90,8 @@ export function useUsageIntervals(options: {
   scope?: UsageScope
   interval?: UsageIntervalRequest
   collectorId?: number
+  /** One device's slots (`activeDevices` is then `null`). */
+  mac?: string
   refreshInterval?: RefreshInterval
   enabled?: boolean
 }) {
@@ -92,6 +99,7 @@ export function useUsageIntervals(options: {
   applyWindowToParams(params, options.window)
   if (options.scope) params.set('scope', options.scope)
   if (options.collectorId) params.set('collectorId', String(options.collectorId))
+  if (options.mac) params.set('mac', options.mac)
 
   const refetchInterval =
     !shouldAutoRefresh(options.window) || options.refreshInterval === null
@@ -107,6 +115,7 @@ export function useUsageIntervals(options: {
       options.interval ?? 'auto',
       options.scope ?? 'all',
       options.collectorId ?? 'all',
+      options.mac ?? 'network',
     ] as const,
     queryFn: () => apiFetch<UsageIntervalsResponse>(`/api/v1/usage/intervals?${params}`),
     refetchInterval,

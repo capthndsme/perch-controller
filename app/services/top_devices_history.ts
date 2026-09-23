@@ -1,10 +1,25 @@
+import type { ChartSettings } from '#services/chart_settings'
 import { getDeviceLabels, type DeviceType } from '#services/device_labels'
 import { getHostnameMatches } from '#services/hostname_enrichment'
 import { cacheKey, cachedQuery, windowCache } from '#services/query_cache'
-import { pickAggregateTier, pickSeriesTier } from '#services/rollup_tiers'
-import type { TrafficResolution, TrafficScope } from '#validators/devices'
+import { windowSpanSeconds } from '#services/rollup_tiers'
+import {
+  bucketLabel,
+  cacheResolutionFor,
+  denseSlots,
+  estimateBucketSeconds,
+  mbps,
+  planWindowSeries,
+  pollIntervalSeconds,
+  querySeriesKeyedSums,
+  seriesSinceSql,
+  seriesUntilSql,
+  trafficSeriesTiers,
+  type SeriesSource,
+} from '#services/series_buckets'
+import type { TrafficScope } from '#validators/devices'
 import db from '@adonisjs/lucid/services/db'
-import { DateTime } from 'luxon'
+import { type DateTime } from 'luxon'
 
 /**
  * "Who is using the bandwidth right now, over time": the top-N devices by
@@ -13,9 +28,13 @@ import { DateTime } from 'luxon'
  * the device API: `bytesIn` is what the device downloaded, `bytesOut` what
  * it uploaded.
  *
- * Two statements: a per-MAC window SUM on the aggregate tier (picks the
- * ranking, and the totals the legend shows) and a per-bucket SUM on the
- * series tier where a CASE folds every non-top MAC into `''` so the row
+ * Dense like the Servers charts (`series_buckets.ts`): one bucket width and
+ * one stored tier for the whole window, every bucket returned (quiet ones as
+ * zero), each top device present in every bucket, rates over each bucket's
+ * real seconds (partial first bucket, live last bucket). The ranking reads
+ * the same tier and time range as the series, so the legend totals are the
+ * chart's area. Two statements: a per-MAC window SUM (ranking) and a
+ * per-bucket SUM where a CASE folds every non-top MAC into `''`, so the row
  * count is `buckets × (N + 1)` regardless of how many devices exist.
  */
 
@@ -41,12 +60,22 @@ export type TopTrafficPoint = {
 
 export type TopTrafficBucket = {
   bucketStart: string
-  /** Keyed by MAC, only the top-N devices. */
+  bucketEnd: string
+  /** Seconds of the bucket inside the window and not in the future. */
+  seconds: number
+  /** Keyed by MAC: every top-N device, zero when it was quiet. */
   devices: Record<string, TopTrafficPoint>
   rest: TopTrafficPoint
 }
 
 export type TopDevicesHistory = {
+  bucketSeconds: number
+  /** `bucketLabel(bucketSeconds)`: `15s`, `1m`, `5m`, `1h`… */
+  resolution: string
+  resolutionSeconds: number
+  source: SeriesSource
+  floorSeconds: number
+  maxPoints: number
   devices: TopDevice[]
   rest: { deviceCount: number; bytesIn: number; bytesOut: number }
   buckets: TopTrafficBucket[]
@@ -54,13 +83,6 @@ export type TopDevicesHistory = {
 
 type RankRow = {
   mac: string
-  bytesIn: bigint | number | string
-  bytesOut: bigint | number | string
-}
-
-type SeriesRow = {
-  bucketStart: Date | string
-  k: string
   bytesIn: bigint | number | string
   bytesOut: bigint | number | string
 }
@@ -74,9 +96,9 @@ type IdentityRow = {
 const REST_KEY = ''
 
 function scopeColumns(scope: TrafficScope): { bytesIn: string; bytesOut: string } {
-  if (scope === 'wan') return { bytesIn: 'b.bytes_in_wan', bytesOut: 'b.bytes_out_wan' }
-  if (scope === 'lan') return { bytesIn: 'b.bytes_in_lan', bytesOut: 'b.bytes_out_lan' }
-  return { bytesIn: 'b.bytes_in', bytesOut: 'b.bytes_out' }
+  if (scope === 'wan') return { bytesIn: 'bytes_in_wan', bytesOut: 'bytes_out_wan' }
+  if (scope === 'lan') return { bytesIn: 'bytes_in_lan', bytesOut: 'bytes_out_lan' }
+  return { bytesIn: 'bytes_in', bytesOut: 'bytes_out' }
 }
 
 function rankValue(row: { bytesIn: number; bytesOut: number }, by: TopTrafficRank): number {
@@ -85,22 +107,38 @@ function rankValue(row: { bytesIn: number; bytesOut: number }, by: TopTrafficRan
   return row.bytesIn + row.bytesOut
 }
 
-export async function queryTopDevicesHistory(opts: {
+type TopTrafficOptions = {
   since: DateTime
   until: DateTime
-  resolution: TrafficResolution
-  resolutionSeconds: number
+  /** The caller's `resolution=` in seconds: the bucket width wanted. */
+  requestedSeconds?: number
+  settings: ChartSettings
   scope: TrafficScope
   limit: number
   by: TopTrafficRank
   collectorId?: number
-}): Promise<TopDevicesHistory> {
-  const { ttlMs, segment } = windowCache(opts.resolution, opts.since, opts.until, Date.now())
+}
+
+export async function queryTopDevicesHistory(opts: TopTrafficOptions): Promise<TopDevicesHistory> {
+  const floor = opts.requestedSeconds ?? opts.settings.minBucketSeconds
+  const estimate = estimateBucketSeconds(
+    windowSpanSeconds(opts.since, opts.until),
+    floor,
+    opts.settings.maxPoints
+  )
+  const { ttlMs, segment } = windowCache(
+    cacheResolutionFor(estimate),
+    opts.since,
+    opts.until,
+    Date.now()
+  )
   return cachedQuery(
     cacheKey([
       'traffic:top',
       segment,
-      opts.resolution,
+      opts.requestedSeconds ?? '',
+      opts.settings.minBucketSeconds,
+      opts.settings.maxPoints,
       opts.scope,
       opts.limit,
       opts.by,
@@ -111,42 +149,59 @@ export async function queryTopDevicesHistory(opts: {
   )
 }
 
-async function queryTopDevicesHistoryUncached(opts: {
-  since: DateTime
-  until: DateTime
-  resolution: TrafficResolution
-  resolutionSeconds: number
-  scope: TrafficScope
-  limit: number
-  by: TopTrafficRank
-  collectorId?: number
-}): Promise<TopDevicesHistory> {
-  const { since, until, resolutionSeconds, scope, limit, by, collectorId } = opts
+async function queryTopDevicesHistoryUncached(opts: TopTrafficOptions): Promise<TopDevicesHistory> {
+  const { since, until, scope, limit, by, collectorId } = opts
   const cols = scopeColumns(scope)
-  const sinceSql = since.toFormat('yyyy-MM-dd HH:mm:ss')
-  const untilSql = until.toFormat('yyyy-MM-dd HH:mm:ss')
+  const sinceSql = since.toUTC().toFormat('yyyy-MM-dd HH:mm:ss')
+  const untilSql = until.toUTC().toFormat('yyyy-MM-dd HH:mm:ss')
 
-  // ── 1. Ranking: per-MAC window totals on the aggregate tier ──
-  const aggTier = pickAggregateTier(since, until)
-  const aggTable = aggTier ? aggTier.trafficTable : 'device_traffic_buckets'
-  const aggTimeCol = aggTier ? aggTier.timeColumn : 'bucket_start'
-  const rankWhere = [`b.${aggTimeCol} >= ?`, `b.${aggTimeCol} < ?`]
-  const rankBindings: Array<string | number> = [sinceSql, untilSql]
-  if (collectorId) {
-    rankWhere.push('b.collector_id = ?')
-    rankBindings.push(collectorId)
+  // An explicit `resolution=` is the width wanted (it may be finer than the
+  // Settings → Charts floor, as the device charts always allowed); without
+  // one the floor applies. The point cap holds either way.
+  const pollSeconds = await pollIntervalSeconds(collectorId)
+  const plan = await planWindowSeries({
+    sinceSec: Math.floor(since.toSeconds()),
+    untilSec: Math.floor(until.toSeconds()),
+    nowSec: Math.floor(Date.now() / 1000),
+    tiers: trafficSeriesTiers(pollSeconds),
+    pollSeconds,
+    floorSeconds: opts.requestedSeconds ?? opts.settings.minBucketSeconds,
+    maxPoints: opts.settings.maxPoints,
+  })
+  const meta = {
+    bucketSeconds: plan.bucketSeconds,
+    resolution: bucketLabel(plan.bucketSeconds),
+    resolutionSeconds: plan.bucketSeconds,
+    source: plan.tier.source,
+    floorSeconds: opts.settings.minBucketSeconds,
+    maxPoints: opts.settings.maxPoints,
   }
-  const rankRows = rawRows<RankRow>(
-    await db.rawQuery(
-      `
-        SELECT b.mac AS mac, SUM(${cols.bytesIn}) AS bytesIn, SUM(${cols.bytesOut}) AS bytesOut
-        FROM ${aggTable} b
-        WHERE ${rankWhere.join(' AND ')}
-        GROUP BY b.mac
+  const slots = denseSlots(plan)
+
+  // ── 1. Ranking: per-MAC totals over the series' own tier and range ──
+  const timeCol = `t.${plan.tier.timeColumn}`
+  const where: string[] = []
+  const bindings: Array<string | number> = []
+  if (collectorId) {
+    where.push('t.collector_id = ?')
+    bindings.push(collectorId)
+  }
+  const rankRows =
+    slots.length === 0
+      ? []
+      : rawRows<RankRow>(
+          await db.rawQuery(
+            `
+        SELECT t.mac AS mac, SUM(t.${cols.bytesIn}) AS bytesIn, SUM(t.${cols.bytesOut}) AS bytesOut
+        FROM ${plan.tier.table} t
+        WHERE ${[...where, `${timeCol} >= ?`, `${timeCol} < ?`].join(' AND ')}
+        GROUP BY t.mac
       `,
-      rankBindings
-    )
-  )
+            [...bindings, seriesSinceSql(plan, sinceSql), seriesUntilSql(plan, untilSql)]
+          )
+        )
+  // Ties break on the MAC so the set and its order never flip between
+  // refreshes of equal totals.
   const ranked = rankRows
     .map((row) => ({
       mac: row.mac,
@@ -163,62 +218,51 @@ async function queryTopDevicesHistoryUncached(opts: {
     bytesOut: restRows.reduce((sum, row) => sum + row.bytesOut, 0),
   }
 
-  if (top.length === 0) return { devices: [], rest, buckets: [] }
+  if (top.length === 0) {
+    // Still every bucket of the window, all zero: the chart keeps its axis.
+    return {
+      ...meta,
+      devices: [],
+      rest,
+      buckets: slots.map((slot) => ({
+        bucketStart: slot.bucketStart,
+        bucketEnd: slot.bucketEnd,
+        seconds: slot.seconds,
+        devices: {},
+        rest: zeroPoint(),
+      })),
+    }
+  }
 
   // ── 2. Series: per-bucket SUM with non-top MACs folded into one key ──
-  const tier = pickSeriesTier(resolutionSeconds, since, until)
-  const table = tier ? tier.trafficTable : 'device_traffic_buckets'
-  const timeCol = tier ? `b.${tier.timeColumn}` : 'b.bucket_start'
-  const bareGroup = tier !== null && resolutionSeconds === tier.grainSeconds
-  const bindings: Array<string | number> = []
-  let bucketSelect: string
-  let groupByBucket: string
-  if (bareGroup) {
-    bucketSelect = `${timeCol} AS bucketStart`
-    groupByBucket = timeCol
-  } else {
-    bucketSelect = `FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(${timeCol}) / ?) * ?) AS bucketStart`
-    groupByBucket = 'bucketStart'
-    bindings.push(resolutionSeconds, resolutionSeconds)
-  }
   const macPlaceholders = top.map(() => '?').join(', ')
-  bindings.push(...top.map((row) => row.mac))
-  const where = [`${timeCol} >= ?`, `${timeCol} < ?`]
-  bindings.push(sinceSql, untilSql)
-  if (collectorId) {
-    where.push('b.collector_id = ?')
-    bindings.push(collectorId)
-  }
-  const seriesRows = rawRows<SeriesRow>(
-    await db.rawQuery(
-      `
-        SELECT
-          ${bucketSelect},
-          CASE WHEN b.mac IN (${macPlaceholders}) THEN b.mac ELSE '' END AS k,
-          SUM(${cols.bytesIn})  AS bytesIn,
-          SUM(${cols.bytesOut}) AS bytesOut
-        FROM ${table} b
-        WHERE ${where.join(' AND ')}
-        GROUP BY ${groupByBucket}, k
-        ORDER BY bucketStart ASC
-      `,
-      bindings
-    )
-  )
+  const sums = await querySeriesKeyedSums({
+    plan,
+    sinceSql,
+    untilSql,
+    columns: [cols.bytesIn, cols.bytesOut],
+    keyExpr: `CASE WHEN t.mac IN (${macPlaceholders}) THEN t.mac ELSE '${REST_KEY}' END`,
+    keyBindings: top.map((row) => row.mac),
+    where,
+    bindings,
+  })
 
-  const buckets = new Map<string, TopTrafficBucket>()
-  for (const row of seriesRows) {
-    const bucketStart = toIso(row.bucketStart)
-    if (!bucketStart) continue
-    let bucket = buckets.get(bucketStart)
-    if (!bucket) {
-      bucket = { bucketStart, devices: {}, rest: zeroPoint() }
-      buckets.set(bucketStart, bucket)
+  const buckets: TopTrafficBucket[] = slots.map((slot) => {
+    const byKey = sums.get(slot.index)
+    const devices: Record<string, TopTrafficPoint> = {}
+    for (const row of top) {
+      const v = byKey?.get(row.mac)
+      devices[row.mac] = toPoint(v?.[0] ?? 0, v?.[1] ?? 0, slot.seconds)
     }
-    const point = toPoint(toNumber(row.bytesIn), toNumber(row.bytesOut), resolutionSeconds)
-    if (row.k === REST_KEY) bucket.rest = point
-    else bucket.devices[row.k] = point
-  }
+    const r = byKey?.get(REST_KEY)
+    return {
+      bucketStart: slot.bucketStart,
+      bucketEnd: slot.bucketEnd,
+      seconds: slot.seconds,
+      devices,
+      rest: toPoint(r?.[0] ?? 0, r?.[1] ?? 0, slot.seconds),
+    }
+  })
 
   // ── 3. Names for the legend: identity table, hostname sources, labels ──
   const identityRows = rawRows<IdentityRow>(
@@ -262,20 +306,15 @@ async function queryTopDevicesHistoryUncached(opts: {
     }
   })
 
-  return { devices, rest, buckets: [...buckets.values()] }
+  return { ...meta, devices, rest, buckets }
 }
 
 function zeroPoint(): TopTrafficPoint {
   return { bytesIn: 0, bytesOut: 0, mbpsIn: 0, mbpsOut: 0 }
 }
 
-function toPoint(bytesIn: number, bytesOut: number, resolutionSeconds: number): TopTrafficPoint {
-  return {
-    bytesIn,
-    bytesOut,
-    mbpsIn: (bytesIn * 8) / resolutionSeconds / 1_000_000,
-    mbpsOut: (bytesOut * 8) / resolutionSeconds / 1_000_000,
-  }
+function toPoint(bytesIn: number, bytesOut: number, seconds: number): TopTrafficPoint {
+  return { bytesIn, bytesOut, mbpsIn: mbps(bytesIn, seconds), mbpsOut: mbps(bytesOut, seconds) }
 }
 
 function parseIps(raw: string | null): string[] {
@@ -298,11 +337,4 @@ function toNumber(value: bigint | number | string | null | undefined): number {
   if (value === null || value === undefined) return 0
   const n = Number(value)
   return Number.isFinite(n) ? n : 0
-}
-
-function toIso(value: Date | string | null | undefined): string | null {
-  if (value === null || value === undefined) return null
-  if (value instanceof Date) return DateTime.fromJSDate(value, { zone: 'utc' }).toISO()
-  const parsed = DateTime.fromSQL(value, { zone: 'utc' })
-  return parsed.isValid ? parsed.toISO() : DateTime.fromISO(value, { zone: 'utc' }).toISO()
 }

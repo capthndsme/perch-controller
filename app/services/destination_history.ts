@@ -2,7 +2,7 @@ import { UNKNOWN_ORG, enrichIp, type AsnInfo } from '#services/asn_enrichment'
 import { UNKNOWN_CATEGORY } from '#services/protocol_categories'
 import { cacheKey, cachedQuery, windowCache } from '#services/query_cache'
 import type { ChartSettings } from '#services/chart_settings'
-import { HOURLY_ROLLUP_SECONDS, windowSpanSeconds } from '#services/rollup_tiers'
+import { HOURLY_ROLLUP_SECONDS, coveredFrom, windowSpanSeconds } from '#services/rollup_tiers'
 import {
   bucketLabel,
   cacheResolutionFor,
@@ -89,6 +89,8 @@ export type DestinationCategoryEntry = {
 }
 
 export type DestinationsSummary = {
+  /** Start of the hour rows read (`coveredFrom`): the hour that holds `from`. */
+  coveredFrom: string
   totalBytes: number
   totalBytesIn: number
   totalBytesOut: number
@@ -226,8 +228,10 @@ async function queryDestinationsSummaryUncached(opts: {
   mac?: string
   limit: number
 }): Promise<DestinationsSummary> {
+  // Hourly rows only: from the hour that holds the window start.
+  const from = coveredFrom(opts.since.toUTC(), HOURLY_ROLLUP_SECONDS)
   const where: string[] = ['d.hour_start >= ?', 'd.hour_start < ?']
-  const bindings: Array<string | number> = [sql(opts.since), sql(opts.until)]
+  const bindings: Array<string | number> = [sql(from), sql(opts.until)]
   if (opts.collectorId) {
     where.push('d.collector_id = ?')
     bindings.push(opts.collectorId)
@@ -411,7 +415,15 @@ async function queryDestinationsSummaryUncached(opts: {
     }))
     .sort((a, b) => b.totalBytes - a.totalBytes || a.category.localeCompare(b.category))
 
-  return { totalBytes, totalBytesIn, totalBytesOut, destinations, domains, categories }
+  return {
+    coveredFrom: from.toISO()!,
+    totalBytes,
+    totalBytesIn,
+    totalBytesOut,
+    destinations,
+    domains,
+    categories,
+  }
 }
 
 /**

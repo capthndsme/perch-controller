@@ -348,3 +348,53 @@ export function absoluteWindow(fromMs: number, toMs: number): TimeWindow {
     to: new Date(toSec).toISOString(),
   }
 }
+
+/** The window a series response says it read (`from` / `to`, UTC ISO). */
+export type ChartRange = { from?: string | null; to?: string | null }
+
+/**
+ * X-axis domain of a time chart: the window the API read, so a quiet start
+ * or end of the window stays on the axis instead of the axis shrinking to
+ * the first and last point. Falls back to the data's extent when the
+ * response names no window.
+ */
+export function chartTimeDomain(
+  points: ReadonlyArray<{ ts: number }>,
+  range?: ChartRange,
+): { domain: [number, number] | ['auto', 'auto']; spanSeconds: number } {
+  const from = range?.from ? Date.parse(range.from) : Number.NaN
+  const to = range?.to ? Date.parse(range.to) : Number.NaN
+  if (Number.isFinite(from) && Number.isFinite(to) && to > from) {
+    return { domain: [from, to], spanSeconds: (to - from) / 1000 }
+  }
+  if (points.length === 0) return { domain: ['auto', 'auto'], spanSeconds: 0 }
+  const min = points[0].ts
+  const max = points[points.length - 1].ts
+  return { domain: [min, max], spanSeconds: (max - min) / 1000 }
+}
+
+/**
+ * For series whose missing bucket means "not reported" rather than zero
+ * (client counts, signal, gateway gauges): insert a row with every value
+ * `null` into each gap longer than `maxGapMs`, so a line breaks there instead
+ * of bridging it (Recharts breaks at an explicit null when `connectNulls` is
+ * off). `stepMs` places the null right after the last reported bucket.
+ */
+export function breakGaps<T extends { ts: number }>(
+  points: readonly T[],
+  stepMs: number,
+  maxGapMs = stepMs * 2,
+): T[] {
+  if (points.length < 2 || !(stepMs > 0)) return [...points]
+  const out: T[] = [points[0]]
+  for (let i = 1; i < points.length; i += 1) {
+    const prev = points[i - 1]
+    if (points[i].ts - prev.ts > maxGapMs) {
+      const gap: Record<string, unknown> = { ts: prev.ts + stepMs }
+      for (const key of Object.keys(prev)) if (key !== 'ts') gap[key] = null
+      out.push(gap as T)
+    }
+    out.push(points[i])
+  }
+  return out
+}

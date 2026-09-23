@@ -4,9 +4,29 @@ import type { ProtocolBreakdown, ProtocolTimeSeriesPoint } from '@/types/api'
 export type ProtocolStackPoint = {
   /** Epoch ms of the bucket start — used as the X-axis numeric key. */
   ts: number
-  /** Total bytes (in + out) per protocol for tooltip display. */
+  /** Total bytes (in + out) per chart key for tooltip display. */
   bytesByProtocol: Record<string, number>
-  [protocol: string]: number | Record<string, number>
+  /** Mbps per chart key (`protocolChartKey`), every key present. */
+  [key: string]: number | Record<string, number>
+}
+
+/** One stacked series: the protocol (or category) and its chart key. */
+export type ProtocolStackSeries = {
+  /** Safe as a Recharts dataKey and a CSS custom property name. */
+  key: string
+  /** The protocol or category slug it stands for (`other` = the rest). */
+  name: string
+  label: string
+  color: string
+}
+
+/**
+ * Chart key of a protocol or category. nDPI names may carry dots or spaces
+ * (`Z39.50`): as a Recharts dataKey a dot is a path separator (the series
+ * read undefined and vanished) and neither is valid in `--color-<key>`.
+ */
+export function protocolChartKey(name: string): string {
+  return `p_${name.replace(/[^a-zA-Z0-9_-]/g, '_')}`
 }
 
 const PROTOCOL_LABELS: Record<string, string> = {
@@ -149,9 +169,18 @@ export function topProtocols(
   protocols: ProtocolBreakdown[],
   limit = 8,
 ): ProtocolBreakdown[] {
+  // Equal totals by name, so the chart's set never flips between refreshes.
   return [...protocols]
-    .sort((a, b) => protocolTotalBytes(b) - protocolTotalBytes(a))
+    .sort(
+      (a, b) =>
+        protocolTotalBytes(b) - protocolTotalBytes(a) || a.protocol.localeCompare(b.protocol),
+    )
     .slice(0, limit)
+}
+
+/** A well-known protocol's own colour slot, if it has one. */
+export function protocolPinnedSlot(protocol: string): number | undefined {
+  return PINNED_SLOTS[protocol]
 }
 
 export function protocolColor(protocol: string): string {
@@ -178,53 +207,54 @@ export function buildProtocolChartConfig(protocols: string[]): ChartConfig {
 }
 
 /**
- * Fold protocol time-series buckets into stacked chart points. Shows the
- * top N protocols individually; everything else rolls into `other`.
+ * Fold protocol time-series buckets into stacked chart points: the named
+ * protocols individually, everything else into `other`.
  *
- * Each point keeps `ts` as the epoch ms of the bucket so the chart can
- * use a true numeric/time X-axis (needed for drag-to-zoom math and for
- * a consistent tick formatter across short and long windows).
+ * Every point carries every series, zero where the protocol was quiet. A
+ * missing value is a break point in a Recharts stacked area: before this, a
+ * protocol absent from a bucket dropped out of the stack there, and one seen
+ * in two buckets of 288 (a speed test) drew nothing at all while sitting in
+ * the legend. Rates are over each bucket's own `seconds` (the partial first
+ * bucket and the live last one), `fallbackSeconds` for older responses.
+ *
+ * Each point keeps `ts` as the epoch ms of the bucket so the chart can use a
+ * true numeric/time X-axis (drag-to-zoom, consistent ticks).
  */
 export function protocolTimeSeriesToChartPoints(
   timeSeries: ProtocolTimeSeriesPoint[],
   topProtocolNames: string[],
-  resolutionSeconds: number,
+  fallbackSeconds: number,
+  withOther = true,
 ): ProtocolStackPoint[] {
   const top = new Set(topProtocolNames)
+  const keys = topProtocolNames.map((name) => [name, protocolChartKey(name)] as const)
+  const otherKey = protocolChartKey('other')
 
-  return timeSeries
-    .map((bucket) => {
-      const ts = Date.parse(bucket.bucketStart)
-      if (Number.isNaN(ts)) return null
+  const points: ProtocolStackPoint[] = []
+  for (const bucket of timeSeries) {
+    const ts = Date.parse(bucket.bucketStart)
+    if (Number.isNaN(ts)) continue
+    const seconds = bucket.seconds && bucket.seconds > 0 ? bucket.seconds : fallbackSeconds
 
-      const bytesByProtocol: Record<string, number> = {}
-      let otherBytes = 0
-
-      for (const [protocol, stats] of Object.entries(bucket.protocols)) {
-        const total = stats.bytesIn + stats.bytesOut
-        if (top.has(protocol)) {
-          bytesByProtocol[protocol] = total
-        } else {
-          otherBytes += total
-        }
+    const bytesByProtocol: Record<string, number> = {}
+    for (const [, key] of keys) bytesByProtocol[key] = 0
+    if (withOther) bytesByProtocol[otherKey] = 0
+    for (const [protocol, stats] of Object.entries(bucket.protocols)) {
+      const total = stats.bytesIn + stats.bytesOut
+      if (top.has(protocol)) {
+        bytesByProtocol[protocolChartKey(protocol)] += total
+      } else if (withOther) {
+        bytesByProtocol[otherKey] += total
       }
+    }
 
-      if (otherBytes > 0) {
-        bytesByProtocol.other = otherBytes
-      }
-
-      const point: ProtocolStackPoint = {
-        ts,
-        bytesByProtocol,
-      }
-
-      for (const [protocol, bytes] of Object.entries(bytesByProtocol)) {
-        point[protocol] = (bytes * 8) / resolutionSeconds / 1_000_000
-      }
-
-      return point
-    })
-    .filter((p): p is ProtocolStackPoint => p !== null)
+    const point: ProtocolStackPoint = { ts, bytesByProtocol }
+    for (const [key, bytes] of Object.entries(bytesByProtocol)) {
+      point[key] = (bytes * 8) / seconds / 1_000_000
+    }
+    points.push(point)
+  }
+  return points
 }
 
 export function chartProtocolsFromBreakdown(

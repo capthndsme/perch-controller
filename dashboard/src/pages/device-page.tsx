@@ -23,6 +23,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { KpiTile } from '@/components/ui/kpi-tile'
 import { Panel } from '@/components/ui/panel'
 import { ShareBar } from '@/components/ui/share-bar'
+import { DeviceUsageCard } from '@/components/usage/device-usage-card'
 import { useDashboardScope, useDashboardTime } from '@/hooks/use-dashboard-time'
 import { useDeviceLabel } from '@/hooks/use-device-labels'
 import { useDeviceOverview, useDevicePresence, useDeviceProtocols, useDeviceTraffic } from '@/hooks/use-devices'
@@ -306,6 +307,7 @@ export function DevicePage() {
           ) : (
             <BandwidthChart
               data={chartData}
+              range={overview.data?.traffic}
               showOverlay={isOverlay}
               showWifiOverlay={hasWifiOverlay && showWifiPhyOverlay}
               className="h-[300px] w-full"
@@ -416,6 +418,8 @@ export function DevicePage() {
           <DeviceReservationCard mac={mac ?? ''} />
         </div>
       </div>
+
+      <DeviceUsageCard mac={mac} pageWindow={window} onPageWindow={setWindow} />
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Panel
@@ -561,6 +565,8 @@ export function DevicePage() {
             ) : (
               <SignalChart
                 data={signalChartData}
+                range={wifiSignal.data}
+                stepSeconds={wifiSignal.data?.resolutionSeconds}
                 className="h-[220px] w-full"
                 onZoom={setWindow}
                 onResetZoom={() => setWindow(DEFAULT_DEVICE_WINDOW)}

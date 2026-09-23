@@ -19,6 +19,13 @@ import { DateTime } from 'luxon'
  * Source tier: hourly rollups up to `DAILY_SOURCE_AFTER_DAYS`, the daily
  * rollups beyond that (their UTC day boundaries then stand in for local
  * ones, which is fine at week / month grain).
+ *
+ * Per device (`mac`): the same buckets, source rules and alignment, read
+ * from that MAC's rows only (the `(mac, time)` index on each rollup table).
+ * `scope` still picks the byte columns; protocols have no WAN / LAN split
+ * in any rollup, so they are the device's totals, as for the whole network.
+ * The network-wide columns make no sense for one device: `activeDevices`
+ * and `wifiClients` are `null` then, and the Wi-Fi totals are not read.
  */
 
 export type UsagePeriod = 'day' | 'week' | 'month'
@@ -70,8 +77,10 @@ export type UsageBucket = {
   bytesOut: number
   totalBytes: number
   avgMbps: number
-  activeDevices: number
-  wifiClients: UsageWifiClients
+  /** Distinct MACs with traffic; `null` for a per-device report. */
+  activeDevices: number | null
+  /** `null` for a per-device report. */
+  wifiClients: UsageWifiClients | null
   protocols: UsageProtocol[]
   otherProtocols: UsageOtherProtocols
   categories: UsageCategory[]
@@ -90,13 +99,16 @@ export type UsageIntervalBucket = {
   bytesOut: number
   totalBytes: number
   avgMbps: number
-  activeDevices: number
+  /** Distinct MACs with traffic; `null` for a per-device report. */
+  activeDevices: number | null
 }
 
 export type UsageIntervalsReport = {
   from: string
   to: string
   scope: UsageScope
+  /** Present only on a per-device report. */
+  mac?: string
   timezone: string
   offsetMinutes: number
   intervalSeconds: UsageIntervalSeconds
@@ -108,6 +120,8 @@ export type UsageReport = {
   from: string
   to: string
   scope: UsageScope
+  /** Present only on a per-device report. */
+  mac?: string
   timezone: string
   offsetMinutes: number
   source: UsageSource
@@ -185,6 +199,8 @@ export async function queryUsageReport(opts: {
   until: DateTime
   scope: UsageScope
   collectorId?: number
+  /** Normalised lower-case colon form; limits the report to this device. */
+  mac?: string
   protocolsLimit: number
   now?: DateTime
 }): Promise<UsageReport> {
@@ -199,6 +215,7 @@ export async function queryUsageReport(opts: {
       opts.scope,
       opts.collectorId ?? '',
       opts.protocolsLimit,
+      opts.mac ?? '',
     ]),
     ttlMs,
     () => queryUsageReportUncached({ ...opts, tz })
@@ -211,11 +228,13 @@ async function queryUsageReportUncached(opts: {
   until: DateTime
   scope: UsageScope
   collectorId?: number
+  mac?: string
   protocolsLimit: number
   now?: DateTime
   tz: string
 }): Promise<UsageReport> {
   const { period, tz } = opts
+  const mac = opts.mac
   const unit = PERIOD_UNIT[period]
   const now = (opts.now ?? DateTime.utc()).setZone(tz)
   const sinceLocal = opts.since.setZone(tz).startOf(unit)
@@ -243,8 +262,8 @@ async function queryUsageReportUncached(opts: {
       bytesOut: 0,
       totalBytes: 0,
       avgMbps: 0,
-      activeDevices: 0,
-      wifiClients: { avg: null, max: null, peakAt: null },
+      activeDevices: mac ? null : 0,
+      wifiClients: mac ? null : { avg: null, max: null, peakAt: null },
       protocols: [],
       otherProtocols: null,
       categories: [],
@@ -271,12 +290,21 @@ async function queryUsageReportUncached(opts: {
 
   const where: string[] = [`b.${timeCol} >= ?`, `b.${timeCol} < ?`]
   const bindings: Array<string | number> = [sinceSql, untilSql]
+  if (mac) {
+    // Equality on the leading column of the `(mac, time)` index.
+    where.unshift('b.mac = ?')
+    bindings.unshift(mac)
+  }
   if (opts.collectorId) {
     where.push('b.collector_id = ?')
     bindings.push(opts.collectorId)
   }
   const whereSql = where.join(' AND ')
   const key = keyExpr(period, `b.${timeCol}`, offsetSeconds)
+  // One device: the network-wide count is meaningless, so it is not read.
+  const activeDevicesCol = mac ? '' : ', COUNT(DISTINCT b.mac) AS activeDevices'
+  const trafficFrom = fromTable(trafficTable, mac)
+  const protocolFrom = fromTable(protocolTable, mac)
 
   const categories = await getProtocolCategoryMap()
 
@@ -285,27 +313,28 @@ async function queryUsageReportUncached(opts: {
       k: string
       bytesIn: bigint | number | string
       bytesOut: bigint | number | string
-      activeDevices: bigint | number | string
+      activeDevices?: bigint | number | string
     }>(
       await db.rawQuery(
         `
         SELECT ${key} AS k,
                SUM(b.${colIn})       AS bytesIn,
-               SUM(b.${colOut})      AS bytesOut,
-               COUNT(DISTINCT b.mac) AS activeDevices
-        FROM ${trafficTable} b
+               SUM(b.${colOut})      AS bytesOut${activeDevicesCol}
+        FROM ${trafficFrom}
         WHERE ${whereSql}
         GROUP BY k
       `,
         bindings
       )
     ),
-    rawRows<{ activeDevices: bigint | number | string }>(
-      await db.rawQuery(
-        `SELECT COUNT(DISTINCT b.mac) AS activeDevices FROM ${trafficTable} b WHERE ${whereSql}`,
-        bindings
-      )
-    ),
+    mac
+      ? []
+      : rawRows<{ activeDevices: bigint | number | string }>(
+          await db.rawQuery(
+            `SELECT COUNT(DISTINCT b.mac) AS activeDevices FROM ${trafficTable} b WHERE ${whereSql}`,
+            bindings
+          )
+        ),
     rawRows<{
       k: string
       protocol: string
@@ -318,15 +347,15 @@ async function queryUsageReportUncached(opts: {
                b.protocol       AS protocol,
                SUM(b.bytes_in)  AS bytesIn,
                SUM(b.bytes_out) AS bytesOut
-        FROM ${protocolTable} b
+        FROM ${protocolFrom}
         WHERE ${whereSql}
         GROUP BY k, b.protocol
       `,
         bindings
       )
     ),
-    queryWifiClients(period, sinceSql, untilSql, offsetSeconds, spanDays, true),
-    queryWifiClients(period, sinceSql, untilSql, offsetSeconds, spanDays, false),
+    mac ? [] : queryWifiClients(period, sinceSql, untilSql, offsetSeconds, spanDays, true),
+    mac ? [] : queryWifiClients(period, sinceSql, untilSql, offsetSeconds, spanDays, false),
   ])
 
   for (const row of trafficRows) {
@@ -334,7 +363,9 @@ async function queryUsageReportUncached(opts: {
     if (!bucket) continue
     bucket.bytesIn += n(row.bytesIn)
     bucket.bytesOut += n(row.bytesOut)
-    bucket.activeDevices = Math.max(bucket.activeDevices, n(row.activeDevices))
+    if (bucket.activeDevices !== null) {
+      bucket.activeDevices = Math.max(bucket.activeDevices, n(row.activeDevices))
+    }
   }
 
   const protocolsByBucket = new Map<
@@ -387,12 +418,14 @@ async function queryUsageReportUncached(opts: {
     bytesOut: totalBytesOut,
     totalBytes: totalBytesIn + totalBytesOut,
     avgMbps: avgMbps(totalBytesIn + totalBytesOut, totalSeconds),
-    activeDevices: n(deviceRows[0]?.activeDevices),
-    wifiClients: {
-      avg: wifiTotal && wifiTotal.avg !== null ? Math.round(n(wifiTotal.avg) * 10) / 10 : null,
-      max: wifiTotal && wifiTotal.max !== null ? n(wifiTotal.max) : null,
-      peakAt: toIso(wifiTotal?.peakAt),
-    },
+    activeDevices: mac ? null : n(deviceRows[0]?.activeDevices),
+    wifiClients: mac
+      ? null
+      : {
+          avg: wifiTotal && wifiTotal.avg !== null ? Math.round(n(wifiTotal.avg) * 10) / 10 : null,
+          max: wifiTotal && wifiTotal.max !== null ? n(wifiTotal.max) : null,
+          peakAt: toIso(wifiTotal?.peakAt),
+        },
     protocols: totalSplit.protocols,
     otherProtocols: totalSplit.other,
     categories: categorySplit(protocolsAll, categories),
@@ -403,6 +436,7 @@ async function queryUsageReportUncached(opts: {
     from: sinceLocal.toUTC().toISO()!,
     to: untilLocal.toUTC().toISO()!,
     scope: opts.scope,
+    ...(mac ? { mac } : {}),
     timezone: tz,
     offsetMinutes,
     source,
@@ -410,6 +444,17 @@ async function queryUsageReportUncached(opts: {
     buckets,
     totals,
   }
+}
+
+/**
+ * `FROM` clause for a rollup table aliased `b`. Per device it pins the
+ * table's `<table>_mac_time_idx` (`mac`, time): on a small table MariaDB
+ * otherwise full-scans for a device that owns a large share of the rows
+ * (live, 2026-09-24: the busiest device is 8 % of the daily protocol rows),
+ * and the index is never worse for one MAC over a time range.
+ */
+function fromTable(table: string, mac: string | undefined): string {
+  return mac ? `${table} b FORCE INDEX (${table}_mac_time_idx)` : `${table} b`
 }
 
 type WifiRow = {
@@ -546,9 +591,12 @@ export async function queryUsageIntervals(opts: {
   until: DateTime
   scope: UsageScope
   collectorId?: number
+  /** Normalised lower-case colon form; limits the report to this device. */
+  mac?: string
   intervalSeconds: UsageIntervalSeconds
   now?: DateTime
 }): Promise<UsageIntervalsReport> {
+  const mac = opts.mac
   const tz = await instanceTimezone()
   const { ttlMs, segment } = windowCache(null, opts.since, opts.until, Date.now())
   return cachedQuery(
@@ -559,6 +607,7 @@ export async function queryUsageIntervals(opts: {
       opts.scope,
       opts.collectorId ?? '',
       opts.intervalSeconds,
+      mac ?? '',
     ]),
     ttlMs,
     async () => {
@@ -591,7 +640,7 @@ export async function queryUsageIntervals(opts: {
           bytesOut: 0,
           totalBytes: 0,
           avgMbps: 0,
-          activeDevices: 0,
+          activeDevices: mac ? null : 0,
         })
       }
       if (buckets.length === 0) {
@@ -599,6 +648,7 @@ export async function queryUsageIntervals(opts: {
           from: opts.since.toUTC().toISO()!,
           to: until.toUTC().toISO()!,
           scope: opts.scope,
+          ...(mac ? { mac } : {}),
           timezone: tz,
           offsetMinutes,
           intervalSeconds: interval,
@@ -612,23 +662,27 @@ export async function queryUsageIntervals(opts: {
         sql(DateTime.fromSeconds(firstKey * interval - off, { zone: 'utc' })),
         sql(until),
       ]
+      if (mac) {
+        where.unshift('b.mac = ?')
+        bindings.unshift(mac)
+      }
       if (opts.collectorId) {
         where.push('b.collector_id = ?')
         bindings.push(opts.collectorId)
       }
+      const activeDevicesCol = mac ? '' : ', COUNT(DISTINCT b.mac) AS activeDevices'
       const rows = rawRows<{
         k: bigint | number | string
         bytesIn: bigint | number | string
         bytesOut: bigint | number | string
-        activeDevices: bigint | number | string
+        activeDevices?: bigint | number | string
       }>(
         await db.rawQuery(
           `
           SELECT FLOOR((TO_SECONDS(b.hour_start) - ${TO_SECONDS_EPOCH} + ${Math.trunc(off)}) / ${interval}) AS k,
                  SUM(b.bytes_in${suffix})  AS bytesIn,
-                 SUM(b.bytes_out${suffix}) AS bytesOut,
-                 COUNT(DISTINCT b.mac)     AS activeDevices
-          FROM device_traffic_buckets_hourly b
+                 SUM(b.bytes_out${suffix}) AS bytesOut${activeDevicesCol}
+          FROM ${fromTable('device_traffic_buckets_hourly', mac)}
           WHERE ${where.join(' AND ')}
           GROUP BY k
         `,
@@ -641,7 +695,9 @@ export async function queryUsageIntervals(opts: {
         const bucket = buckets[i]
         bucket.bytesIn += n(row.bytesIn)
         bucket.bytesOut += n(row.bytesOut)
-        bucket.activeDevices = Math.max(bucket.activeDevices, n(row.activeDevices))
+        if (bucket.activeDevices !== null) {
+          bucket.activeDevices = Math.max(bucket.activeDevices, n(row.activeDevices))
+        }
       }
       for (const bucket of buckets) {
         bucket.totalBytes = bucket.bytesIn + bucket.bytesOut
@@ -651,6 +707,7 @@ export async function queryUsageIntervals(opts: {
         from: buckets[0].bucketStart,
         to: until.toUTC().toISO()!,
         scope: opts.scope,
+        ...(mac ? { mac } : {}),
         timezone: tz,
         offsetMinutes,
         intervalSeconds: interval,

@@ -1,5 +1,5 @@
 import { enrichIp, type AsnInfo } from '#services/asn_enrichment'
-import { HOURLY_ROLLUP_SECONDS, PROTOCOL_NATIVE_GRAIN_SECONDS } from '#services/bucket_writer'
+import { PROTOCOL_NATIVE_GRAIN_SECONDS } from '#services/bucket_writer'
 import {
   getDeviceLabels,
   normalizeMac,
@@ -12,12 +12,32 @@ import {
   queryTrafficSeenAt,
   queryGatewaySeenAt,
 } from '#services/device_presence_query'
+import { getChartSettings, type ChartSettings } from '#services/chart_settings'
 import { getHostnameMatches } from '#services/hostname_enrichment'
 import { loadDeviceAttachments } from '#services/infra_topology'
 import { getPresenceSettings } from '#services/presence_settings'
 import { categoryFor, getProtocolCategoryMap } from '#services/protocol_categories'
 import { cacheKey, cachedQuery, windowCache } from '#services/query_cache'
-import { pickAggregateTier, pickSeriesTier, windowSpanSeconds } from '#services/rollup_tiers'
+import {
+  HOURLY_ROLLUP_SECONDS,
+  coveredFrom,
+  pickAggregateTier,
+  windowSpanSeconds,
+} from '#services/rollup_tiers'
+import {
+  bucketLabel,
+  cacheResolutionFor,
+  denseSlots,
+  estimateBucketSeconds,
+  mbps,
+  planWindowSeries,
+  pollIntervalSeconds,
+  protocolSeriesTiers,
+  querySeriesKeyedSums,
+  trafficSeriesTiers,
+  type SeriesSlot,
+  type SeriesSource,
+} from '#services/series_buckets'
 import { queryTopDevicesHistory } from '#services/top_devices_history'
 import { devicePresence } from '#services/wifi_presence'
 import { classifySignalQuality } from '#services/wifi_signal_quality'
@@ -45,13 +65,27 @@ import type { HttpContext } from '@adonisjs/core/http'
 import db from '@adonisjs/lucid/services/db'
 import { DateTime } from 'luxon'
 
+/** One dense bucket (per collector when not aggregated). */
 type TrafficBucketRow = {
   collectorId: number | null
-  bucketStart: Date | string
-  bytesIn: bigint | number | string
-  bytesOut: bigint | number | string
-  packetsIn: bigint | number | string
-  packetsOut: bigint | number | string
+  bucketStart: string
+  bucketEnd: string
+  /** Seconds of the bucket inside the window and not in the future. */
+  seconds: number
+  bytesIn: number
+  bytesOut: number
+  packetsIn: number
+  packetsOut: number
+}
+
+type TrafficSeries = {
+  bucketSeconds: number
+  resolution: string
+  resolutionSeconds: number
+  source: SeriesSource
+  floorSeconds: number
+  maxPoints: number
+  rows: TrafficBucketRow[]
 }
 
 /**
@@ -68,41 +102,37 @@ function scopeColumns(scope: TrafficScope): {
 } {
   if (scope === 'wan') {
     return {
-      bytesIn: 'b.bytes_in_wan',
-      bytesOut: 'b.bytes_out_wan',
-      packetsIn: 'b.packets_in_wan',
-      packetsOut: 'b.packets_out_wan',
+      bytesIn: 'bytes_in_wan',
+      bytesOut: 'bytes_out_wan',
+      packetsIn: 'packets_in_wan',
+      packetsOut: 'packets_out_wan',
     }
   }
   if (scope === 'lan') {
     return {
-      bytesIn: 'b.bytes_in_lan',
-      bytesOut: 'b.bytes_out_lan',
-      packetsIn: 'b.packets_in_lan',
-      packetsOut: 'b.packets_out_lan',
+      bytesIn: 'bytes_in_lan',
+      bytesOut: 'bytes_out_lan',
+      packetsIn: 'packets_in_lan',
+      packetsOut: 'packets_out_lan',
     }
   }
   return {
-    bytesIn: 'b.bytes_in',
-    bytesOut: 'b.bytes_out',
-    packetsIn: 'b.packets_in',
-    packetsOut: 'b.packets_out',
+    bytesIn: 'bytes_in',
+    bytesOut: 'bytes_out',
+    packetsIn: 'packets_in',
+    packetsOut: 'packets_out',
   }
 }
 
 /*
- * ── Rollup routing ──────────────────────────────────────────────────────
- * Wide-window reads switch from the native bucket tables to a rollup tier
- * (see bucket_writer's ROLLUP_TIERS). This collapses millions of native rows
- * into thousands of grain rows AND, when the requested grain equals the
- * tier's grain, lets the query GROUP BY a bare indexed column instead of a
- * derived FROM_UNIXTIME(FLOOR()) expression — dropping the "Using temporary;
- * Using filesort" the native path forces.
+ * ── Series routing ──────────────────────────────────────────────────────
+ * Every time series here (traffic, top talkers, protocols) is planned by
+ * `series_buckets.ts`: one bucket width and one stored tier per window
+ * (native, 5-minute, hourly, daily), every bucket returned with the seconds
+ * it covers. Window totals without a time grain (device list, protocol
+ * summary) still switch tiers on width alone (`pickAggregateTier`).
+ * `resolveResolution` below now only guards against absurd windows.
  */
-
-// `pickSeriesTier`, `useHourlyForAggregate`, and `windowSpanSeconds` live in
-// `#services/rollup_tiers` so the devices and wifi read paths share one
-// native-vs-rollup decision.
 
 const RESOLUTION_ORDER: TrafficResolution[] = ['5s', '15s', '1m', '5m', '15m', '1h', '1d']
 
@@ -182,18 +212,6 @@ function resolveResolution(
   return { resolution }
 }
 
-/**
- * Protocol series are stored at 1 m natively (`PROTOCOL_NATIVE_GRAIN_SECONDS`)
- * and are the highest-cardinality stream, so protocol reads never go finer
- * than 1 m and jump straight to the hourly tier once the window spans two
- * days — the 5-minute tier at 15 m over a week was a 17 s temp+filesort.
- */
-function protocolMinResolutionSeconds(since: DateTime, until: DateTime): number {
-  return windowSpanSeconds(since, until) >= 2 * 86400
-    ? HOURLY_ROLLUP_SECONDS
-    : PROTOCOL_NATIVE_GRAIN_SECONDS
-}
-
 type PeerRow = {
   collectorId: number
   peerIp: string
@@ -251,11 +269,19 @@ type ProtocolAggregateRow = {
   packetsOut: bigint | number | string
 }
 
-type ProtocolTimeSeriesRow = {
-  bucketStart: Date | string
-  protocol: string
-  bytesIn: bigint | number | string
-  bytesOut: bigint | number | string
+type ProtocolSeries = {
+  bucketSeconds: number
+  resolution: string
+  resolutionSeconds: number
+  source: SeriesSource
+  floorSeconds: number
+  maxPoints: number
+  buckets: Array<
+    SeriesSlot & {
+      /** protocol → [bytesIn, bytesOut, packetsIn, packetsOut]; only non-empty ones. */
+      protocols: Record<string, number[]>
+    }
+  >
 }
 
 type ProtocolBreakdownEntry = {
@@ -544,16 +570,15 @@ export default class DevicesController {
     const qs = await aggregateTrafficQueryValidator.validate(request.qs())
     const window = resolveTimeWindow(qs, '1h')
     if (window.error) return response.badRequest(window.error)
-    const resolved = resolveResolution(qs.resolution, '15s', window.since, window.until)
-    if (resolved.error) return response.badRequest(resolved.error)
-    const resolution = resolved.resolution
+    const guard = resolveResolution(qs.resolution, '15s', window.since, window.until)
+    if (guard.error) return response.badRequest(guard.error)
     const scope = qs.scope ?? 'all'
 
-    const resolutionSeconds = RESOLUTION_SECONDS[resolution]
-    const buckets = await queryTrafficBuckets({
+    const series = await queryTrafficBuckets({
       since: window.since,
       until: window.until,
-      resolution,
+      requestedSeconds: qs.resolution ? RESOLUTION_SECONDS[qs.resolution] : undefined,
+      settings: await getChartSettings(),
       collectorId: qs.collectorId,
       scope,
       aggregateCollectors: true,
@@ -563,11 +588,10 @@ export default class DevicesController {
       range: window.range,
       from: window.since.toISO(),
       to: window.until.toISO(),
-      resolution,
-      resolutionSeconds,
+      ...seriesMeta(series),
       scope,
-      summary: summarizeBuckets(buckets, resolutionSeconds, DateTime.utc()),
-      buckets: buckets.map((row) => toBucketRow(row, resolutionSeconds)),
+      summary: summarizeBuckets(series.rows, series.bucketSeconds),
+      buckets: series.rows.map(toBucketRow),
     })
   }
 
@@ -576,16 +600,16 @@ export default class DevicesController {
    *
    * The busiest N devices in the window as separate rate series plus every
    * other device folded into `rest` — the "who is eating the bandwidth"
-   * stack on the Devices page. Same grain clamping as `/traffic`.
+   * stack on the Devices page. Dense (`top_devices_history.ts`): every
+   * bucket of the window, `resolution` optional (the width wanted; omitted =
+   * Settings → Charts floor), coarsened to the point cap.
    */
   async topTraffic({ request, response, serialize }: HttpContext) {
     const qs = await topTrafficQueryValidator.validate(request.qs())
     const window = resolveTimeWindow(qs, '1h')
     if (window.error) return response.badRequest(window.error)
-    const resolved = resolveResolution(qs.resolution, '15s', window.since, window.until)
-    if (resolved.error) return response.badRequest(resolved.error)
-    const resolution = resolved.resolution
-    const resolutionSeconds = RESOLUTION_SECONDS[resolution]
+    const guard = resolveResolution(qs.resolution, '15s', window.since, window.until)
+    if (guard.error) return response.badRequest(guard.error)
     const scope = qs.scope ?? 'all'
     const limit = qs.limit ?? 5
     const by = qs.by ?? 'total'
@@ -593,8 +617,8 @@ export default class DevicesController {
     const history = await queryTopDevicesHistory({
       since: window.since,
       until: window.until,
-      resolution,
-      resolutionSeconds,
+      requestedSeconds: qs.resolution ? RESOLUTION_SECONDS[qs.resolution] : undefined,
+      settings: await getChartSettings(),
       scope,
       limit,
       by,
@@ -605,8 +629,6 @@ export default class DevicesController {
       range: window.range,
       from: window.since.toISO(),
       to: window.until.toISO(),
-      resolution,
-      resolutionSeconds,
       scope,
       limit,
       by,
@@ -618,23 +640,23 @@ export default class DevicesController {
     const qs = await trafficQueryValidator.validate(request.qs())
     const window = resolveTimeWindow(qs, '24h')
     if (window.error) return response.badRequest(window.error)
-    const resolved = resolveResolution(qs.resolution, '15s', window.since, window.until)
-    if (resolved.error) return response.badRequest(resolved.error)
-    const resolution = resolved.resolution
+    const guard = resolveResolution(qs.resolution, '15s', window.since, window.until)
+    if (guard.error) return response.badRequest(guard.error)
     const scope = qs.scope ?? 'all'
 
-    const resolutionSeconds = RESOLUTION_SECONDS[resolution]
-    const buckets = await queryTrafficBuckets({
+    const series = await queryTrafficBuckets({
       mac: params.mac,
       since: window.since,
       until: window.until,
-      resolution,
+      requestedSeconds: qs.resolution ? RESOLUTION_SECONDS[qs.resolution] : undefined,
+      settings: await getChartSettings(),
       collectorId: qs.collectorId,
       scope,
       aggregateCollectors: false,
     })
 
-    if (buckets.length === 0 && !(await macExists(params.mac))) {
+    const quiet = series.rows.every((row) => row.bytesIn + row.bytesOut === 0)
+    if (quiet && !(await macExists(params.mac))) {
       return response.notFound({
         error: 'mac_not_found',
         message: `No traffic ever recorded for MAC ${params.mac}.`,
@@ -646,10 +668,9 @@ export default class DevicesController {
       range: window.range,
       from: window.since.toISO(),
       to: window.until.toISO(),
-      resolution,
-      resolutionSeconds,
+      ...seriesMeta(series),
       scope,
-      buckets: buckets.map((row) => toBucketRow(row, resolutionSeconds)),
+      buckets: series.rows.map(toBucketRow),
     })
   }
 
@@ -675,25 +696,17 @@ export default class DevicesController {
     const qs = await protocolsQueryValidator.validate(request.qs())
     const window = resolveTimeWindow(qs, '1h')
     if (window.error) return response.badRequest(window.error)
-    const resolved = resolveResolution(
-      qs.resolution,
-      '1m',
-      window.since,
-      window.until,
-      protocolMinResolutionSeconds(window.since, window.until)
-    )
-    if (resolved.error) return response.badRequest(resolved.error)
-    const resolution = resolved.resolution
+    const guard = resolveResolution(qs.resolution, '1m', window.since, window.until)
+    if (guard.error) return response.badRequest(guard.error)
 
-    const resolutionSeconds = RESOLUTION_SECONDS[resolution]
-    // Only fetch the time series — the summary (total per protocol) is
-    // derived from the same data in buildProtocolsResponse, avoiding a
-    // second full scan of device_protocol_buckets.
-    const [seriesRows, categories] = await Promise.all([
+    // Only the time series is read; the per-protocol totals are summed from
+    // the same buckets in buildProtocolsResponse (no second scan).
+    const [series, categories] = await Promise.all([
       queryProtocolTimeSeries({
         since: window.since,
         until: window.until,
-        resolution,
+        requestedSeconds: qs.resolution ? RESOLUTION_SECONDS[qs.resolution] : undefined,
+        settings: await getChartSettings(),
         collectorId: qs.collectorId,
       }),
       getProtocolCategoryMap(),
@@ -705,10 +718,8 @@ export default class DevicesController {
         window.range,
         window.since,
         window.until,
-        resolution,
-        resolutionSeconds,
         null,
-        seriesRows,
+        series,
         categories
       )
     )
@@ -782,15 +793,8 @@ export default class DevicesController {
     const qs = await protocolsQueryValidator.validate(request.qs())
     const window = resolveTimeWindow(qs, '1h')
     if (window.error) return response.badRequest(window.error)
-    const resolved = resolveResolution(
-      qs.resolution,
-      '1m',
-      window.since,
-      window.until,
-      protocolMinResolutionSeconds(window.since, window.until)
-    )
-    if (resolved.error) return response.badRequest(resolved.error)
-    const resolution = resolved.resolution
+    const guard = resolveResolution(qs.resolution, '1m', window.since, window.until)
+    if (guard.error) return response.badRequest(guard.error)
 
     if (!(await macExists(params.mac))) {
       return response.notFound({
@@ -799,19 +803,15 @@ export default class DevicesController {
       })
     }
 
-    const resolutionSeconds = RESOLUTION_SECONDS[resolution]
-    const [summaryRows, seriesRows, categories] = await Promise.all([
-      queryProtocolSummary({
-        mac: params.mac,
-        since: window.since,
-        until: window.until,
-        collectorId: qs.collectorId,
-      }),
+    // The device's breakdown comes from the chart's own buckets too, so the
+    // table and the chart never disagree (they read different tiers before).
+    const [series, categories] = await Promise.all([
       queryProtocolTimeSeries({
         mac: params.mac,
         since: window.since,
         until: window.until,
-        resolution,
+        requestedSeconds: qs.resolution ? RESOLUTION_SECONDS[qs.resolution] : undefined,
+        settings: await getChartSettings(),
         collectorId: qs.collectorId,
       }),
       getProtocolCategoryMap(),
@@ -823,10 +823,8 @@ export default class DevicesController {
         window.range,
         window.since,
         window.until,
-        resolution,
-        resolutionSeconds,
-        summaryRows,
-        seriesRows,
+        null,
+        series,
         categories
       )
     )
@@ -836,9 +834,8 @@ export default class DevicesController {
     const qs = await overviewQueryValidator.validate(request.qs())
     const window = resolveTimeWindow(qs, '1h')
     if (window.error) return response.badRequest(window.error)
-    const resolved = resolveResolution(qs.resolution, '1m', window.since, window.until)
-    if (resolved.error) return response.badRequest(resolved.error)
-    const resolution = resolved.resolution
+    const guard = resolveResolution(qs.resolution, '1m', window.since, window.until)
+    if (guard.error) return response.badRequest(guard.error)
     const scope = qs.scope ?? 'all'
 
     if (!(await macExists(params.mac))) {
@@ -848,14 +845,15 @@ export default class DevicesController {
       })
     }
 
-    const resolutionSeconds = RESOLUTION_SECONDS[resolution]
-    const [identityRows, buckets, wanPeers, lanPeers, protocolRows] = await Promise.all([
+    const settings = await getChartSettings()
+    const [identityRows, series, wanPeers, lanPeers, protocolRows] = await Promise.all([
       queryIdentity(params.mac, qs.collectorId),
       queryTrafficBuckets({
         mac: params.mac,
         since: window.since,
         until: window.until,
-        resolution,
+        requestedSeconds: RESOLUTION_SECONDS[qs.resolution ?? '1m'],
+        settings,
         collectorId: qs.collectorId,
         scope,
         aggregateCollectors: false,
@@ -879,10 +877,9 @@ export default class DevicesController {
         range: window.range,
         from: window.since.toISO(),
         to: window.until.toISO(),
-        resolution,
-        resolutionSeconds,
+        ...seriesMeta(series),
         scope,
-        buckets: buckets.map((row) => toBucketRow(row, resolutionSeconds)),
+        buckets: series.rows.map(toBucketRow),
       },
       peers: {
         wan: wanPeers.map(toPeerRow),
@@ -1031,121 +1028,125 @@ async function macExists(mac: string): Promise<boolean> {
   return identity.length > 0 || bucket.length > 0 || hourly.length > 0 || peer.length > 0
 }
 
-async function queryTrafficBuckets({
-  mac,
-  since,
-  until,
-  resolution,
-  collectorId,
-  scope,
-  aggregateCollectors,
-}: {
+type TrafficSeriesOptions = {
   mac?: string
   since: DateTime
   until: DateTime
-  resolution: TrafficResolution
+  /** The caller's `resolution=` in seconds: the bucket width wanted. */
+  requestedSeconds?: number
+  settings: ChartSettings
   collectorId?: number
   scope: TrafficScope
   aggregateCollectors: boolean
-}): Promise<TrafficBucketRow[]> {
-  const { ttlMs, segment } = windowCache(resolution, since, until, Date.now())
+}
+
+async function queryTrafficBuckets(opts: TrafficSeriesOptions): Promise<TrafficSeries> {
+  const floor = opts.requestedSeconds ?? opts.settings.minBucketSeconds
+  const estimate = estimateBucketSeconds(
+    windowSpanSeconds(opts.since, opts.until),
+    floor,
+    opts.settings.maxPoints
+  )
+  const { ttlMs, segment } = windowCache(
+    cacheResolutionFor(estimate),
+    opts.since,
+    opts.until,
+    Date.now()
+  )
   return cachedQuery(
     cacheKey([
       'trafficBuckets',
-      mac ?? '',
+      opts.mac ?? '',
       segment,
-      resolution,
-      scope,
-      collectorId ?? '',
-      aggregateCollectors,
+      opts.requestedSeconds ?? '',
+      opts.settings.minBucketSeconds,
+      opts.settings.maxPoints,
+      opts.scope,
+      opts.collectorId ?? '',
+      opts.aggregateCollectors,
     ]),
     ttlMs,
-    () =>
-      queryTrafficBucketsUncached({
-        mac,
-        since,
-        until,
-        resolution,
-        collectorId,
-        scope,
-        aggregateCollectors,
-      })
+    () => queryTrafficBucketsUncached(opts)
   )
 }
 
-async function queryTrafficBucketsUncached({
-  mac,
-  since,
-  until,
-  resolution,
-  collectorId,
-  scope,
-  aggregateCollectors,
-}: {
-  mac?: string
-  since: DateTime
-  until: DateTime
-  resolution: TrafficResolution
-  collectorId?: number
-  scope: TrafficScope
-  aggregateCollectors: boolean
-}): Promise<TrafficBucketRow[]> {
-  const resolutionSeconds = RESOLUTION_SECONDS[resolution]
-  const sinceSql = since.toFormat('yyyy-MM-dd HH:mm:ss')
-  const untilSql = until.toFormat('yyyy-MM-dd HH:mm:ss')
+/**
+ * Dense traffic series (`series_buckets.ts`): one width and tier for the
+ * window, every bucket returned (quiet ones as zero), each with its real
+ * seconds so the partial first bucket and the live last one rate right.
+ * Per device (`aggregateCollectors: false`) each collector that saw the MAC
+ * in the window gets its own dense row per bucket.
+ */
+async function queryTrafficBucketsUncached(opts: TrafficSeriesOptions): Promise<TrafficSeries> {
+  const { mac, since, until, collectorId, scope, aggregateCollectors } = opts
   const cols = scopeColumns(scope)
-  const tier = pickSeriesTier(resolutionSeconds, since, until)
-  const table = tier ? tier.trafficTable : 'device_traffic_buckets'
-  const timeCol = tier ? `b.${tier.timeColumn}` : 'b.bucket_start'
+  const pollSeconds = await pollIntervalSeconds(collectorId)
+  const plan = await planWindowSeries({
+    sinceSec: Math.floor(since.toSeconds()),
+    untilSec: Math.floor(until.toSeconds()),
+    nowSec: Math.floor(Date.now() / 1000),
+    tiers: trafficSeriesTiers(pollSeconds),
+    pollSeconds,
+    floorSeconds: opts.requestedSeconds ?? opts.settings.minBucketSeconds,
+    maxPoints: opts.settings.maxPoints,
+  })
 
-  // When the tier grain equals the requested resolution, GROUP BY the bare
-  // indexed time column — no derived expression, no temp table, no filesort.
-  // Otherwise (native, or a finer tier like 15m-from-5m-slots) bucket on the
-  // fly with FROM_UNIXTIME(FLOOR()); its `?` placeholders sit in the SELECT,
-  // so those bindings come first.
-  const bareGroup = tier !== null && resolutionSeconds === tier.grainSeconds
+  const where: string[] = []
   const bindings: Array<string | number> = []
-  let bucketSelect: string
-  let groupByBucket: string
-  if (bareGroup) {
-    bucketSelect = `${timeCol} AS bucketStart`
-    groupByBucket = timeCol
-  } else {
-    bucketSelect = `FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(${timeCol}) / ?) * ?) AS bucketStart`
-    groupByBucket = 'bucketStart'
-    bindings.push(resolutionSeconds, resolutionSeconds)
-  }
-
-  const where: string[] = [`${timeCol} >= ?`, `${timeCol} < ?`]
-  bindings.push(sinceSql, untilSql)
-
   if (mac) {
-    where.push('b.mac = ?')
+    where.push('t.mac = ?')
     bindings.push(mac)
   }
   if (collectorId) {
-    where.push('b.collector_id = ?')
+    where.push('t.collector_id = ?')
     bindings.push(collectorId)
   }
+  const sums = await querySeriesKeyedSums({
+    plan,
+    sinceSql: since.toUTC().toFormat('yyyy-MM-dd HH:mm:ss'),
+    untilSql: until.toUTC().toFormat('yyyy-MM-dd HH:mm:ss'),
+    columns: [cols.bytesIn, cols.bytesOut, cols.packetsIn, cols.packetsOut],
+    keyExpr: aggregateCollectors ? undefined : 't.collector_id',
+    where,
+    bindings,
+  })
 
-  const collectorSelect = aggregateCollectors ? 'NULL' : 'b.collector_id'
-  const collectorGroup = aggregateCollectors ? '' : ', b.collector_id'
+  // Series keys: one aggregate series, or every collector seen in the window
+  // (none seen: one zero series without a collector, so the axis stays).
+  let keys: string[] = ['']
+  if (!aggregateCollectors) {
+    const seen = new Set<string>()
+    for (const byKey of sums.values()) for (const key of byKey.keys()) seen.add(key)
+    keys = seen.size > 0 ? [...seen].sort((x, y) => Number(x) - Number(y)) : ['']
+  }
 
-  const sql = `
-    SELECT
-      ${collectorSelect} AS collectorId,
-      ${bucketSelect},
-      SUM(${cols.bytesIn}) AS bytesIn,
-      SUM(${cols.bytesOut}) AS bytesOut,
-      SUM(${cols.packetsIn}) AS packetsIn,
-      SUM(${cols.packetsOut}) AS packetsOut
-    FROM ${table} b
-    WHERE ${where.join(' AND ')}
-    GROUP BY ${groupByBucket}${collectorGroup}
-    ORDER BY bucketStart ASC
-  `
+  const rows: TrafficBucketRow[] = []
+  for (const slot of denseSlots(plan)) {
+    const byKey = sums.get(slot.index)
+    for (const key of keys) {
+      const v = byKey?.get(key)
+      rows.push({
+        collectorId: key === '' ? null : Number(key),
+        bucketStart: slot.bucketStart,
+        bucketEnd: slot.bucketEnd,
+        seconds: slot.seconds,
+        bytesIn: v?.[0] ?? 0,
+        bytesOut: v?.[1] ?? 0,
+        packetsIn: v?.[2] ?? 0,
+        packetsOut: v?.[3] ?? 0,
+      })
+    }
+  }
 
-  return rawRows<TrafficBucketRow>(await db.rawQuery(sql, bindings))
+  return {
+    bucketSeconds: plan.bucketSeconds,
+    resolution: bucketLabel(plan.bucketSeconds),
+    resolutionSeconds: plan.bucketSeconds,
+    source: plan.tier.source,
+    floorSeconds: opts.settings.minBucketSeconds,
+    maxPoints: opts.settings.maxPoints,
+    rows,
+  }
 }
 
 async function queryPeers(
@@ -1254,26 +1255,37 @@ function toIso(value: Date | string | null | undefined): string | null {
   return iso.isValid ? iso.toUTC().toISO() : String(value)
 }
 
-function addSeconds(value: Date | string, seconds: number): string | null {
-  const start = toIso(value)
-  if (!start) return null
-  return DateTime.fromISO(start, { setZone: true }).plus({ seconds }).toISO()
-}
-
-function toBucketRow(row: TrafficBucketRow, resolutionSeconds: number) {
-  const bytesIn = toNumber(row.bytesIn)
-  const bytesOut = toNumber(row.bytesOut)
-
+function toBucketRow(row: TrafficBucketRow) {
   return {
     collectorId: row.collectorId,
-    bucketStart: toIso(row.bucketStart),
-    bucketEnd: addSeconds(row.bucketStart, resolutionSeconds),
-    bytesIn,
-    bytesOut,
-    packetsIn: toNumber(row.packetsIn),
-    packetsOut: toNumber(row.packetsOut),
-    mbpsIn: (bytesIn * 8) / resolutionSeconds / 1_000_000,
-    mbpsOut: (bytesOut * 8) / resolutionSeconds / 1_000_000,
+    bucketStart: row.bucketStart,
+    bucketEnd: row.bucketEnd,
+    seconds: row.seconds,
+    bytesIn: row.bytesIn,
+    bytesOut: row.bytesOut,
+    packetsIn: row.packetsIn,
+    packetsOut: row.packetsOut,
+    mbpsIn: mbps(row.bytesIn, row.seconds),
+    mbpsOut: mbps(row.bytesOut, row.seconds),
+  }
+}
+
+/** Response fields describing a dense series (every series endpoint). */
+function seriesMeta(series: {
+  bucketSeconds: number
+  resolution: string
+  resolutionSeconds: number
+  source: SeriesSource
+  floorSeconds: number
+  maxPoints: number
+}) {
+  return {
+    resolution: series.resolution,
+    resolutionSeconds: series.resolutionSeconds,
+    bucketSeconds: series.bucketSeconds,
+    source: series.source,
+    floorSeconds: series.floorSeconds,
+    maxPoints: series.maxPoints,
   }
 }
 
@@ -1291,40 +1303,23 @@ function toPeerRow(row: PeerRow) {
 /**
  * Build the headline summary the dashboard tiles render.
  *
- * The trailing bucket is *probably still filling* — its window started at
- * `bucketStart` and only closes at `bucketStart + resolutionSeconds`. If we
- * naively pick `rows.at(-1)` for `latestMbps`, three consecutive 5 s polls
- * across one 15 s window will report ~33 %, ~66 %, then ~100 % of the true
- * rate, which makes the tile feel jumpy ("ramps up and resets every 15 s").
- *
- * Instead we fall back to the second-to-last bucket whenever the trailing
- * one isn't fully closed yet. That gives a stable Mbps reading at the cost
- * of up to `resolutionSeconds` of staleness — a worthwhile trade now that
- * the chart itself updates every poll cycle.
+ * The trailing bucket is usually still filling. Its rate is right (bytes
+ * over its own seconds), but over a few seconds it is noisy, so the tile
+ * reads the last *full* bucket when the trailing one is partial, as it did
+ * before the series became dense.
  */
-function summarizeBuckets(rows: TrafficBucketRow[], resolutionSeconds: number, now: DateTime) {
-  const bytesIn = rows.reduce((sum, row) => sum + toNumber(row.bytesIn), 0)
-  const bytesOut = rows.reduce((sum, row) => sum + toNumber(row.bytesOut), 0)
+function summarizeBuckets(rows: TrafficBucketRow[], bucketSeconds: number) {
+  const bytesIn = rows.reduce((sum, row) => sum + row.bytesIn, 0)
+  const bytesOut = rows.reduce((sum, row) => sum + row.bytesOut, 0)
 
   let latest = rows.at(-1)
-  if (latest) {
-    const startIso = toIso(latest.bucketStart)
-    if (startIso) {
-      const startSec = DateTime.fromISO(startIso, { setZone: true }).toSeconds()
-      if (now.toSeconds() - startSec < resolutionSeconds) {
-        latest = rows.at(-2) ?? latest
-      }
-    }
-  }
-
-  const latestBytesIn = latest ? toNumber(latest.bytesIn) : 0
-  const latestBytesOut = latest ? toNumber(latest.bytesOut) : 0
+  if (latest && latest.seconds < bucketSeconds) latest = rows.at(-2) ?? latest
 
   return {
     bytesIn,
     bytesOut,
-    latestMbpsIn: (latestBytesIn * 8) / resolutionSeconds / 1_000_000,
-    latestMbpsOut: (latestBytesOut * 8) / resolutionSeconds / 1_000_000,
+    latestMbpsIn: latest ? mbps(latest.bytesIn, latest.seconds) : 0,
+    latestMbpsOut: latest ? mbps(latest.bytesOut, latest.seconds) : 0,
   }
 }
 
@@ -1465,85 +1460,98 @@ async function queryProtocolTopDevicesUncached({
   return rawRows<ProtocolTopDeviceRow>(await db.rawQuery(sql, bindings))
 }
 
-async function queryProtocolTimeSeries({
-  mac,
-  since,
-  until,
-  resolution,
-  collectorId,
-}: {
+type ProtocolSeriesOptions = {
   mac?: string
   since: DateTime
   until: DateTime
-  resolution: TrafficResolution
+  /** The caller's `resolution=` in seconds: the bucket width wanted. */
+  requestedSeconds?: number
+  settings: ChartSettings
   collectorId?: number
-}): Promise<ProtocolTimeSeriesRow[]> {
-  const { ttlMs, segment } = windowCache(resolution, since, until, Date.now())
+}
+
+/**
+ * Dense protocol series (`series_buckets.ts`): one width and tier for the
+ * window, every bucket (quiet ones with no protocols), each with its real
+ * seconds. Per-minute rows and the 5-minute tier serve windows up to two
+ * days (`protocolSeriesTiers`), hourly and daily beyond.
+ */
+async function queryProtocolTimeSeries(opts: ProtocolSeriesOptions): Promise<ProtocolSeries> {
+  const floor = opts.requestedSeconds ?? opts.settings.minBucketSeconds
+  const estimate = estimateBucketSeconds(
+    windowSpanSeconds(opts.since, opts.until),
+    floor,
+    opts.settings.maxPoints
+  )
+  const { ttlMs, segment } = windowCache(
+    cacheResolutionFor(estimate),
+    opts.since,
+    opts.until,
+    Date.now()
+  )
   return cachedQuery(
-    cacheKey(['protocolTimeSeries', mac ?? '', segment, resolution, collectorId ?? '']),
+    cacheKey([
+      'protocolTimeSeries',
+      opts.mac ?? '',
+      segment,
+      opts.requestedSeconds ?? '',
+      opts.settings.minBucketSeconds,
+      opts.settings.maxPoints,
+      opts.collectorId ?? '',
+    ]),
     ttlMs,
-    () => queryProtocolTimeSeriesUncached({ mac, since, until, resolution, collectorId })
+    () => queryProtocolTimeSeriesUncached(opts)
   )
 }
 
-async function queryProtocolTimeSeriesUncached({
-  mac,
-  since,
-  until,
-  resolution,
-  collectorId,
-}: {
-  mac?: string
-  since: DateTime
-  until: DateTime
-  resolution: TrafficResolution
-  collectorId?: number
-}): Promise<ProtocolTimeSeriesRow[]> {
-  const resolutionSeconds = RESOLUTION_SECONDS[resolution]
-  const tier = pickSeriesTier(resolutionSeconds, since, until)
-  const table = tier ? tier.protocolTable : 'device_protocol_buckets'
-  const timeCol = tier ? `b.${tier.timeColumn}` : 'b.bucket_start'
-  const sinceSql = since.toFormat('yyyy-MM-dd HH:mm:ss')
-  const untilSql = until.toFormat('yyyy-MM-dd HH:mm:ss')
+async function queryProtocolTimeSeriesUncached(
+  opts: ProtocolSeriesOptions
+): Promise<ProtocolSeries> {
+  const { mac, since, until, collectorId } = opts
+  const pollSeconds = await pollIntervalSeconds(collectorId)
+  const plan = await planWindowSeries({
+    sinceSec: Math.floor(since.toSeconds()),
+    untilSec: Math.floor(until.toSeconds()),
+    nowSec: Math.floor(Date.now() / 1000),
+    tiers: protocolSeriesTiers(Math.max(pollSeconds, PROTOCOL_NATIVE_GRAIN_SECONDS)),
+    pollSeconds,
+    floorSeconds: opts.requestedSeconds ?? opts.settings.minBucketSeconds,
+    maxPoints: opts.settings.maxPoints,
+  })
 
-  const bareGroup = tier !== null && resolutionSeconds === tier.grainSeconds
+  const where: string[] = []
   const bindings: Array<string | number> = []
-  let bucketSelect: string
-  let groupByBucket: string
-  if (bareGroup) {
-    bucketSelect = `${timeCol} AS bucketStart`
-    groupByBucket = timeCol
-  } else {
-    bucketSelect = `FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(${timeCol}) / ?) * ?) AS bucketStart`
-    groupByBucket = 'bucketStart'
-    bindings.push(resolutionSeconds, resolutionSeconds)
-  }
-
-  const where: string[] = [`${timeCol} >= ?`, `${timeCol} < ?`]
-  bindings.push(sinceSql, untilSql)
-
   if (mac) {
-    where.push('b.mac = ?')
+    where.push('t.mac = ?')
     bindings.push(mac)
   }
   if (collectorId) {
-    where.push('b.collector_id = ?')
+    where.push('t.collector_id = ?')
     bindings.push(collectorId)
   }
+  const sums = await querySeriesKeyedSums({
+    plan,
+    sinceSql: since.toUTC().toFormat('yyyy-MM-dd HH:mm:ss'),
+    untilSql: until.toUTC().toFormat('yyyy-MM-dd HH:mm:ss'),
+    columns: ['bytes_in', 'bytes_out', 'packets_in', 'packets_out'],
+    keyExpr: 't.protocol',
+    where,
+    bindings,
+  })
 
-  const sql = `
-    SELECT
-      ${bucketSelect},
-      b.protocol AS protocol,
-      SUM(b.bytes_in) AS bytesIn,
-      SUM(b.bytes_out) AS bytesOut
-    FROM ${table} b
-    WHERE ${where.join(' AND ')}
-    GROUP BY ${groupByBucket}, b.protocol
-    ORDER BY bucketStart ASC, b.protocol ASC
-  `
-
-  return rawRows<ProtocolTimeSeriesRow>(await db.rawQuery(sql, bindings))
+  return {
+    bucketSeconds: plan.bucketSeconds,
+    resolution: bucketLabel(plan.bucketSeconds),
+    resolutionSeconds: plan.bucketSeconds,
+    source: plan.tier.source,
+    floorSeconds: opts.settings.minBucketSeconds,
+    maxPoints: opts.settings.maxPoints,
+    buckets: denseSlots(plan).map((slot) => {
+      const protocols: Record<string, number[]> = {}
+      for (const [protocol, values] of sums.get(slot.index) ?? []) protocols[protocol] = values
+      return { ...slot, protocols }
+    }),
+  }
 }
 
 function withPercentages(
@@ -1594,77 +1602,70 @@ function buildProtocolsResponse(
   range: string | null,
   since: DateTime,
   until: DateTime,
-  resolution: TrafficResolution,
-  resolutionSeconds: number,
   summaryRows: ProtocolAggregateRow[] | null,
-  seriesRows: ProtocolTimeSeriesRow[],
+  series: ProtocolSeries,
   categories?: Map<string, string>
 ) {
-  const timeSeriesMap = new Map<string, Record<string, { bytesIn: number; bytesOut: number }>>()
-
-  for (const row of seriesRows) {
-    const bucketStart = toIso(row.bucketStart)
-    if (!bucketStart) continue
-    const bucket = timeSeriesMap.get(bucketStart) ?? {}
-    bucket[row.protocol] = {
-      bytesIn: toNumber(row.bytesIn),
-      bytesOut: toNumber(row.bytesOut),
-    }
-    timeSeriesMap.set(bucketStart, bucket)
-  }
-
-  // Derive the summary from the time series when not provided separately.
-  // This avoids scanning device_protocol_buckets a second time.
+  // Derive the summary from the series when not provided separately: the
+  // same rows, so the breakdown and the chart agree (and no second scan).
   let protocols: ProtocolBreakdownEntry[]
   if (summaryRows) {
     protocols = withPercentages(summaryRows, categories)
   } else {
-    const aggregated = new Map<
-      string,
-      { bytesIn: number; bytesOut: number; packetsIn: number; packetsOut: number }
-    >()
-    for (const row of seriesRows) {
-      const existing = aggregated.get(row.protocol) ?? {
-        bytesIn: 0,
-        bytesOut: 0,
-        packetsIn: 0,
-        packetsOut: 0,
+    const aggregated = new Map<string, ProtocolAggregateRow>()
+    for (const bucket of series.buckets) {
+      for (const [protocol, [bytesIn, bytesOut, packetsIn, packetsOut]] of Object.entries(
+        bucket.protocols
+      )) {
+        const existing = aggregated.get(protocol) ?? {
+          protocol,
+          bytesIn: 0,
+          bytesOut: 0,
+          packetsIn: 0,
+          packetsOut: 0,
+        }
+        existing.bytesIn = toNumber(existing.bytesIn) + bytesIn
+        existing.bytesOut = toNumber(existing.bytesOut) + bytesOut
+        existing.packetsIn = toNumber(existing.packetsIn) + packetsIn
+        existing.packetsOut = toNumber(existing.packetsOut) + packetsOut
+        aggregated.set(protocol, existing)
       }
-      existing.bytesIn += toNumber(row.bytesIn)
-      existing.bytesOut += toNumber(row.bytesOut)
-      aggregated.set(row.protocol, existing)
     }
-    const derived: ProtocolAggregateRow[] = [...aggregated.entries()].map(([protocol, stats]) => ({
-      protocol,
-      bytesIn: stats.bytesIn,
-      bytesOut: stats.bytesOut,
-      packetsIn: stats.packetsIn,
-      packetsOut: stats.packetsOut,
-    }))
-    protocols = withPercentages(derived, categories)
+    protocols = withPercentages([...aggregated.values()], categories)
   }
 
-  // Match queryProtocolSummary ORDER BY — derived-from-series order follows
-  // first bucket appearance (bucketStart ASC, protocol ASC), not traffic share.
-  protocols.sort((a, b) => b.bytesIn + b.bytesOut - (a.bytesIn + a.bytesOut))
-
-  const timeSeries = [...timeSeriesMap.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([bucketStart, protocolsByName]) => ({
-      bucketStart,
-      bucketEnd: addSeconds(bucketStart, resolutionSeconds),
-      protocols: protocolsByName,
-    }))
+  // Busiest first; equal totals by name, so the list and the chart's top-N
+  // never swap places between refreshes.
+  protocols.sort(
+    (a, b) =>
+      b.bytesIn + b.bytesOut - (a.bytesIn + a.bytesOut) || a.protocol.localeCompare(b.protocol)
+  )
 
   return {
     ...(mac ? { mac } : {}),
     range,
     from: since.toISO(),
     to: until.toISO(),
-    resolution,
-    resolutionSeconds,
+    resolution: series.resolution,
+    resolutionSeconds: series.resolutionSeconds,
+    bucketSeconds: series.bucketSeconds,
+    source: series.source,
+    floorSeconds: series.floorSeconds,
+    maxPoints: series.maxPoints,
     protocols,
-    timeSeries,
+    // Every bucket of the window; `protocols` lists only those that moved
+    // bytes in it (a chart treats the others as zero).
+    timeSeries: series.buckets.map((bucket) => ({
+      bucketStart: bucket.bucketStart,
+      bucketEnd: bucket.bucketEnd,
+      seconds: bucket.seconds,
+      protocols: Object.fromEntries(
+        Object.entries(bucket.protocols).map(([protocol, [bytesIn, bytesOut]]) => [
+          protocol,
+          { bytesIn, bytesOut },
+        ])
+      ),
+    })),
   }
 }
 
@@ -1722,6 +1723,8 @@ type PeerHistoryEntry = {
 }
 
 type PeerHistoryResponse = {
+  /** Start of the hour rows read: the hour that holds the window start. */
+  coveredFrom: string
   totalBytes: number
   peers: PeerHistoryEntry[]
   asns: TopAsn[]
@@ -1754,7 +1757,10 @@ async function queryPeerHistory({
     ttlMs,
     async () => {
       const rows = await queryPeerHistoryUncached({ mac, scope, since, until, collectorId, limit })
-      return buildPeerHistoryResponse(rows, scope)
+      return {
+        coveredFrom: coveredFrom(since.toUTC(), HOURLY_ROLLUP_SECONDS).toISO()!,
+        ...(await buildPeerHistoryResponse(rows, scope)),
+      }
     }
   )
 }
@@ -1774,8 +1780,11 @@ async function queryPeerHistoryUncached({
   collectorId?: number
   limit: number
 }): Promise<PeerHistoryRow[]> {
-  const sinceSql = since.toFormat('yyyy-MM-dd HH:mm:ss')
-  const untilSql = until.toFormat('yyyy-MM-dd HH:mm:ss')
+  // Hourly rows only: from the hour that holds the window start
+  // (`coveredFrom`), so a short window is not cut to the minutes since the
+  // top of the hour.
+  const sinceSql = coveredFrom(since.toUTC(), HOURLY_ROLLUP_SECONDS).toFormat('yyyy-MM-dd HH:mm:ss')
+  const untilSql = until.toUTC().toFormat('yyyy-MM-dd HH:mm:ss')
   const where: string[] = ['p.scope = ?', 'p.hour_start >= ?', 'p.hour_start < ?']
   const bindings: Array<string | number> = [scope, sinceSql, untilSql]
   if (mac) {
@@ -1799,7 +1808,7 @@ async function queryPeerHistoryUncached({
     FROM device_peer_buckets_hourly p
     WHERE ${where.join(' AND ')}
     GROUP BY p.peer_ip
-    ORDER BY (SUM(p.bytes_in) + SUM(p.bytes_out)) DESC
+    ORDER BY (SUM(p.bytes_in) + SUM(p.bytes_out)) DESC, p.peer_ip ASC
     LIMIT ?
   `
   return rawRows<PeerHistoryRow>(await db.rawQuery(sql, bindings))
@@ -1808,7 +1817,7 @@ async function queryPeerHistoryUncached({
 async function buildPeerHistoryResponse(
   rows: PeerHistoryRow[],
   scope: 'wan' | 'lan'
-): Promise<PeerHistoryResponse> {
+): Promise<Omit<PeerHistoryResponse, 'coveredFrom'>> {
   const base = rows.map((row) => {
     const bytesIn = toNumber(row.bytesIn)
     const bytesOut = toNumber(row.bytesOut)

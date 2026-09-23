@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Bar, BarChart, CartesianGrid, Cell, Line, XAxis, YAxis } from 'recharts'
+import { Bar, BarChart, CartesianGrid, Cell, Line, XAxis, YAxis, type MouseHandlerDataParam } from 'recharts'
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, type ChartConfig } from '@/components/ui/chart'
 import { byteAxisTicks, formatBytes, formatMbps } from '@/lib/format-bytes'
 import { bucketHint, bucketTick, bucketTitle } from '@/lib/usage'
@@ -49,6 +49,20 @@ type UsageColumnChartProps = {
    * rate axis to the byte axis.
    */
   overlay?: { slotSeconds: number }
+  /** Column index clicked (a tap on touch screens). Makes the columns look clickable. */
+  onColumnClick?: (index: number) => void
+  /** Column index under the pointer, `null` when it leaves the plot. */
+  onColumnHover?: (index: number | null) => void
+  /** Outlined column (the one a detail view below the chart is showing). */
+  selectedIndex?: number | null
+}
+
+/** The column a chart event points at, if any (recharts gives a number or a string). */
+function columnIndex(state: MouseHandlerDataParam, count: number): number | null {
+  const raw = state.activeTooltipIndex
+  if (raw === null || raw === undefined || raw === '') return null
+  const index = Number(raw)
+  return Number.isInteger(index) && index >= 0 && index < count ? index : null
 }
 
 /**
@@ -71,6 +85,9 @@ export function UsageColumnChart({
   maxBarSize = 24,
   minTickGap = 24,
   overlay,
+  onColumnClick,
+  onColumnHover,
+  selectedIndex = null,
 }: UsageColumnChartProps) {
   const slotSeconds = overlay?.slotSeconds ?? 0
   const scale = useMemo(() => {
@@ -84,7 +101,22 @@ export function UsageColumnChart({
 
   return (
     <ChartContainer config={scale ? overlayConfig : config} className={className}>
-      <BarChart data={points} margin={{ top: 8, right: scale ? 0 : 8, left: 0, bottom: 0 }} barCategoryGap="28%">
+      <BarChart
+        data={points}
+        margin={{ top: 8, right: scale ? 0 : 8, left: 0, bottom: 0 }}
+        barCategoryGap="28%"
+        style={onColumnClick ? { cursor: 'pointer' } : undefined}
+        onClick={
+          onColumnClick
+            ? (state) => {
+                const index = columnIndex(state, points.length)
+                if (index !== null) onColumnClick(index)
+              }
+            : undefined
+        }
+        onMouseMove={onColumnHover ? (state) => onColumnHover(columnIndex(state, points.length)) : undefined}
+        onMouseLeave={onColumnHover ? () => onColumnHover(null) : undefined}
+      >
         <CartesianGrid vertical={false} stroke="var(--border)" />
         <XAxis
           dataKey="tick"
@@ -178,8 +210,8 @@ export function UsageColumnChart({
           maxBarSize={maxBarSize}
           isAnimationActive={false}
         >
-          {points.map((p) => (
-            <Cell key={p.key} fillOpacity={p.partial ? 0.45 : 1} />
+          {points.map((p, i) => (
+            <Cell key={p.key} fillOpacity={p.partial ? 0.45 : 1} {...selectedStroke(i === selectedIndex)} />
           ))}
         </Bar>
         <Bar
@@ -192,8 +224,8 @@ export function UsageColumnChart({
           maxBarSize={maxBarSize}
           isAnimationActive={false}
         >
-          {points.map((p) => (
-            <Cell key={p.key} fillOpacity={p.partial ? 0.45 : 1} />
+          {points.map((p, i) => (
+            <Cell key={p.key} fillOpacity={p.partial ? 0.45 : 1} {...selectedStroke(i === selectedIndex)} />
           ))}
         </Bar>
         {scale ? (
@@ -226,6 +258,11 @@ export function UsageColumnChart({
   )
 }
 
+/** The selected column is outlined in the foreground colour (both themes); the rest keep the card-colour gap. */
+function selectedStroke(selected: boolean): { stroke?: string; strokeWidth?: number } {
+  return selected ? { stroke: 'var(--foreground)', strokeWidth: 1.5 } : {}
+}
+
 function formatRateTick(mbps: number): string {
   if (mbps === 0) return '0'
   return formatMbps(mbps, mbps >= 1 ? 1 : 2)
@@ -235,10 +272,10 @@ type UsageBarChartProps = {
   period: UsagePeriod
   buckets: UsageBucket[]
   className?: string
-}
+} & Pick<UsageColumnChartProps, 'onColumnClick' | 'onColumnHover' | 'selectedIndex' | 'maxBarSize'>
 
 /** The per-day / week / month usage columns (labels from the API bucket label). */
-export function UsageBarChart({ period, buckets, className }: UsageBarChartProps) {
+export function UsageBarChart({ period, buckets, className, ...interaction }: UsageBarChartProps) {
   const points = useMemo<UsageColumnPoint[]>(
     () =>
       buckets.map((b) => ({
@@ -254,7 +291,7 @@ export function UsageBarChart({ period, buckets, className }: UsageBarChartProps
       })),
     [buckets, period],
   )
-  return <UsageColumnChart points={points} className={className} />
+  return <UsageColumnChart points={points} className={className} {...interaction} />
 }
 
 export function Row({

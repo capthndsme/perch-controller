@@ -485,16 +485,19 @@ export type WifiSsidClientsResponse = {
   >
 }
 
-export type WifiSsidThroughputResponse = {
+export type WifiSsidThroughputResponse = DenseSeriesMeta & {
   ssid: string
   range: string | null
   from: string
   to: string
-  resolution: TrafficResolution
-  resolutionSeconds: number
-  /** AP-side direction, like `WifiSsidSummary`: `*In` = client upload, `*Out` = client download. */
+  /**
+   * Every bucket of the window (quiet ones as zero). AP-side direction, like
+   * `WifiSsidSummary`: `*In` = client upload, `*Out` = client download.
+   */
   buckets: Array<{
     bucketStart: string
+    bucketEnd: string
+    seconds: number
     bytesIn: number
     bytesOut: number
     mbpsIn: number
@@ -515,12 +518,10 @@ export type WifiApThroughputPoint = {
  * `aps` is busiest-first and includes enabled APs with no traffic (zeros);
  * a bucket omits an AP that had no row in that slot.
  */
-export type WifiApThroughputResponse = {
+export type WifiApThroughputResponse = DenseSeriesMeta & {
   range: string | null
   from: string
   to: string
-  resolution: TrafficResolution
-  resolutionSeconds: number
   aps: Array<{
     id: number
     name: string
@@ -528,8 +529,11 @@ export type WifiApThroughputResponse = {
     downloadBytes: number
     uploadBytes: number
   }>
+  /** Every bucket of the window, every listed AP in each (zero when quiet). */
   buckets: Array<{
     bucketStart: string
+    bucketEnd: string
+    seconds: number
     aps: Record<string, WifiApThroughputPoint>
   }>
 }
@@ -784,10 +788,26 @@ export type WifiLocateResponse = {
   latencyMs?: number
 }
 
+/**
+ * Fields every dense series response carries (`series_buckets.ts` on the
+ * server): one bucket width for the window, every bucket present.
+ */
+export type DenseSeriesMeta = {
+  /** Label of the bucket width: `15s`, `1m`, `2m`, `1h`… */
+  resolution: string
+  resolutionSeconds: number
+  bucketSeconds: number
+  source: SeriesSource
+  floorSeconds: number
+  maxPoints: number
+}
+
 export type TrafficBucket = {
   collectorId: number | null
   bucketStart: string
   bucketEnd: string
+  /** Seconds of the bucket inside the window and not in the future (rates use these). */
+  seconds: number
   bytesIn: number
   bytesOut: number
   packetsIn: number
@@ -796,22 +816,20 @@ export type TrafficBucket = {
   mbpsOut: number
 }
 
-export type DeviceTrafficResponse = {
+export type DeviceTrafficResponse = DenseSeriesMeta & {
   mac: string
   range: string
   /** The window the API read (UTC ISO); `to` is its "now" for a relative range. */
   from?: string
   to?: string
-  resolution: string
-  resolutionSeconds: number
   scope: TrafficScope
   buckets: TrafficBucket[]
 }
 
-export type AggregateTrafficResponse = {
+export type AggregateTrafficResponse = DenseSeriesMeta & {
   range: string
-  resolution: TrafficResolution
-  resolutionSeconds: number
+  from?: string
+  to?: string
   scope: TrafficScope
   summary: {
     bytesIn: number
@@ -844,15 +862,13 @@ export type TopTrafficDevice = {
 /**
  * `GET /api/v1/traffic/top`: the busiest N devices as separate series plus
  * everyone else folded into `rest`. Device-perspective like `/traffic`
- * (`bytesIn` = download). A bucket omits a top device with no traffic in
- * that slot; `rest` is always present.
+ * (`bytesIn` = download). Dense: every bucket of the window, each carrying
+ * every top device (zero when quiet) and `rest`.
  */
-export type TopTrafficResponse = {
+export type TopTrafficResponse = DenseSeriesMeta & {
   range: string | null
   from: string
   to: string
-  resolution: TrafficResolution
-  resolutionSeconds: number
   scope: TrafficScope
   limit: number
   by: TopTrafficRank
@@ -860,6 +876,8 @@ export type TopTrafficResponse = {
   rest: { deviceCount: number; bytesIn: number; bytesOut: number }
   buckets: Array<{
     bucketStart: string
+    bucketEnd: string
+    seconds: number
     devices: Record<string, TopTrafficPoint>
     rest: TopTrafficPoint
   }>
@@ -890,13 +908,19 @@ export type ProtocolBreakdown = {
   percentage: number
 }
 
+/**
+ * One bucket of a protocol series. Every bucket of the window is present;
+ * `protocols` lists only those that moved bytes in it (the others are zero).
+ */
 export type ProtocolTimeSeriesPoint = {
   bucketStart: string
   bucketEnd?: string
+  /** Seconds of the bucket inside the window and not in the future. */
+  seconds?: number
   protocols: Record<string, { bytesIn: number; bytesOut: number }>
 }
 
-export type ProtocolsResponse = {
+export type ProtocolsResponse = Partial<Omit<DenseSeriesMeta, 'resolution' | 'resolutionSeconds'>> & {
   mac?: string
   range: string
   /** The window the API read (UTC ISO). */
@@ -1130,7 +1154,7 @@ export type DeviceServicesResponse = {
 }
 
 /** Stored tier a name's traffic series was read from (per-poll rows, 5-minute or hourly). */
-export type SeriesSource = 'native' | '5m' | '1h'
+export type SeriesSource = 'native' | '5m' | '1h' | '1d'
 
 /**
  * Fields shared by the dense per-name series (`/services/:name/traffic`,
@@ -1336,9 +1360,10 @@ export type UsageBucket = {
   totalBytes: number
   /** totalBytes × 8 / seconds / 1e6, rounded to 2 dp. */
   avgMbps: number
-  /** Distinct MACs with traffic in the bucket. */
-  activeDevices: number
-  wifiClients: UsageWifiClients
+  /** Distinct MACs with traffic in the bucket; `null` on a per-device (`mac`) report. */
+  activeDevices: number | null
+  /** `null` on a per-device (`mac`) report. */
+  wifiClients: UsageWifiClients | null
   /** Top N, sorted desc. */
   protocols: UsageProtocol[]
   otherProtocols: UsageOtherProtocols
@@ -1359,7 +1384,8 @@ export type UsageIntervalBucket = {
   bytesOut: number
   totalBytes: number
   avgMbps: number
-  activeDevices: number
+  /** `null` on a per-device (`mac`) report. */
+  activeDevices: number | null
 }
 
 export type UsageIntervalsResponse = {
@@ -1369,6 +1395,8 @@ export type UsageIntervalsResponse = {
   from: string
   to: string
   scope: UsageScope
+  /** The device, normalised, when the request named one (`?mac=`). */
+  mac?: string
   timezone: string
   offsetMinutes: number
   buckets: UsageIntervalBucket[]
@@ -1383,6 +1411,8 @@ export type UsageResponse = {
   from: string
   to: string
   scope: UsageScope
+  /** The device, normalised, when the request named one (`?mac=`). */
+  mac?: string
   timezone: string
   offsetMinutes: number
   source: 'hourly' | 'daily'

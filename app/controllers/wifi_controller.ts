@@ -8,9 +8,29 @@ import {
 import { getDeviceLabels } from '#services/device_labels'
 import { getHostnameMatches } from '#services/hostname_enrichment'
 import { getPresenceSettings } from '#services/presence_settings'
-import { cacheKey, cacheTtlForResolution, cachedQuery, windowSegment } from '#services/query_cache'
+import {
+  cacheKey,
+  cacheTtlForResolution,
+  cachedQuery,
+  windowCache,
+  windowSegment,
+} from '#services/query_cache'
 import { queryApThroughputHistory } from '#services/wifi_ap_throughput'
-import { pickAggregateTier, pickSeriesTier, windowSpanSeconds } from '#services/rollup_tiers'
+import { getChartSettings, type ChartSettings } from '#services/chart_settings'
+import {
+  apPollIntervalSeconds,
+  bucketLabel,
+  cacheResolutionFor,
+  denseBuckets,
+  estimateBucketSeconds,
+  mbps,
+  planWindowSeries,
+  querySeriesSums,
+  wifiSeriesTiers,
+  type DenseBucket,
+  type SeriesSource,
+} from '#services/series_buckets'
+import { pickAggregateTier, windowSpanSeconds } from '#services/rollup_tiers'
 import { recordWifiCommandAudit, runSshCommand } from '#services/wifi_command_runner'
 import {
   agentAuditResult,
@@ -240,14 +260,18 @@ export default class WifiController {
     const qs = await wifiSsidThroughputQueryValidator.validate(request.qs())
     const window = resolveTimeWindow(qs, '24h')
     if (window.error) return response.badRequest(window.error)
-    const resolution = qs.resolution ?? '1m'
     const ssid = decodeURIComponent(String(params.ssid))
 
-    const rows = await querySsidThroughputHistory({
+    // Dense (`series_buckets.ts`): `resolution` is the width wanted (omitted
+    // = the Settings → Charts floor), coarsened to the point cap and read
+    // from the tier that covers the window. Raw AP counters: `bytesIn` is
+    // what clients uploaded, `bytesOut` what they downloaded.
+    const series = await querySsidThroughputHistory({
       ssid,
       since: window.since,
       until: window.until,
-      resolution,
+      requestedSeconds: qs.resolution ? RESOLUTION_SECONDS[qs.resolution] : undefined,
+      settings: await getChartSettings(),
       apId: qs.apId,
     })
 
@@ -256,20 +280,21 @@ export default class WifiController {
       range: window.range,
       from: window.since.toISO(),
       to: window.until.toISO(),
-      resolution,
-      resolutionSeconds: RESOLUTION_SECONDS[resolution],
-      buckets: rows.map((row) => {
-        const bytesIn = toNumber(row.bytesIn) ?? 0
-        const bytesOut = toNumber(row.bytesOut) ?? 0
-        const seconds = RESOLUTION_SECONDS[resolution]
-        return {
-          bucketStart: toIso(row.bucketStart),
-          bytesIn,
-          bytesOut,
-          mbpsIn: (bytesIn * 8) / seconds / 1_000_000,
-          mbpsOut: (bytesOut * 8) / seconds / 1_000_000,
-        }
-      }),
+      resolution: series.resolution,
+      resolutionSeconds: series.resolutionSeconds,
+      bucketSeconds: series.bucketSeconds,
+      source: series.source,
+      floorSeconds: series.floorSeconds,
+      maxPoints: series.maxPoints,
+      buckets: series.buckets.map((bucket) => ({
+        bucketStart: bucket.bucketStart,
+        bucketEnd: bucket.bucketEnd,
+        seconds: bucket.seconds,
+        bytesIn: bucket.a,
+        bytesOut: bucket.b,
+        mbpsIn: mbps(bucket.a, bucket.seconds),
+        mbpsOut: mbps(bucket.b, bucket.seconds),
+      })),
     })
   }
 
@@ -686,7 +711,8 @@ export default class WifiController {
     const history = await queryApThroughputHistory({
       since: window.since,
       until: window.until,
-      resolution: qs.resolution ?? '1m',
+      requestedSeconds: qs.resolution ? RESOLUTION_SECONDS[qs.resolution] : undefined,
+      settings: await getChartSettings(),
     })
     return serialize({
       range: window.range,
@@ -1925,98 +1951,86 @@ async function queryApHealthHistoryUncached(
   )
 }
 
-async function querySsidThroughputHistory({
-  ssid,
-  since,
-  until,
-  resolution,
-  apId,
-}: {
+type SsidThroughputOptions = {
   ssid: string
   since: DateTime
   until: DateTime
-  resolution: WifiResolution
+  requestedSeconds?: number
+  settings: ChartSettings
   apId?: number
-}): Promise<
-  Array<{
-    bucketStart: Date | string
-    bytesIn: bigint | number | string
-    bytesOut: bigint | number | string
-  }>
-> {
-  const ttlMs = cacheTtlForResolution(resolution)
+}
+
+async function querySsidThroughputHistory(
+  opts: SsidThroughputOptions
+): Promise<SeriesMetaOf & { buckets: DenseBucket[] }> {
+  const floor = opts.requestedSeconds ?? opts.settings.minBucketSeconds
+  const estimate = estimateBucketSeconds(
+    windowSpanSeconds(opts.since, opts.until),
+    floor,
+    opts.settings.maxPoints
+  )
+  const { ttlMs, segment } = windowCache(
+    cacheResolutionFor(estimate),
+    opts.since,
+    opts.until,
+    Date.now()
+  )
   return cachedQuery(
     cacheKey([
       'wifi:ssidThroughputHistory',
-      ssid,
-      windowSegment(since, until, ttlMs),
-      resolution,
-      apId ?? '',
+      opts.ssid,
+      segment,
+      opts.requestedSeconds ?? '',
+      opts.settings.minBucketSeconds,
+      opts.settings.maxPoints,
+      opts.apId ?? '',
     ]),
     ttlMs,
-    () => querySsidThroughputHistoryUncached({ ssid, since, until, resolution, apId })
+    async () => {
+      const pushSeconds = await apPollIntervalSeconds(opts.apId)
+      const plan = await planWindowSeries({
+        sinceSec: Math.floor(opts.since.toSeconds()),
+        untilSec: Math.floor(opts.until.toSeconds()),
+        nowSec: Math.floor(Date.now() / 1000),
+        tiers: wifiSeriesTiers(pushSeconds),
+        pollSeconds: pushSeconds,
+        floorSeconds: floor,
+        maxPoints: opts.settings.maxPoints,
+      })
+      const where = ['t.ssid = ?']
+      const bindings: Array<string | number> = [opts.ssid]
+      if (opts.apId) {
+        where.push('t.ap_id = ?')
+        bindings.push(opts.apId)
+      }
+      const sums = await querySeriesSums({
+        plan,
+        sinceSql: opts.since.toUTC().toFormat('yyyy-MM-dd HH:mm:ss'),
+        untilSql: opts.until.toUTC().toFormat('yyyy-MM-dd HH:mm:ss'),
+        columns: ['bytes_in', 'bytes_out'],
+        where,
+        bindings,
+      })
+      return {
+        resolution: bucketLabel(plan.bucketSeconds),
+        resolutionSeconds: plan.bucketSeconds,
+        bucketSeconds: plan.bucketSeconds,
+        source: plan.tier.source,
+        floorSeconds: opts.settings.minBucketSeconds,
+        maxPoints: opts.settings.maxPoints,
+        buckets: denseBuckets(plan, sums),
+      }
+    }
   )
 }
 
-async function querySsidThroughputHistoryUncached({
-  ssid,
-  since,
-  until,
-  resolution,
-  apId,
-}: {
-  ssid: string
-  since: DateTime
-  until: DateTime
-  resolution: WifiResolution
-  apId?: number
-}): Promise<
-  Array<{
-    bucketStart: Date | string
-    bytesIn: bigint | number | string
-    bytesOut: bigint | number | string
-  }>
-> {
-  const resolutionSeconds = RESOLUTION_SECONDS[resolution]
-  const tier = pickSeriesTier(resolutionSeconds, since, until)
-  const table = tier ? tier.wifiTable : 'wifi_interface_buckets'
-  const timeCol = tier ? tier.timeColumn : 'bucket_start'
-  const sinceSql = since.toFormat('yyyy-MM-dd HH:mm:ss')
-  const untilSql = until.toFormat('yyyy-MM-dd HH:mm:ss')
-
-  // When the requested resolution equals the tier grain, GROUP BY the bare
-  // indexed time column instead of a derived FROM_UNIXTIME(FLOOR()) expression.
-  const bareGroup = tier !== null && resolutionSeconds === tier.grainSeconds
-  const bindings: Array<string | number> = []
-  let bucketSelect: string
-  let groupByBucket: string
-  if (bareGroup) {
-    bucketSelect = `${timeCol} AS bucketStart`
-    groupByBucket = timeCol
-  } else {
-    bucketSelect = `FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(${timeCol}) / ?) * ?) AS bucketStart`
-    groupByBucket = 'bucketStart'
-    bindings.push(resolutionSeconds, resolutionSeconds)
-  }
-
-  const where: string[] = ['ssid = ?', `${timeCol} >= ?`, `${timeCol} < ?`]
-  bindings.push(ssid, sinceSql, untilSql)
-  if (apId) {
-    where.push('ap_id = ?')
-    bindings.push(apId)
-  }
-
-  const sql = `
-    SELECT
-      ${bucketSelect},
-      SUM(bytes_in)  AS bytesIn,
-      SUM(bytes_out) AS bytesOut
-    FROM ${table}
-    WHERE ${where.join(' AND ')}
-    GROUP BY ${groupByBucket}
-    ORDER BY bucketStart ASC
-  `
-  return rawRows(await db.rawQuery(sql, bindings))
+type SeriesMetaOf = {
+  resolution: string
+  resolutionSeconds: number
+  bucketSeconds: number
+  source: SeriesSource
+  floorSeconds: number
+  maxPoints: number
 }
 
 async function queryPeakClients(

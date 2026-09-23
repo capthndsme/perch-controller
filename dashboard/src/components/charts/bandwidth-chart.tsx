@@ -12,8 +12,10 @@ import { ZoomableAreaChart } from '@/components/charts/zoomable-area-chart'
 import { formatBytes, formatMbps } from '@/lib/format-bytes'
 import { downsampleTimeSeries } from '@/lib/traffic'
 import {
+  chartTimeDomain,
   formatAxisTick,
   formatTooltipTimestamp,
+  type ChartRange,
   type TimeWindow,
 } from '@/lib/time-window'
 
@@ -106,8 +108,16 @@ type BandwidthChartProps = {
    * so the data is LTTB-downsampled to this budget — shape preserved.
    */
   maxPoints?: number
+  /** The window the API read: the x-axis spans it even where it was quiet. */
+  range?: ChartRange
 }
 
+/**
+ * Download / upload rate over the window. The API returns every bucket
+ * (quiet ones as zero) with rates over each bucket's own seconds; segments
+ * are straight between buckets (a smoothed curve overshoots and bridges
+ * nothing that is not there) and the axis spans the requested window.
+ */
 export function BandwidthChart({
   data,
   className,
@@ -118,6 +128,7 @@ export function BandwidthChart({
   onResetZoom,
   canResetZoom,
   maxPoints = 2000,
+  range,
 }: BandwidthChartProps) {
   // Downsample by combined WAN magnitude so spikes in either direction
   // survive; kept rows retain their LAN/WiFi/compare values too.
@@ -126,14 +137,10 @@ export function BandwidthChart({
     [data, maxPoints],
   )
 
-  const { domain, spanSeconds } = useMemo(() => {
-    if (points.length === 0) {
-      return { domain: ['auto', 'auto'] as [number | string, number | string], spanSeconds: 0 }
-    }
-    const min = points[0].ts
-    const max = points[points.length - 1].ts
-    return { domain: [min, max] as [number, number], spanSeconds: (max - min) / 1000 }
-  }, [points])
+  const { domain, spanSeconds } = useMemo(
+    () => chartTimeDomain(points, range),
+    [points, range?.from, range?.to], // eslint-disable-line react-hooks/exhaustive-deps
+  )
 
   return (
     <ZoomableAreaChart
@@ -226,7 +233,7 @@ export function BandwidthChart({
                 <Area
                   isAnimationActive={false}
                   dataKey="compareDownload"
-                  type="monotone"
+                  type="linear"
                   fill="none"
                   stroke="var(--color-compareDownload)"
                   strokeOpacity={0.45}
@@ -238,7 +245,7 @@ export function BandwidthChart({
                 <Area
                   isAnimationActive={false}
                   dataKey="compareUpload"
-                  type="monotone"
+                  type="linear"
                   fill="none"
                   stroke="var(--color-compareUpload)"
                   strokeOpacity={0.45}
@@ -252,7 +259,7 @@ export function BandwidthChart({
             <Area
               isAnimationActive={false}
               dataKey="download"
-              type="monotone"
+              type="linear"
               fill="var(--color-download)"
               fillOpacity={0.25}
               stroke="var(--color-download)"
@@ -261,7 +268,7 @@ export function BandwidthChart({
             <Area
               isAnimationActive={false}
               dataKey="upload"
-              type="monotone"
+              type="linear"
               fill="var(--color-upload)"
               fillOpacity={0.25}
               stroke="var(--color-upload)"
@@ -272,7 +279,7 @@ export function BandwidthChart({
                 <Area
                   isAnimationActive={false}
                   dataKey="lanDownload"
-                  type="monotone"
+                  type="linear"
                   fill="var(--color-lanDownload)"
                   fillOpacity={0.1}
                   stroke="var(--color-lanDownload)"
@@ -282,7 +289,7 @@ export function BandwidthChart({
                 <Area
                   isAnimationActive={false}
                   dataKey="lanUpload"
-                  type="monotone"
+                  type="linear"
                   fill="var(--color-lanUpload)"
                   fillOpacity={0.1}
                   stroke="var(--color-lanUpload)"
@@ -296,7 +303,7 @@ export function BandwidthChart({
                 <Area
                   isAnimationActive={false}
                   dataKey="wifiDownload"
-                  type="monotone"
+                  type="linear"
                   fill="var(--color-wifiDownload)"
                   fillOpacity={0}
                   stroke="var(--color-wifiDownload)"
@@ -306,7 +313,7 @@ export function BandwidthChart({
                 <Area
                   isAnimationActive={false}
                   dataKey="wifiUpload"
-                  type="monotone"
+                  type="linear"
                   fill="var(--color-wifiUpload)"
                   fillOpacity={0}
                   stroke="var(--color-wifiUpload)"

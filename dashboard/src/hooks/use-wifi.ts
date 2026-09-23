@@ -128,8 +128,11 @@ export function useWifiSsidThroughput(
   } = {}
 ) {
   const window = options.window ?? DEFAULT_DEVICE_WINDOW
-  const resolution = toWifiResolution(options.resolution ?? '1m')
-  const params = new URLSearchParams({ resolution })
+  // Without a resolution the API picks the width (Settings → Charts floor,
+  // coarsened to the point cap); the page passes its own when it has one.
+  const resolution = options.resolution ? toWifiResolution(options.resolution) : 'auto'
+  const params = new URLSearchParams()
+  if (options.resolution) params.set('resolution', resolution)
   applyWindowToParams(params, window)
   if (options.apId) params.set('apId', String(options.apId))
 

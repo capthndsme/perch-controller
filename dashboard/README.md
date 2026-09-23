@@ -26,7 +26,7 @@ different origin than the API; `.env.example` explains both.
 | `/` | Dashboard: totals and live rate, Sites / Networks, month-to-date usage, Wi-Fi clients now and over time, gateway health, top talkers. |
 | `/traffic` | Network-wide bandwidth with LAN overlay and period comparison, protocol and application mix, Destinations (domains and networks), Gateway panel. |
 | `/usage` | vnstat-style daily / weekly / monthly table with per-protocol and per-application splits, hourly breakdown chart, connected-device averages. |
-| `/devices`, `/devices/:mac` | Device list with filters (search, connection, device type, tag) and sorting, top talkers over time; per-device card with traffic, protocols, peers, sites served and destinations, Wi-Fi context, the gateway's Network card (lease, neighbour entry, UPnP mappings), the Internet access card, and the name / type / tags / notes editor. |
+| `/devices`, `/devices/:mac` | Device list with filters (search, connection, device type, tag) and sorting, top talkers over time; per-device card with traffic, protocols, peers, sites served and destinations, Wi-Fi context, a Usage card (the device's bytes per local day or month over its own span, `GET usage?mac=`; clicking a column sets the page window to that day or month), the gateway's Network card (lease, neighbour entry, UPnP mappings), the Internet access card, and the name / type / tags / notes editor. |
 | `/firewall` | The managed gateway's firewall (admin-only, reads included): zones with their networks and policies, a zone-to-zone forwarding matrix, read-only defaults, includes and other sections observed only; port forwards (search, filter, sort; overlap and shadowing warnings; create / edit / enable / delete, target a device so Perch reserves its address, or a static address with `allowUnreserved`); traffic rules in router order with up / down reordering (`PUT …/rules/order`), shadowing and management-path warnings, order conflict / drift resolution. The device page's "Internet access" card blocks a device from the WAN. Tab and gateway in the URL (`?tab=`, `?gateway=`). |
 | `/servers` | Bytes served per TLS/HTTP name by your own hosts, with a rate overlay. |
 | `/wifi`, `/wifi/ssids/:ssid`, `/wifi/aps/:id`, `/wifi/clients/:mac` | Client distribution by band or AP, throughput per AP, SSIDs, active clients, APs; SSID throughput and clients; AP health; client signal history and roaming. |
@@ -46,7 +46,9 @@ different origin than the API; `.env.example` explains both.
 - Time window, resolution mode and refresh interval live in the URL
   (`src/hooks/use-dashboard-time.ts`), so every chart on a page shares them
   and links are reproducible. Charts zoom by drag and reset to the page
-  default.
+  default. The device page's Usage card is the exception: its period and span
+  are its own (`?usagePeriod` / `?usageRange`, `src/hooks/use-device-usage-controls.ts`)
+  and it only writes the page window when a column is clicked.
 - API types are in `src/types/api.ts`, fetch hooks per area in `src/hooks/`,
   pure shaping helpers in `src/lib/`. Hooks keep the previous window's data on
   screen while a new one loads.
