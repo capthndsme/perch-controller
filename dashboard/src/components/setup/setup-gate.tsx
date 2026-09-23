@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
+import { PageSpinner } from '@/components/ui/spinner'
 import { useSetupStatus } from '@/hooks/use-setup'
 
 type SetupGateProps = {
@@ -11,11 +12,7 @@ export function SetupGate({ children }: SetupGateProps) {
   const { data, isPending } = useSetupStatus()
 
   if (isPending) {
-    return (
-      <div className="flex min-h-svh items-center justify-center text-sm text-muted-foreground">
-        Loading…
-      </div>
-    )
+    return <PageSpinner fullScreen />
   }
 
   if (data?.step !== 'complete' && location.pathname !== '/setup') {

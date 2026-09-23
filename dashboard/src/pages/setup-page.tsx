@@ -6,6 +6,7 @@ import { CollectorStep } from '@/components/setup/collector-step'
 import { InstanceStep } from '@/components/setup/instance-step'
 import { SetupLayout } from '@/components/setup/setup-layout'
 import { SetupStepper } from '@/components/setup/setup-stepper'
+import { PageSpinner } from '@/components/ui/spinner'
 import { useSetupStatus } from '@/hooks/use-setup'
 
 export function SetupPage() {
@@ -18,7 +19,7 @@ export function SetupPage() {
   if (isPending) {
     return (
       <SetupLayout>
-        <p className="text-center text-sm text-muted-foreground">Loading setup…</p>
+        <PageSpinner label="Loading setup" />
       </SetupLayout>
     )
   }

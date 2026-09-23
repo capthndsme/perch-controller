@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { PageSpinner } from '@/components/ui/spinner'
 import { useProfile, fieldErrorsFromApi } from '@/hooks/use-auth'
 import { useCreateUser, useDeleteUser, useUpdateUserRole, useUsers } from '@/hooks/use-users'
 import { ApiError } from '@/lib/api'
@@ -31,11 +32,7 @@ export function SettingsUsersPage() {
   const isAdmin = currentUser?.role === 'admin'
 
   if (profile.isPending || usersQuery.isPending) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading users…</p>
-      </div>
-    )
+    return <PageSpinner label="Loading users" />
   }
 
   if (!isAdmin) {

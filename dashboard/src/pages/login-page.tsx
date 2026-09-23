@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { ArrowRight } from '@phosphor-icons/react'
 import { Field, FormError, formClassName } from '@/components/setup/form-field'
 import { SetupLayout } from '@/components/setup/setup-layout'
@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { fieldErrorsFromApi, useLogin } from '@/hooks/use-auth'
-import { useAuthStore } from '@/stores/auth-store'
 import { ApiError } from '@/lib/api'
 
 export function LoginPage() {
@@ -83,11 +82,4 @@ export function LoginPage() {
       </Card>
     </SetupLayout>
   )
-}
-
-/** Redirect authenticated users away from login. */
-export function LoginRoute() {
-  const token = useAuthStore((state) => state.token)
-  if (token) return <Navigate to="/" replace />
-  return <LoginPage />
 }

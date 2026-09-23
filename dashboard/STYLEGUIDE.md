@@ -5,10 +5,11 @@ here; when you establish a new shared pattern, document it.
 
 ## Loading states
 
-We distinguish three loading moments and treat them differently:
+We distinguish four loading moments and treat them differently:
 
 | Moment | Condition | Treatment |
 | --- | --- | --- |
+| **Page code or page-level data** (nothing of the page to show yet) | a route's chunk loading; a page (or gate) that renders nothing until one query answers | `PageSpinner` (below). |
 | **First paint** (no data yet) | `query.isPending` | The panel's own placeholder — a short muted line (`"Loading …"`) or empty-state copy. |
 | **Switching window/scope** (showing previous data) | `query.isPlaceholderData` | A `PanelOverlay` scrim + spinner over the existing content. |
 | **Auto-refresh poll** (same window, periodic) | `query.isFetching` only | **Nothing** — the data updates in place; no overlay. |
@@ -49,7 +50,27 @@ overlay internally, so callers just forward `query.isPlaceholderData`.
 The single spinning glyph (`src/components/ui/spinner.tsx`) — Phosphor
 `CircleNotch` with our spin animation and muted colour. Size via `className`
 (`size-4` default). Use it anywhere a loading affordance is needed; don't
-hand-roll `animate-spin` on other icons.
+hand-roll `animate-spin` on other icons. With reduced motion it stands still.
+
+### `PageSpinner`
+
+The page-level loading state, from the same file: a page whose chunk is still
+downloading (every route's Suspense fallback), and a page or gate that shows
+nothing until its one query answers (the setup and session checks, the
+Presence, Hostname enrichment and Users settings pages, the network map).
+Panels keep their own muted line.
+
+- It fills the content area (`fullScreen` fills the viewport for sign-in,
+  setup and the gates), so nothing shifts when the page arrives.
+- It stays invisible for the first 150 ms (`.page-spinner-reveal` in
+  `index.css`), so fast loads don't flash it. One that replaces a visible one
+  shows at once instead of blinking.
+- Pass `label` ("Loading presence settings"): screen readers get it, and with
+  reduced motion it is shown next to a still glyph.
+
+```tsx
+if (query.isPending) return <PageSpinner label="Loading presence settings" />
+```
 
 ## Data fetching
 
@@ -65,3 +86,10 @@ hand-roll `animate-spin` on other icons.
   (up to ~2k-point) series.
 - Wide windows are LTTB-downsampled to ~2k points (`downsampleTimeSeries`)
   before rendering.
+- The Infrastructure page does not load Recharts (a 387 kB chunk). Its device
+  summary (`components/infra/device-summary.tsx`) draws inline-SVG sparklines:
+  a viewBox stretched to the panel with `preserveAspectRatio="none"` and
+  `vector-effect: non-scaling-stroke` on every stroke, the same colour tokens
+  (`--chart-download` / `--chart-upload`, the signal-quality palette), and a
+  readout under the chart for the point under the pointer, a tap, or the
+  arrow keys.

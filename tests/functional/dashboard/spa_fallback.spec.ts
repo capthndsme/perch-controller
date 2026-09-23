@@ -35,4 +35,14 @@ test.group('Dashboard SPA fallback', () => {
       }
     }
   })
+
+  test('a missing built asset is a 404, never index.html', async ({ client, assert }) => {
+    // What a tab open across a redeploy asks for: a chunk of the previous build.
+    for (const path of ['/assets/page-deadbeef.js', '/assets/index-deadbeef.css']) {
+      const r = await client.get(path)
+      r.assertStatus(404)
+      assert.notMatch(String(r.header('content-type')), /text\/html/)
+      r.assertHeader('cache-control', 'no-cache')
+    }
+  })
 })

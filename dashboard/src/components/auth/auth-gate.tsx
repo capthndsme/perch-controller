@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
+import { PageSpinner } from '@/components/ui/spinner'
 import { useProfile } from '@/hooks/use-auth'
 import { ApiError } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
@@ -26,11 +27,7 @@ export function AuthGate({ children }: AuthGateProps) {
   }
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-svh items-center justify-center text-sm text-muted-foreground">
-        Checking session…
-      </div>
-    )
+    return <PageSpinner fullScreen label="Checking session" />
   }
 
   if (isError) {

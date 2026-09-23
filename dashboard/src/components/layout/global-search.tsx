@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Broadcast, Devices, MagnifyingGlass, WifiHigh } from '@phosphor-icons/react'
 import { useDevices } from '@/hooks/use-devices'
 import { useWifiClients, useWifiOverview } from '@/hooks/use-wifi'
-import { deviceDisplayName, deviceSearchText } from '@/lib/device-labels'
+import { deviceDisplayName, deviceSearchText } from '@/lib/device-names'
 import { macPath } from '@/lib/traffic'
 import { cn } from '@/lib/utils'
 
@@ -165,6 +165,7 @@ export function GlobalSearch({ className }: { className?: string }) {
                 type="button"
                 role="option"
                 aria-selected={index === active}
+                data-prefetch-href={hit.to}
                 onMouseEnter={() => setActive(index)}
                 onClick={() => go(hit)}
                 className={cn(

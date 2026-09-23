@@ -201,6 +201,9 @@
   html {
     @apply font-sans;
     font-size: 14px;
+    /* Keep the scrollbar's room when a page is shorter than the window (the
+     * spinner of a page still loading), so the shell never shifts sideways. */
+    scrollbar-gutter: stable;
     }
   /* Numbers, MACs and IPs opt in with `font-mono`; tables align digits. */
   .tabular-nums {
@@ -231,5 +234,26 @@
   }
   .card-surface {
     @apply rounded-lg border border-border bg-card;
+  }
+}
+/* Page-level loading indicator (PageSpinner): invisible for the first 150 ms so
+ * fast loads don't flash it, then a short fade. With reduced motion it keeps the
+ * delay and skips the fade (the glyph itself stops spinning via motion-safe). */
+@keyframes page-spinner-reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.page-spinner-reveal {
+  animation: page-spinner-reveal 200ms ease-out 150ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-spinner-reveal {
+    animation-duration: 1ms;
   }
 }

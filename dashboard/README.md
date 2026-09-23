@@ -49,9 +49,23 @@ different origin than the API; `.env.example` explains both.
   already speaks client terms.
 - A device has two names: `hostname` (from DHCP) and `customName` (what the
   operator called it, from `device_labels`). Never pick between them by hand —
-  `deviceDisplayName()` in `src/lib/device-labels.ts` is the one place that
-  decides, and `deviceTypeMeta()` maps a device type to its icon. Filtering
-  over a device uses `deviceSearchText()`, which also matches tags and notes.
+  `deviceDisplayName()` in `src/lib/device-names.ts` is the one place that
+  decides, and `deviceTypeMeta()` (`src/lib/device-labels.ts`) maps a device
+  type to its icon. Filtering over a device uses `deviceSearchText()`, which
+  also matches tags and notes. Import the name helpers from `device-names`:
+  it carries no icons, so the top bar's search keeps the device-type icons
+  out of the entry chunk (`device-labels` re-exports them too).
+- Every page is its own chunk: `src/app/pages.ts` lists them and
+  `src/app/router.tsx` wires each route to one. The shell (setup and session
+  gates, layout, sidebar, top bar) stays in the entry. A page's chunk is
+  fetched when a link to it is hovered, focused or touched (elements that
+  navigate from a click handler name their target with `data-prefetch-href`),
+  and the Dashboard, Devices, Traffic and WiFi pages are fetched in idle time
+  after the first page renders (`src/app/prefetch.ts`). Vendor code is split
+  into long-cached chunks in `vite.config.ts`; Recharts only loads with pages
+  that draw charts. A chunk that fails to load (a tab opened before a
+  redeploy) reloads the page once per build, then shows a Reload button
+  (`src/lib/chunk-reload.ts`).
 - UI patterns (loading states, panels, tables, empty states) are in
   [`STYLEGUIDE.md`](STYLEGUIDE.md).
 

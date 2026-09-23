@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { PageSpinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import {
   fieldErrorsFromApi,
@@ -86,11 +87,7 @@ function toPayload(form: FormState): HostnameEnrichmentSettings {
 export function HostnameEnrichmentSettingsPage() {
   const query = useHostnameEnrichmentSettings()
   if (query.isPending) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading hostname enrichment settings…</p>
-      </div>
-    )
+    return <PageSpinner label="Loading hostname enrichment settings" />
   }
 
   if (query.error) {
@@ -107,11 +104,7 @@ export function HostnameEnrichmentSettingsPage() {
   }
 
   if (!query.data) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading hostname enrichment settings…</p>
-      </div>
-    )
+    return <PageSpinner label="Loading hostname enrichment settings" />
   }
 
   return <HostnameEnrichmentSettingsForm initialSettings={query.data} />

@@ -1,4 +1,4 @@
-import { deviceDisplayName } from '@/lib/device-labels'
+import { deviceDisplayName } from '@/lib/device-names'
 import { formatBytes } from '@/lib/format-bytes'
 import type { TopTrafficResponse, WifiApThroughputResponse } from '@/types/api'
 
