@@ -98,6 +98,9 @@ test.group('config domains | registry', () => {
       [
         'system',
         'networks',
+        'wan',
+        'wireguard',
+        'network_globals',
         'routes',
         'dhcp_pools',
         'dhcp_hosts',
@@ -105,8 +108,11 @@ test.group('config domains | registry', () => {
         'dns_settings',
         'dhcp_tags',
         'firewall',
+        'firewall_defaults',
         'sqm',
         'perch_qos',
+        'upnp',
+        'ddns',
       ]
     )
     assert.strictEqual(domainRegistry(), domainRegistry())

@@ -14,6 +14,9 @@ import type { HttpContext } from '@adonisjs/core/http'
 import { middleware } from '#start/kernel'
 import router from '@adonisjs/core/services/router'
 import { controllers } from '#generated/controllers'
+/** Area route files (design lanes 2026-09-30). Imports run before this file's body, so their groups
+ *  register before the SPA catch-all at the end of this file. */
+import '#start/routes/gateway_sync'
 
 /**
  * The setup controller isn't in the auto-generated `controllers` registry

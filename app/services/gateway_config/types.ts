@@ -256,6 +256,19 @@ export const GATEWAY_EVENTS = [
   'conntrack_flushed',
   'router_paused',
   'router_resumed',
+  // Gateway sync (docs/design/gateway-sync; domains.md 1, README 7).
+  'checks_passed',
+  'checks_failed',
+  'checks_overridden',
+  'section_rehomed',
+  'rehome_deferred',
+  'ambiguity_resolved',
+  'wan_transition',
+  'upnp_mappings_deleted',
+  'ddns_update_requested',
+  'wg_client_config_issued',
+  'wg_key_rotated',
+  'multiwan_writes_changed',
 ] as const
 export type GatewayEventName = (typeof GATEWAY_EVENTS)[number]
 
@@ -375,7 +388,29 @@ export interface GatewayCapabilities {
   /** README 7.18: what backs the local state path. */
   storage?: { path?: string; kind?: StorageKind; mounted?: boolean }
   management?: ManagementPath
+  /**
+   * Gateway sync (protocol.md 4): what the agent's config plane can do beyond
+   * the base protocol (`config.checks.v1`, `config.generate.wg_key`,
+   * `config.plain_public_key`, …). Absent on older agents: none.
+   */
+  features?: string[]
   [key: string]: unknown
+}
+
+/** Whether the agent announces a config-plane feature (`capabilities.features`). */
+export function hasFeature(caps: GatewayCapabilities | null | undefined, feature: string): boolean {
+  return Array.isArray(caps?.features) && caps.features.includes(feature)
+}
+
+/**
+ * Whether the router lets the agent write a config: on its effective allowlist
+ * (`allowedConfigs`: `managed_config` plus installed siblings' configs).
+ */
+export function configAllowed(
+  caps: GatewayCapabilities | null | undefined,
+  config: string
+): boolean {
+  return Array.isArray(caps?.allowedConfigs) && caps.allowedConfigs.includes(config)
 }
 
 /** One sibling package's config on the router's allowlist (capabilities). */

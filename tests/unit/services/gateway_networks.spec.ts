@@ -156,6 +156,9 @@ test.group('networks domain | claims and round trip (plan 1 section 8.1)', () =>
       [
         'system',
         'networks',
+        'wan',
+        'wireguard',
+        'network_globals',
         'routes',
         'dhcp_pools',
         'dhcp_hosts',
@@ -163,8 +166,11 @@ test.group('networks domain | claims and round trip (plan 1 section 8.1)', () =>
         'dns_settings',
         'dhcp_tags',
         'firewall',
+        'firewall_defaults',
         'sqm',
         'perch_qos',
+        'upnp',
+        'ddns',
       ]
     )
     assert.deepEqual(domainRegistry().configs(), [
@@ -174,6 +180,8 @@ test.group('networks domain | claims and round trip (plan 1 section 8.1)', () =>
       'firewall',
       'sqm',
       'perch-qos',
+      'ddns',
+      'upnpd',
     ])
   })
 
