@@ -36,41 +36,43 @@ export function CategoriesPanel({ categories, isPending, error, compact = false,
     )
   }
   return (
-    <table className="data-table">
-      <thead>
-        <tr>
-          <th>Application</th>
-          <th className="text-right">Share</th>
-          {!compact ? <th className="text-right">Down</th> : null}
-          {!compact ? <th className="text-right">Up</th> : null}
-          <th className="text-right">Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((entry) => (
-          <tr key={entry.category}>
-            <td>
-              <span className="flex items-center gap-2">
-                <span
-                  aria-hidden
-                  className="inline-block size-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: categoryColor(entry.category) }}
-                />
-                <span className="font-medium">{categoryLabel(entry.category)}</span>
-                {isFlaggedCategory(entry.category) ? (
-                  <span className="text-[10px] uppercase tracking-wide text-status-critical">flag</span>
-                ) : null}
-              </span>
-            </td>
-            <td>
-              <ShareBar percentage={entry.percentage} color={categoryColor(entry.category)} />
-            </td>
-            {!compact ? <td className="text-right font-mono tabular-nums">{formatBytes(entry.bytesIn)}</td> : null}
-            {!compact ? <td className="text-right font-mono tabular-nums">{formatBytes(entry.bytesOut)}</td> : null}
-            <td className="text-right font-mono font-medium tabular-nums">{formatBytes(entry.totalBytes)}</td>
+    <div className="overflow-x-auto">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Application</th>
+            <th className="text-right">Share</th>
+            {!compact ? <th className="text-right">Down</th> : null}
+            {!compact ? <th className="text-right">Up</th> : null}
+            <th className="text-right">Total</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {rows.map((entry) => (
+            <tr key={entry.category}>
+              <td>
+                <span className="flex items-center gap-2">
+                  <span
+                    aria-hidden
+                    className="inline-block size-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: categoryColor(entry.category) }}
+                  />
+                  <span className="font-medium">{categoryLabel(entry.category)}</span>
+                  {isFlaggedCategory(entry.category) ? (
+                    <span className="text-[10px] uppercase tracking-wide text-status-critical">flag</span>
+                  ) : null}
+                </span>
+              </td>
+              <td>
+                <ShareBar percentage={entry.percentage} color={categoryColor(entry.category)} />
+              </td>
+              {!compact ? <td className="text-right font-mono tabular-nums">{formatBytes(entry.bytesIn)}</td> : null}
+              {!compact ? <td className="text-right font-mono tabular-nums">{formatBytes(entry.bytesOut)}</td> : null}
+              <td className="text-right font-mono font-medium tabular-nums">{formatBytes(entry.totalBytes)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }

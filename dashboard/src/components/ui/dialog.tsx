@@ -6,7 +6,11 @@ import { cn } from '@/lib/utils'
 /**
  * Modal dialog (Radix Dialog in the shadcn skin). Below `sm` it is a sheet
  * docked to the bottom of the screen with its own scroll, so long forms stay
- * usable on a phone; from `sm` up a centred card.
+ * usable on a phone; from `sm` up a centred card. The sheet rises from the
+ * bottom edge by its own height on the sheet spring (475 ms) and drops back on
+ * the exit spring (320 ms), no fade on the slab (a form: no drag); the card
+ * settles in from 95 % with a fade (200 ms in, 150 ms out, ease-out). Reduced
+ * motion (index.css): both fade without moving.
  */
 const Dialog = DialogPrimitive.Root
 const DialogTrigger = DialogPrimitive.Trigger
@@ -20,14 +24,29 @@ function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content> & { wide?: boolean }) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0" />
+      <DialogPrimitive.Overlay
+        className={cn(
+          'fixed inset-0 z-50 bg-black/40 transition-none',
+          'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0',
+          // The scrim keeps time with the sheet below sm, with the card from sm.
+          'max-sm:data-[state=open]:duration-[475ms] max-sm:data-[state=open]:ease-spring-sheet max-sm:data-[state=closed]:duration-[320ms] max-sm:data-[state=closed]:ease-spring-exit',
+          'sm:data-[state=open]:duration-base sm:data-[state=closed]:duration-fast sm:ease-out',
+        )}
+      />
       <DialogPrimitive.Content
         className={cn(
           'fixed z-50 flex max-h-[92svh] w-full flex-col overflow-hidden border border-border bg-card text-card-foreground shadow-xl outline-none',
           'inset-x-0 bottom-0 rounded-t-xl',
           'sm:inset-x-auto sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:max-h-[88svh] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl',
           wide ? 'sm:max-w-2xl' : 'sm:max-w-lg',
-          'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0',
+          // `transition-none`: the duration utilities below would otherwise give it a `transition: all`.
+          'transition-none data-[state=open]:animate-in data-[state=closed]:animate-out',
+          // Below sm: a sheet that rises from the bottom edge by its own height and drops back.
+          'max-sm:data-[state=open]:slide-in-from-bottom max-sm:data-[state=open]:duration-[475ms] max-sm:data-[state=open]:ease-spring-sheet',
+          'max-sm:data-[state=closed]:slide-out-to-bottom max-sm:data-[state=closed]:duration-[320ms] max-sm:data-[state=closed]:ease-spring-exit',
+          // sm and up: a centred card that settles in from 95 % (a modal: from its centre).
+          'sm:data-[state=open]:fade-in-0 sm:data-[state=open]:zoom-in-95 sm:data-[state=open]:duration-base sm:data-[state=open]:ease-out',
+          'sm:data-[state=closed]:fade-out-0 sm:data-[state=closed]:zoom-out-95 sm:data-[state=closed]:duration-fast sm:data-[state=closed]:ease-out',
           className,
         )}
         {...props}

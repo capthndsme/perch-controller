@@ -82,3 +82,19 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/infrastructure', label: 'Infrastructure', icon: TreeStructure },
   { to: '/settings', label: 'Settings', icon: GearSix },
 ]
+
+/** Whether a sidebar or bottom-bar entry is the active one: its own path, or one of a folded section's (`also`). */
+export function navItemActive(item: NavItem, pathname: string): boolean {
+  return sectionItemActive(item, pathname) || (item.also?.some((prefix) => underPath(pathname, prefix)) ?? false)
+}
+
+/** The NAV_ITEMS entry the page belongs to (the phone top bar's title). */
+export function activeNavItem(pathname: string): NavItem | undefined {
+  return NAV_ITEMS.find((item) => navItemActive(item, pathname))
+}
+
+/**
+ * The phone bottom bar's own tabs (below lg), in order; every other
+ * NAV_ITEMS entry sits behind its "More" tab.
+ */
+export const MOBILE_TAB_PATHS: readonly string[] = ['/', '/devices', '/wifi', '/gateway']

@@ -39,6 +39,7 @@ import {
   useVoidCheckout,
 } from '@/hooks/use-hotspot'
 import { useIsPortalAdmin, usePortals } from '@/hooks/use-portal'
+import { useRetained } from '@/hooks/use-retained'
 import { apiErrorCode } from '@/lib/api'
 import {
   CHECKOUT_REASON_LABELS,
@@ -443,8 +444,11 @@ function CheckoutDrawer({
   isAdmin: boolean
   onClose: () => void
 }) {
-  const detail = useHotspotCheckout(id)
-  const c = detail.data ?? preview
+  // The last checkout shown stays in the drawer while it slides out.
+  const shownId = useRetained(id)
+  const shownPreview = useRetained(preview)
+  const detail = useHotspotCheckout(shownId)
+  const c = detail.data ?? shownPreview
   const [action, setAction] = useState<Action>(null)
   const [delivery, setDelivery] = useState<PortalDelivery | null>(null)
   const portal = c ? portals.find((p) => p.id === c.portalId) : undefined

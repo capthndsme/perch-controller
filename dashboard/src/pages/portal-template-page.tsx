@@ -18,6 +18,7 @@ import {
   usePortalTemplatePreview,
   usePutPortalTemplateFile,
 } from '@/hooks/use-portal'
+import { useRetained } from '@/hooks/use-retained'
 import { ApiError, apiErrorCode } from '@/lib/api'
 import { formatBytes } from '@/lib/format-bytes'
 import {
@@ -126,6 +127,7 @@ function TemplateFilesPanel({ template }: { template: PortalTemplate }) {
   const remove = useDeletePortalTemplateFile()
   const [issues, setIssues] = useState<TemplateIssue[]>([])
   const [confirmFile, setConfirmFile] = useState<string | null>(null)
+  const shownConfirmFile = useRetained(confirmFile)
   const replaceInput = useRef<HTMLInputElement>(null)
   const addInput = useRef<HTMLInputElement>(null)
   const [replacing, setReplacing] = useState<string | null>(null)
@@ -231,7 +233,7 @@ function TemplateFilesPanel({ template }: { template: PortalTemplate }) {
       <ConfirmDialog
         open={confirmFile !== null}
         onOpenChange={(open) => !open && setConfirmFile(null)}
-        title={`Delete ${confirmFile ?? ''}?`}
+        title={`Delete ${shownConfirmFile ?? ''}?`}
         confirmLabel="Delete file"
         destructive
         pending={remove.isPending}

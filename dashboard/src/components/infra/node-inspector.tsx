@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowSquareOut,
@@ -20,6 +20,7 @@ import { CloseButton, FieldError, Section } from '@/components/infra/inspector-p
 import { NodeIcon } from '@/components/infra/kind-icon'
 import type { InfraNotice, InfraSelection } from '@/components/infra/infra-canvas'
 import { NativeSelect } from '@/components/infra/native-select'
+import { CableTrafficSection, NodeTrafficTable, PortTrafficPanel } from '@/components/infra/traffic-inspector'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -36,6 +37,7 @@ import {
   useUpdateInfraPort,
 } from '@/hooks/use-infra'
 import { uplinkLine } from '@/lib/attachment'
+import { portTrafficText, SCOPE_LABELS } from '@/lib/infra-traffic'
 import { formatLastSeen } from '@/lib/collectors'
 import { deviceDisplayName, deviceTypeLabel } from '@/lib/device-labels'
 import {
@@ -158,6 +160,7 @@ function NodeInspector({ node, ...props }: InspectorProps & { node: InfraNode })
   const hint = oldAgentHint(node, version)
   const parent = node.parentId !== null ? index.nodes.get(node.parentId) : undefined
   const focusedPortId = selection.type === 'node' ? (selection.portId ?? null) : null
+  const focusedPort = focusedPortId !== null ? node.ports.find((port) => port.id === focusedPortId) : undefined
   const presence = state?.presence ?? null
   const canAddPorts = !node.binding || node.binding.portsSupported !== true
   const addPortsOpen = props.addPortsNodeId === node.id
@@ -237,6 +240,10 @@ function NodeInspector({ node, ...props }: InspectorProps & { node: InfraNode })
         </div>
       ) : null}
 
+      {focusedPort ? (
+        <PortTrafficPanel key={focusedPort.id} node={node} port={focusedPort} index={index} stateIndex={stateIndex} />
+      ) : null}
+
       {node.device ? (
         <DeviceSummary
           mac={node.device.mac.toLowerCase()}
@@ -307,6 +314,8 @@ function NodeInspector({ node, ...props }: InspectorProps & { node: InfraNode })
           <PortCountForm node={node} {...props} />
         ) : null}
       </Section>
+
+      <NodeTrafficTable node={node} stateIndex={stateIndex} onSelect={onSelect} />
 
       {node.notes && !editing ? (
         <Section title="Notes">
@@ -471,9 +480,20 @@ function PortsList({
   const visible = node.ports.filter((port) => !port.hidden)
   const hidden = node.ports.filter((port) => port.hidden)
 
-  useEffect(() => {
+  // Before the frame paints, so the sheet or column opens already on the port (no jump one frame later).
+  useLayoutEffect(() => {
     if (focusedPortId === null) return
-    document.querySelector(`[data-port-row="${focusedPortId}"]`)?.scrollIntoView({ block: 'nearest' })
+    // A6.5: a picked port opens its traffic panel at the top of the inspector; show that, else its row.
+    // Scrolls the panel (the side column or the phone sheet) only, never the page.
+    const panel = document.querySelector(`[data-port-traffic="${focusedPortId}"]`)?.closest('section')
+    const scroller = panel?.closest('aside, [role="dialog"]')
+    if (panel && scroller) {
+      const offset = panel.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
+      // Near the top (under the header): keep the device's header in view too.
+      scroller.scrollTop = offset < scroller.clientHeight / 2 ? 0 : offset
+    } else {
+      document.querySelector(`[data-port-row="${focusedPortId}"]`)?.scrollIntoView({ block: 'nearest' })
+    }
   }, [focusedPortId])
 
   if (node.ports.length === 0) {
@@ -523,6 +543,14 @@ function PortsList({
                     <p className={led === 'missing' ? 'text-status-critical' : 'text-muted-foreground'}>
                       {portStateText(port, state)}
                     </p>
+                    {state?.traffic ? (
+                      <p className="font-mono text-[11px] tabular-nums" data-port-row-traffic>
+                        {portTrafficText(state.traffic)}
+                        {state.traffic.scope === 'cpu' ? (
+                          <span className="font-sans text-status-warning"> · {SCOPE_LABELS.cpu}</span>
+                        ) : null}
+                      </p>
+                    ) : null}
                     {link ? (
                       <button
                         type="button"
@@ -1467,6 +1495,7 @@ function CableInspector({ link, ...props }: InspectorProps & { link: InfraLink }
           <CableEnd end={link.b} index={index} stateIndex={stateIndex} onSelect={onSelect} />
         </div>
       </Section>
+      <CableTrafficSection link={link} index={index} stateIndex={stateIndex} />
       {!editing && link.notes ? (
         <Section title="Notes">
           <p className="whitespace-pre-wrap text-xs">{link.notes}</p>

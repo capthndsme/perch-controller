@@ -18,6 +18,7 @@ import { Segmented } from '@/components/ui/segmented'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { useDeleteRoute, useGatewayRouting, useSaveRoute } from '@/hooks/use-gateway-native'
+import { useRetained } from '@/hooks/use-retained'
 import { apiErrorCode } from '@/lib/api'
 import { nativeErrorMessage } from '@/lib/gateway-native'
 import { refusalIssues } from '@/lib/networks'
@@ -40,6 +41,7 @@ function RoutingView({ ctx }: { ctx: NativeContext }) {
   const routing = useGatewayRouting(ctx.gateway.id)
   const [editing, setEditing] = useState<StaticRoute | 'new' | null>(null)
   const [deleting, setDeleting] = useState<StaticRoute | null>(null)
+  const shownDeleting = useRetained(deleting)
   const remove = useDeleteRoute(ctx.gateway.id)
   if (routing.isPending) return <p className="text-sm text-muted-foreground">Loading routes…</p>
   if (routing.error) return <ErrorLine message={nativeErrorMessage(routing.error)} />
@@ -82,7 +84,7 @@ function RoutingView({ ctx }: { ctx: NativeContext }) {
             remove.reset()
           }
         }}
-        title={`Delete the route to ${deleting?.target ?? ''}?`}
+        title={`Delete the route to ${shownDeleting?.target ?? ''}?`}
         description="The router drops it at the next apply."
         confirmLabel="Delete and apply"
         destructive

@@ -108,7 +108,12 @@ export function TimePicker({
             <CaretDown className="size-3" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="end" sideOffset={8} className="w-[420px] p-0">
+        <PopoverContent
+          align="end"
+          sideOffset={8}
+          collisionPadding={8}
+          className="max-h-[var(--radix-popover-content-available-height)] w-[min(420px,calc(100vw-1rem))] overflow-y-auto overscroll-contain p-0"
+        >
           <TimePickerBody
             window={window}
             resolutionMode={resolutionMode}
@@ -224,8 +229,8 @@ function TimePickerBody({
   }
 
   return (
-    <div className="grid grid-cols-[160px_1fr] gap-0">
-      <div className="space-y-2 border-r border-border bg-muted/30 p-2">
+    <div className="grid grid-cols-1 gap-0 sm:grid-cols-[160px_1fr]">
+      <div className="space-y-2 border-b border-border bg-muted/30 p-2 sm:border-r sm:border-b-0">
         {RANGE_GROUPS.map((group) => (
           <div key={group.label}>
             <p
@@ -234,7 +239,8 @@ function TimePickerBody({
             >
               {group.label}
             </p>
-            <div className="grid gap-0.5">
+            {/* A phone lays the ranges out as rows of chips; the column comes back from sm. */}
+            <div className="grid grid-cols-3 gap-0.5 sm:grid-cols-1">
               {group.ranges.map((range) => (
                 <Button
                   key={range}

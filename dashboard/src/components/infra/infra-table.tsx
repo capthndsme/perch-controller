@@ -12,6 +12,7 @@ import {
   type LayoutIndex,
   type StateIndex,
 } from '@/lib/infra'
+import { linkTrafficText } from '@/lib/infra-traffic'
 import { cn } from '@/lib/utils'
 import type { InfraLayoutResponse } from '@/types/api'
 
@@ -108,7 +109,7 @@ export function InfraTable({ layout, index, stateIndex, onSelect }: InfraTablePr
             {layout.links.length === 0 ? (
               <p className="px-4 text-xs text-muted-foreground">No cables drawn yet.</p>
             ) : (
-              <table className="data-table min-w-[560px]">
+              <table className="data-table min-w-[720px]">
                 <caption className="sr-only">Cables on the map</caption>
                 <thead>
                   <tr>
@@ -116,6 +117,7 @@ export function InfraTable({ layout, index, stateIndex, onSelect }: InfraTablePr
                     <th scope="col">To</th>
                     <th scope="col">Medium</th>
                     <th scope="col">State</th>
+                    <th scope="col">Traffic now</th>
                     <th scope="col">Label</th>
                   </tr>
                 </thead>
@@ -141,6 +143,7 @@ export function InfraTable({ layout, index, stateIndex, onSelect }: InfraTablePr
                         <td className={state?.state === 'mismatch' ? 'font-medium text-status-critical' : undefined}>
                           {linkStateText(state)}
                         </td>
+                        <td className="text-muted-foreground">{linkTrafficText(index, link, state?.traffic)}</td>
                         <td className="text-muted-foreground">{link.label ?? '—'}</td>
                       </tr>
                     )

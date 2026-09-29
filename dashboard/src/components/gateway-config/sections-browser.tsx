@@ -18,6 +18,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { ActorName } from '@/components/gateway-config/actor'
 import { DiffList, ErrorLine, ToneBadge, UciValueText } from '@/components/gateway-config/bits'
 import { useSections, useSectionDetail, useSetSectionScope } from '@/hooks/use-gateways'
+import { useRetained } from '@/hooks/use-retained'
 import {
   formatAgo,
   formatDateTime,
@@ -199,7 +200,9 @@ export function SectionDialog({
   isAdmin: boolean
   onClose: () => void
 }) {
-  const detail = useSectionDetail(gatewayId, perchId)
+  // The last section shown stays in the dialog while it animates out.
+  const shownPerchId = useRetained(perchId)
+  const detail = useSectionDetail(gatewayId, shownPerchId)
   const setScope = useSetSectionScope(gatewayId)
   const [view, setView] = useState<View>('compare')
   const section = detail.data?.section

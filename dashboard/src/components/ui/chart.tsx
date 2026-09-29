@@ -2,6 +2,7 @@ import * as React from "react"
 import * as RechartsPrimitive from "recharts"
 import type { TooltipValueType } from "recharts"
 
+import { useMediaQuery } from "@/hooks/use-media-query"
 import { cn } from "@/lib/utils"
 
 // Format: { THEME_NAME: CSS_SELECTOR }
@@ -116,8 +117,12 @@ ${colorConfig
 // tooltip box (~400ms) by default, which visibly stutters when sweeping
 // across the dense (up to ~2k-point) series. Callers can still re-enable
 // it by passing `isAnimationActive`.
+// On a touch screen (no hover) the tooltip opens on a tap: Recharts turns
+// every touchmove into hover, so a scroll that starts on a chart would drag
+// the crosshair along and leave it wherever the finger lifted.
 function ChartTooltip(props: React.ComponentProps<typeof RechartsPrimitive.Tooltip>) {
-  return <RechartsPrimitive.Tooltip isAnimationActive={false} {...props} />
+  const touch = useMediaQuery("(hover: none)")
+  return <RechartsPrimitive.Tooltip isAnimationActive={false} trigger={touch ? "click" : "hover"} {...props} />
 }
 
 function ChartTooltipContent({
@@ -321,7 +326,7 @@ function ChartLegendContent({
   return (
     <div
       className={cn(
-        "flex items-center justify-center gap-4",
+        "flex flex-wrap items-center justify-center gap-x-4 gap-y-1",
         verticalAlign === "top" ? "pb-3" : "pt-3",
         className
       )}

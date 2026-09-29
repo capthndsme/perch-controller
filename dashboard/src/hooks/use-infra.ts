@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { wifiQueryKey } from '@/hooks/use-wifi'
 import { apiFetch } from '@/lib/api'
+import { trafficRefetchMs, trafficWindowQuery, type TrafficSpan } from '@/lib/infra-traffic'
 import type {
   BindInfraNodePayload,
   CreateInfraLinkPayload,
@@ -8,9 +9,12 @@ import type {
   CreateInfraNodeResponse,
   InfraLayoutResponse,
   InfraLink,
+  InfraLinkTrafficResponse,
   InfraNode,
+  InfraNodeTrafficResponse,
   InfraPort,
   InfraPortInput,
+  InfraPortTrafficResponse,
   InfraPositionEntry,
   InfraStateResponse,
   UpdateInfraLinkPayload,
@@ -63,6 +67,54 @@ export function useInfraWifiClients(options: { enabled: boolean; paused?: boolea
     queryFn: () => apiFetch<WifiClientSummary[]>('/api/v1/wifi/clients?activeOnly=true'),
     refetchInterval: options.paused ? false : 10_000,
     enabled: options.enabled,
+  })
+}
+
+/**
+ * While another span of the same port, cable or node loads, its last span
+ * stays on screen (`isPlaceholderData`, dimmed by the inspector) instead of
+ * collapsing to a placeholder; another port's figures never stand in.
+ */
+function sameSubject<T>(id: number | null) {
+  return (previous: T | undefined, previousQuery: { queryKey: readonly unknown[] } | undefined) =>
+    previousQuery?.queryKey[3] === id ? previous : undefined
+}
+
+/**
+ * A6.4: a port's, a cable's or a node's traffic accounting over a span ending
+ * now. Read only while the inspector shows it (`enabled`); the window is taken
+ * when the request goes out, so the key holds the span, not the instants.
+ */
+export function useInfraPortTraffic(portId: number | null, span: TrafficSpan, enabled = true) {
+  return useQuery({
+    queryKey: [...infraQueryKey, 'traffic', 'port', portId, span] as const,
+    queryFn: () =>
+      apiFetch<InfraPortTrafficResponse>(`/api/v1/infra/ports/${portId}/traffic?${trafficWindowQuery(span)}`),
+    refetchInterval: trafficRefetchMs(span),
+    enabled: enabled && portId !== null,
+    placeholderData: sameSubject<InfraPortTrafficResponse>(portId),
+  })
+}
+
+export function useInfraLinkTraffic(linkId: number | null, span: TrafficSpan, enabled = true) {
+  return useQuery({
+    queryKey: [...infraQueryKey, 'traffic', 'link', linkId, span] as const,
+    queryFn: () =>
+      apiFetch<InfraLinkTrafficResponse>(`/api/v1/infra/links/${linkId}/traffic?${trafficWindowQuery(span)}`),
+    refetchInterval: trafficRefetchMs(span),
+    enabled: enabled && linkId !== null,
+    placeholderData: sameSubject<InfraLinkTrafficResponse>(linkId),
+  })
+}
+
+export function useInfraNodeTraffic(nodeId: number | null, span: TrafficSpan, enabled = true) {
+  return useQuery({
+    queryKey: [...infraQueryKey, 'traffic', 'node', nodeId, span] as const,
+    queryFn: () =>
+      apiFetch<InfraNodeTrafficResponse>(`/api/v1/infra/nodes/${nodeId}/traffic?${trafficWindowQuery(span)}`),
+    refetchInterval: trafficRefetchMs(span),
+    enabled: enabled && nodeId !== null,
+    placeholderData: sameSubject<InfraNodeTrafficResponse>(nodeId),
   })
 }
 
@@ -257,9 +309,16 @@ export function useDeleteInfraLink() {
   })
 }
 
+/**
+ * A batch of positions being saved. The map glides its boxes to positions that
+ * change while one is pending (Auto-arrange); a drag or a poll only ever jumps.
+ */
+export const infraPositionsMutationKey = [...infraQueryKey, 'positions'] as const
+
 export function useSaveInfraPositions() {
   const queryClient = useQueryClient()
   return useMutation({
+    mutationKey: infraPositionsMutationKey,
     mutationFn: (positions: InfraPositionEntry[]) =>
       apiFetch<{ updated: number }>('/api/v1/infra/positions', {
         method: 'PUT',

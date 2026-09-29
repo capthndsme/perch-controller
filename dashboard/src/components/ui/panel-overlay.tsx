@@ -29,12 +29,16 @@ function PanelOverlay({ show, label, className }: PanelOverlayProps) {
       aria-hidden={!show}
       className={cn(
         'pointer-events-none absolute inset-0 z-10 flex items-center justify-center gap-2',
-        'bg-card/40 backdrop-blur-[1px] transition-opacity duration-200',
-        show ? 'opacity-100' : 'opacity-0',
+        'bg-card/40 backdrop-blur-[1px] transition-[opacity,visibility] ease-out',
+        // Like PageSpinner: only a switch slower than 150 ms shows it, so a fast
+        // one never flashes the scrim; it leaves at once. Invisible when hidden,
+        // so the blur isn't painted.
+        show ? 'visible opacity-100 duration-base delay-150' : 'invisible opacity-0 duration-fast delay-0',
         className,
       )}
     >
-      <Spinner className="size-5" />
+      {/* Only while shown: a hidden overlay runs no animation. */}
+      {show ? <Spinner className="size-5" /> : null}
       {label ? <span className="text-xs text-muted-foreground">{label}</span> : null}
     </div>
   )

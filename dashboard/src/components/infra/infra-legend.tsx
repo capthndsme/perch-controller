@@ -56,12 +56,30 @@ const SIGNALS: Array<{ label: string; quality: WifiSignalQuality | null }> = [
   { label: 'Unknown', quality: null },
 ]
 
+/** A6.5: a busy cable, thicker, with its dots running (still with reduced motion). */
+function FlowSwatch() {
+  return (
+    <svg aria-hidden width="28" height="8" className="shrink-0">
+      <line x1="2" y1="4" x2="26" y2="4" stroke="var(--foreground)" strokeOpacity="0.8" strokeWidth="4" />
+      <line x1="2" y1="4" x2="26" y2="4" className="infra-cable-flow" stroke="var(--brand)" strokeWidth="4" style={{ animationDuration: '1.2s' }} />
+    </svg>
+  )
+}
+
 /**
  * What the port lights and the cable strokes mean; sits under the map. With
  * the WiFi clients overlay on, also its chips and lines (A4.4), with how many
- * clients it shows.
+ * clients it shows; with "Traffic" on, how rates are drawn (A6.5).
  */
-export function InfraLegend({ className, wifi }: { className?: string; wifi?: { summary: string } | null }) {
+export function InfraLegend({
+  className,
+  wifi,
+  traffic = false,
+}: {
+  className?: string
+  wifi?: { summary: string } | null
+  traffic?: boolean
+}) {
   return (
     <div className={cn('flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground', className)}>
       <span className="section-label">Ports</span>
@@ -82,6 +100,30 @@ export function InfraLegend({ className, wifi }: { className?: string; wifi?: { 
         <Warning aria-hidden weight="fill" className="size-3" />
         Mismatch: the two ends disagree
       </span>
+      {traffic ? (
+        <>
+          <span className="section-label sm:ml-2" data-legend-traffic>
+            Traffic
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <FlowSwatch />
+            Busier cables are thicker; the dots run the busier way, faster the busier
+          </span>
+          <span className="inline-flex items-center gap-1 font-mono">
+            ↓ ↑<span className="font-sans">rates towards the lower and the upper box</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span aria-hidden className="relative inline-block h-[14px] w-[18px] shrink-0 rounded-[3px] border border-foreground/30 bg-muted/80">
+              <span className="absolute inset-x-[4px] bottom-[2px] h-[2px] rounded-full bg-brand" />
+            </span>
+            Port moving traffic
+          </span>
+          <span className="inline-flex items-center gap-1" title="The switch's byte counters could not be read: frames it forwards between two of its ports are missing.">
+            <span className="rounded-[2px] bg-status-warning/15 px-0.5 text-[9px] font-semibold text-status-warning">CPU only</span>
+            may miss switched traffic
+          </span>
+        </>
+      ) : null}
       {wifi ? (
         <>
           <span className="section-label sm:ml-2" data-legend-wifi>

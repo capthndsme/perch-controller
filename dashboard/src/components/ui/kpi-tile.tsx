@@ -21,10 +21,17 @@ const STATUS_DOT: Record<NonNullable<KpiTileProps['status']>, string> = {
 /**
  * Stat tile: the number *is* the chart. Proportional figures on the hero
  * value (no tabular-nums at display size), small uppercase label above.
+ * Wrapped in a link, it tints the moment it is pressed and fades on release.
+ * The value swaps in place on a refresh: no count-up.
  */
 export function KpiTile({ label, value, sub, icon, status, className }: KpiTileProps) {
   return (
-    <div className={cn('card-surface flex flex-col gap-1.5 p-3.5', className)}>
+    <div
+      className={cn(
+        'card-surface flex flex-col gap-1.5 p-3.5 transition-colors [a:active>&]:bg-muted [a:active>&]:duration-0',
+        className,
+      )}
+    >
       <div className="flex items-center justify-between gap-2">
         <span className="section-label">{label}</span>
         {icon ? <span className="text-muted-foreground">{icon}</span> : null}

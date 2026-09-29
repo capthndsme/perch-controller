@@ -1640,6 +1640,46 @@ export type InfraPortState = {
   changedAt: string | null
   /** Manual ports: the link whose live far end this state was taken from. */
   derivedFrom: number | null
+  /** A6.3: the port's rate now. Absent from controllers before A6. */
+  traffic?: InfraPortTraffic | null
+}
+
+/**
+ * A6.1: what a port's byte counters cover. `port`: every frame through the socket (the
+ * switch's own counters on a DSA port). `cpu`: only what the device's CPU sent or received;
+ * frames its switch forwards between two of its ports are missing.
+ */
+export type InfraTrafficScope = 'port' | 'cpu'
+
+/** A6.3: a port's rate, from its point of view, in bits per second. */
+export type InfraPortTraffic = {
+  /** Received from its cable. */
+  rxBps: number
+  /** Sent into its cable. */
+  txBps: number
+  scope: InfraTrafficScope | null
+  /** The report the rate ends at (ISO). */
+  at: string
+  /** Manual ports: the link whose far agent port measured it (rx/tx already turned to this side). */
+  derivedFrom: number | null
+}
+
+/** A6.3: one measuring end of a cable. */
+export type InfraLinkEndRate = {
+  rxBps: number
+  txBps: number
+  scope: InfraTrafficScope | null
+}
+
+/** A6.3: a cable's rate in both directions (bits per second), the larger of its two ends' readings. */
+export type InfraLinkTraffic = {
+  /** From end a (`InfraLink.a`) to end b. */
+  aToBBps: number
+  bToABps: number
+  /** No measuring end has scope `port`: frames a switch forwards between its ports may be missing. */
+  partial: boolean
+  at: string
+  ends: { a: InfraLinkEndRate | null; b: InfraLinkEndRate | null }
 }
 
 export type InfraLinkStateValue = 'up' | 'down' | 'unknown' | 'mismatch'
@@ -1650,6 +1690,67 @@ export type InfraLinkState = {
   speedMbps: number | null
   /** Set on `mismatch`: the two live ends disagree on carrier or on speed. */
   detail: 'carrier' | 'speed' | null
+  /** A6.3: null when no end measures it. Absent from controllers before A6. */
+  traffic?: InfraLinkTraffic | null
+}
+
+/** A6.4: the window a traffic read covers. */
+export type InfraTrafficWindow = { from: string; to: string }
+
+/** A6.4: which agent port answers for a port (itself, or a manual port's far end over `linkId`). */
+export type InfraTrafficMeasuredBy = { portId: number; linkId: number | null }
+
+/** `GET /api/v1/infra/ports/:id/traffic` (A6.4). Rates in bits per second. */
+export type InfraPortTrafficResponse = {
+  portId: number
+  nodeId: number
+  measuredBy: InfraTrafficMeasuredBy | null
+  window: InfraTrafficWindow
+  bucketSeconds: number
+  source: string
+  /** First stored bucket of the measuring port. */
+  since: string | null
+  totals: { rxBytes: number; txBytes: number }
+  points: Array<{
+    bucketStart: string
+    seconds: number
+    rxBytes: number
+    txBytes: number
+    rxBps: number
+    txBps: number
+  }>
+}
+
+/** `GET /api/v1/infra/links/:id/traffic` (A6.4). */
+export type InfraLinkTrafficResponse = {
+  linkId: number
+  /** The agent port ids with counters at each end. */
+  measuredBy: { a: number | null; b: number | null }
+  window: InfraTrafficWindow
+  bucketSeconds: number
+  source: string
+  since: string | null
+  totals: { aToBBytes: number; bToABytes: number }
+  points: Array<{
+    bucketStart: string
+    seconds: number
+    aToBBytes: number
+    bToABytes: number
+    aToBBps: number
+    bToABps: number
+  }>
+}
+
+/** `GET /api/v1/infra/nodes/:id/traffic` (A6.4): per-port totals, every port in display order. */
+export type InfraNodeTrafficResponse = {
+  nodeId: number
+  window: InfraTrafficWindow
+  ports: Array<{
+    portId: number
+    measuredBy: InfraTrafficMeasuredBy | null
+    rxBytes: number
+    txBytes: number
+  }>
 }
 
 /** `GET /api/v1/infra/state`, polled every 5 s. */

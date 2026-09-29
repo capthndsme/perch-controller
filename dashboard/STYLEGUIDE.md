@@ -27,8 +27,9 @@ A drop-in, non-blocking loading scrim (`src/components/ui/panel-overlay.tsx`).
 
 - Render it as the **last child** of a `relative` container — the `<section>`
   or `<Card>` that holds the chart/table/stat.
-- It is `pointer-events-none` and fades (`transition-opacity`), so it never
-  blocks interaction or flashes on fast refetches.
+- It is `pointer-events-none` and waits 150 ms before fading in (like
+  `PageSpinner`), so it never blocks interaction and a fast switch never
+  flashes it. While hidden it is `invisible` and renders no spinner.
 - Pass `show={query.isPlaceholderData}` and an optional `label="Updating…"`.
 
 ```tsx
@@ -93,3 +94,35 @@ if (query.isPending) return <PageSpinner label="Loading presence settings" />
   (`--chart-download` / `--chart-upload`, the signal-quality palette), and a
   readout under the chart for the point under the pointer, a tap, or the
   arrow keys.
+
+## Motion
+
+- Tokens live in `src/index.css` (`@theme static`): `ease-out`
+  (`cubic-bezier(0.23, 1, 0.32, 1)`) for anything entering or leaving,
+  `ease-in-out` (`cubic-bezier(0.77, 0, 0.175, 1)`) for something moving on
+  screen, `ease-drawer` (`cubic-bezier(0.32, 0.72, 0, 1)`) for panels from an
+  edge, and the critically damped springs `ease-spring-snappy` (pair with
+  360 ms), `ease-spring-sheet` (475 ms, a sheet presenting) and
+  `ease-spring-exit` (320 ms, a sheet leaving); `duration-fast` 150 ms,
+  `duration-base` 200 ms, `duration-slow` 300 ms. JS reads `src/lib/motion.ts`
+  (and `src/lib/spring.ts` for a spring a finger hands its velocity to). Don't
+  hand-type curves or durations.
+- Animate `transform`/`translate`/`scale` and `opacity`; never `transition-all`.
+  A `duration-*` class alone implies `transition: all` (the initial
+  `transition-property`): pair it with an explicit `transition-*` or
+  `transition-none`.
+- Nothing animates on the 5 s refresh (charts, numbers, lists, re-sorts), and
+  nothing that opens from the keyboard (the `/` search). Page navigation has no
+  transition.
+- Popovers grow out of their trigger (`origin-(--radix-popover-content-transform-origin)`,
+  in `PopoverContent`); modals stay centred.
+- Press feedback: `Button` scales to 0.97 (`.pressable`) and tints; rows,
+  tiles and tabs tint the moment the finger lands and fade on release
+  (`transition-colors duration-base active:duration-0`). Touch never gets the
+  platform's tap flash (`-webkit-tap-highlight-color` is off app-wide).
+- A dialog keeps showing what it was opened for while it animates out:
+  `useConfirm`, or `useRetained(value)` for a dialog keyed on a nullable
+  selection.
+- With `prefers-reduced-motion`, keep fades and drop movement. `index.css`
+  turns every tw-animate enter/exit into a fade; new motion ships its own
+  `motion-reduce:` variant.

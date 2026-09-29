@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { ReactFlowProvider } from '@xyflow/react'
-import { CheckCircle, EyeSlash, MagicWand, TreeStructure, WarningCircle, WifiHigh, X } from '@phosphor-icons/react'
+import { ArrowsDownUp, CheckCircle, EyeSlash, MagicWand, TreeStructure, WarningCircle, WifiHigh, X } from '@phosphor-icons/react'
 import { PageHeader } from '@/components/layout/page-header'
 import { AddDeviceMenu } from '@/components/infra/add-device-menu'
 import {
   InfraCanvas,
   type InfraCanvasApi,
   type InfraNotice,
+  type InfraOccludedInsets,
   type InfraSelection,
 } from '@/components/infra/infra-canvas'
 import { InfraLegend } from '@/components/infra/infra-legend'
@@ -16,6 +17,7 @@ import { InfraTable } from '@/components/infra/infra-table'
 import { NodeIcon } from '@/components/infra/kind-icon'
 import { InfraInspector } from '@/components/infra/node-inspector'
 import { Alert, AlertAction, AlertDescription } from '@/components/ui/alert'
+import { BottomSheet, BottomSheetTitle } from '@/components/ui/bottom-sheet'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -41,29 +43,52 @@ import {
   type LayoutIndex,
 } from '@/lib/infra'
 import { buildWifiOverlay, type WifiOverlay } from '@/lib/infra-overlay'
+import { MOTION_MS } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { InfraLayoutResponse, InfraNode, InfraNodeKind } from '@/types/api'
 
-const CANVAS_HEIGHT_WIDE = 'h-[min(72svh,860px)] min-h-[480px]'
-const CANVAS_HEIGHT_PHONE = 'h-[62svh] min-h-[340px]'
+// Below `lg` the shell has a bottom navigation bar (`--bottom-nav-height`, 0 where there is none).
+const CANVAS_HEIGHT_WIDE = 'h-[calc(min(72svh,860px)-var(--bottom-nav-height,0px))] min-h-[480px]'
+const CANVAS_HEIGHT_PHONE = 'h-[calc(62svh-var(--bottom-nav-height,0px))] min-h-[340px]'
+
+/**
+ * The phone's details sheet rests like Apple Maps' place card: half the
+ * screen (45 svh, the map above it live and undimmed) or nearly all of it
+ * (90 svh, the map dimmed).
+ */
+const SHEET_HEIGHT = '90svh'
+const SHEET_DETENTS = [1, 0.5] as const
+const SHEET_FULL = 0
 
 /** The WiFi clients overlay is remembered per browser (A4.4); storage may be unavailable. */
 const WIFI_OVERLAY_KEY = 'perch-infra-wifi-clients'
+/** A6.5: rates on the cables, on unless turned off in this browser. */
+const TRAFFIC_KEY = 'perch-infra-traffic'
 
-function readOverlayPreference(): boolean {
+function readPreference(key: string, fallback: boolean): boolean {
   try {
-    return localStorage.getItem(WIFI_OVERLAY_KEY) === '1'
+    const value = localStorage.getItem(key)
+    return value === null ? fallback : value === '1'
   } catch {
-    return false
+    return fallback
   }
 }
 
-function writeOverlayPreference(on: boolean) {
+function writePreference(key: string, on: boolean) {
   try {
-    localStorage.setItem(WIFI_OVERLAY_KEY, on ? '1' : '0')
+    localStorage.setItem(key, on ? '1' : '0')
   } catch {
     // Per-viewer convenience only: without storage it lasts for this visit.
   }
+}
+
+/** A selection's identity, the port a node selection points at left out. */
+function selectionKey(selection: InfraSelection | null): string | null {
+  if (!selection) return null
+  if (selection.type === 'node') return `n${selection.id}`
+  if (selection.type === 'link') return `l${selection.id}`
+  if (selection.type === 'client') return `c${selection.mac}`
+  return `a${selection.apNodeId}`
 }
 
 /** `?node=12` (A4.3): the box to select and centre. */
@@ -226,7 +251,8 @@ export function InfrastructurePage() {
   const canEdit = isAdmin && wide
   const editing = editWanted && canEdit
   const [interacting, setInteracting] = useState(false)
-  const [overlayOn, setOverlayOn] = useState(readOverlayPreference)
+  const [overlayOn, setOverlayOn] = useState(() => readPreference(WIFI_OVERLAY_KEY, false))
+  const [trafficOn, setTrafficOn] = useState(() => readPreference(TRAFFIC_KEY, true))
   const layout = useInfraLayout({ paused: interacting })
   const state = useInfraState({ paused: interacting, enabled: layout.isSuccess })
   const wifiClients = useInfraWifiClients({ enabled: overlayOn && layout.isSuccess, paused: interacting })
@@ -234,12 +260,21 @@ export function InfrastructurePage() {
     nodeParam !== null ? { type: 'node', id: nodeParam } : null,
   )
   const [notice, setNotice] = useState<InfraNotice | null>(null)
+  // The notice on its way out (150 ms): it lifts and fades, then goes.
+  const [leavingNotice, setLeavingNotice] = useState<InfraNotice | null>(null)
+  const noticeLeaving = notice !== null && notice === leavingNotice
   const [addOpen, setAddOpen] = useState(false)
   const [addKind, setAddKind] = useState<InfraNodeKind | null>(null)
   const [addPortsNodeId, setAddPortsNodeId] = useState<number | null>(null)
   const [connectPortId, setConnectPortId] = useState<number | null>(null)
   const canvasApi = useRef<InfraCanvasApi | null>(null)
   const healedFor = useRef<string | null>(null)
+  const canvasBox = useRef<HTMLDivElement>(null)
+  const sheetScroller = useRef<HTMLDivElement>(null)
+  const asideScroller = useRef<HTMLElement>(null)
+  // The phone sheet's detent (index into SHEET_DETENTS; null = closed) and how much of the map it covers.
+  const [sheetDetent, setSheetDetent] = useState<number | null>(null)
+  const [coveredBottom, setCoveredBottom] = useState(0)
 
   // A link within the app names another box (`?node=`): select that one too.
   const [seenNodeParam, setSeenNodeParam] = useState(nodeParam)
@@ -303,9 +338,15 @@ export function InfrastructurePage() {
   // Info notices fade on their own; errors stay until dismissed or replaced.
   useEffect(() => {
     if (notice?.tone !== 'info') return
-    const timer = window.setTimeout(() => setNotice(null), 6000)
+    const timer = window.setTimeout(() => setLeavingNotice(notice), 6000)
     return () => window.clearTimeout(timer)
   }, [notice])
+  useEffect(() => {
+    if (!leavingNotice) return
+    // A notice that replaced it meanwhile stays.
+    const timer = window.setTimeout(() => setNotice((current) => (current === leavingNotice ? null : current)), MOTION_MS.fast)
+    return () => window.clearTimeout(timer)
+  }, [leavingNotice])
 
   // The state names a port or node the layout lacks (an agent grew a port
   // between layout polls): reload the layout, once for each such set of ids.
@@ -328,6 +369,22 @@ export function InfrastructurePage() {
     else if (selection.type === 'link') activeSelection = index.links.has(selection.id) ? selection : null
     else activeSelection = overlay ? selection : null
   }
+  const activeKey = selectionKey(activeSelection)
+
+  // The phone sheet keeps showing the last selection while it slides away (and can be caught back).
+  const [sheetSelection, setSheetSelection] = useState<InfraSelection | null>(null)
+  if (activeSelection && activeSelection !== sheetSelection) setSheetSelection(activeSelection)
+  // A new selection while the sheet is open cross-fades in (150 ms); a fresh open does not (the sheet rises).
+  const [openKey, setOpenKey] = useState<string | null>(null)
+  const [swapFade, setSwapFade] = useState(false)
+  if (activeKey !== openKey) {
+    if (activeKey !== null) setSwapFade(openKey !== null)
+    setOpenKey(activeKey)
+  }
+  const shownKey = useRef<string | null>(null)
+  useLayoutEffect(() => {
+    shownKey.current = activeKey
+  })
 
   function setMode(next: 'view' | 'edit') {
     setEditWanted(next === 'edit')
@@ -343,7 +400,13 @@ export function InfrastructurePage() {
   function toggleOverlay() {
     const next = !overlayOn
     setOverlayOn(next)
-    writeOverlayPreference(next)
+    writePreference(WIFI_OVERLAY_KEY, next)
+  }
+
+  function toggleTraffic() {
+    const next = !trafficOn
+    setTrafficOn(next)
+    writePreference(TRAFFIC_KEY, next)
   }
 
   const onNotice = useCallback((next: InfraNotice | null) => setNotice(next), [])
@@ -354,9 +417,24 @@ export function InfrastructurePage() {
   }, [])
   // Anything else picked on the map or in the panel closes an open "Connect a device…".
   const onSelect = useCallback((next: InfraSelection | null) => {
+    // Something else in the open sheet or panel: its details start at their top (a picked port scrolls later).
+    if (next && selectionKey(next) !== shownKey.current) {
+      sheetScroller.current?.scrollTo({ top: 0 })
+      asideScroller.current?.scrollTo({ top: 0 })
+    }
     setSelection(next)
     setConnectPortId(null)
   }, [])
+  const onSheetDetent = useCallback((detent: number | null, top: number) => {
+    setSheetDetent(detent)
+    // The map's strip under the sheet at that rest, for the camera to keep the selection above it.
+    const box = canvasBox.current?.getBoundingClientRect()
+    setCoveredBottom(detent === null || !box ? 0 : Math.round(Math.min(box.height, Math.max(0, box.bottom - top))))
+  }, [])
+  const occludedInsets = useMemo<InfraOccludedInsets>(
+    () => ({ right: 0, bottom: wide ? 0 : coveredBottom }),
+    [wide, coveredBottom],
+  )
   const onConnectDevice = useCallback((nodeId: number, portId: number) => {
     setSelection({ type: 'node', id: nodeId, portId })
     setConnectPortId(portId)
@@ -380,6 +458,20 @@ export function InfrastructurePage() {
 
   const actions = (
     <>
+      {structure && structure.nodes.length > 0 ? (
+        <Button
+          type="button"
+          size="sm"
+          variant={trafficOn ? 'secondary' : 'outline'}
+          aria-pressed={trafficOn}
+          title="Show the rate on each cable and which ports are busy"
+          onClick={toggleTraffic}
+          data-traffic-toggle
+        >
+          <ArrowsDownUp />
+          Traffic
+        </Button>
+      ) : null}
       {structure && structure.nodes.length > 0 ? (
         <Button
           type="button"
@@ -436,6 +528,32 @@ export function InfrastructurePage() {
     </>
   )
 
+  const noticeAlert = notice ? (
+    <Alert
+      className={cn(
+        'rounded-lg',
+        notice.tone === 'error' ? 'border-destructive/30 bg-destructive/5' : 'border-primary/20 bg-primary/5',
+      )}
+      data-notice={notice.tone}
+    >
+      {notice.tone === 'error' ? (
+        <WarningCircle className="size-4 text-destructive" />
+      ) : (
+        <CheckCircle className="size-4 text-primary" />
+      )}
+      <AlertDescription className={notice.tone === 'error' ? 'text-destructive' : 'text-foreground'}>
+        {notice.text}
+      </AlertDescription>
+      <AlertAction>
+        <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={() => setLeavingNotice(notice)}>
+          <X />
+        </Button>
+      </AlertAction>
+    </Alert>
+  ) : null
+
+  // The map is drawn: notices float over it (else they sit in the page's flow).
+  let mapShown = false
   let body: React.ReactNode
   if (layout.isPending) {
     // The map is the page: the spinner holds the canvas's box so nothing jumps when it arrives.
@@ -497,36 +615,39 @@ export function InfrastructurePage() {
       />
     )
   } else {
-    const inspector =
-      activeSelection ? (
-        <InfraInspector
-          selection={activeSelection}
-          layout={structure}
-          index={index}
-          stateIndex={stateIndex}
-          editing={editing}
-          isAdmin={isAdmin}
-          addPortsNodeId={addPortsNodeId}
-          onAddPortsNodeIdChange={setAddPortsNodeId}
-          connectPortId={connectPortId}
-          onConnectPortIdChange={setConnectPortId}
-          overlay={overlay}
-          onSelect={onSelect}
-          onNotice={onNotice}
-          outsideFrame={outsideFrame}
-          spotNear={spotNear}
-        />
-      ) : null
+    mapShown = true
+    const inspectorFor = (picked: InfraSelection) => (
+      <InfraInspector
+        selection={picked}
+        layout={structure}
+        index={index}
+        stateIndex={stateIndex}
+        editing={editing}
+        isAdmin={isAdmin}
+        addPortsNodeId={addPortsNodeId}
+        onAddPortsNodeIdChange={setAddPortsNodeId}
+        connectPortId={connectPortId}
+        onConnectPortIdChange={setConnectPortId}
+        overlay={overlay}
+        onSelect={onSelect}
+        onNotice={onNotice}
+        outsideFrame={outsideFrame}
+        spotNear={spotNear}
+      />
+    )
     body = (
       <>
         <div className="flex gap-3">
           <div
+            ref={canvasBox}
             className={cn(
               'relative min-w-0 flex-1 overflow-hidden rounded-lg border border-border',
               wide ? CANVAS_HEIGHT_WIDE : CANVAS_HEIGHT_PHONE,
               editing && 'border-brand/40',
             )}
             data-infra-canvas
+            // The sheet all the way up covers the map: its cables stop flowing meanwhile.
+            data-flow-paused={!wide && sheetDetent === SHEET_FULL ? '' : undefined}
           >
             <ReactFlowProvider>
               <InfraCanvas
@@ -536,6 +657,7 @@ export function InfrastructurePage() {
                 mapLayout={mapLayout}
                 overlay={overlay}
                 editing={editing}
+                showTraffic={trafficOn}
                 isDark={isDark}
                 selection={activeSelection}
                 onSelect={onSelect}
@@ -544,40 +666,65 @@ export function InfrastructurePage() {
                 onAddPorts={onAddPorts}
                 onConnectDevice={onConnectDevice}
                 focusNodeId={nodeParam}
+                occludedInsets={occludedInsets}
                 apiRef={canvasApi}
               />
             </ReactFlowProvider>
+            {notice ? (
+              // Floats over the map's top edge instead of pushing the map down: in 8 px + fade (200 ms), out the
+              // same way (150 ms); a replacement swaps its text in place. Reduced motion: the fade alone.
+              <div
+                className={cn(
+                  'absolute top-3 left-1/2 z-10 w-max max-w-[calc(100%-1.5rem)] -translate-x-1/2 rounded-lg bg-card shadow-md',
+                  'transition-[opacity,translate] ease-out starting:-translate-y-2 starting:opacity-0 motion-reduce:starting:translate-y-0',
+                  noticeLeaving ? 'duration-fast -translate-y-2 opacity-0 motion-reduce:translate-y-0' : 'duration-base',
+                )}
+              >
+                {noticeAlert}
+              </div>
+            ) : null}
           </div>
-          {wide && inspector ? (
+          {wide && activeSelection ? (
             <aside
+              ref={asideScroller}
               aria-label="Details"
-              className={cn('card-surface w-80 shrink-0 overflow-y-auto lg:w-96', CANVAS_HEIGHT_WIDE)}
+              className={cn(
+                'card-surface w-80 shrink-0 overflow-y-auto lg:w-96',
+                CANVAS_HEIGHT_WIDE,
+                // Slides in 12 px from its edge as it opens; another selection swaps in place.
+                'transition-[opacity,translate] duration-base ease-out starting:translate-x-3 starting:opacity-0 motion-reduce:starting:translate-x-0',
+              )}
             >
-              {inspector}
+              {inspectorFor(activeSelection)}
             </aside>
           ) : null}
         </div>
-        {!wide && inspector ? (
-          <>
-            <button
-              type="button"
-              aria-label="Close details"
-              className="fixed inset-0 z-40 bg-black/30"
-              onClick={() => onSelect(null)}
-            />
-            <div
-              role="dialog"
-              aria-label="Details"
-              className="fixed inset-x-0 bottom-0 z-50 max-h-[75svh] overflow-y-auto rounded-t-2xl border-t border-border bg-card shadow-2xl"
-            >
-              <div className="flex justify-center pt-2" aria-hidden>
-                <span className="h-1 w-10 rounded-full bg-muted-foreground/30" />
+        {!wide ? (
+          <BottomSheet
+            open={activeSelection !== null}
+            onOpenChange={(open) => (open ? setSelection(sheetSelection) : onSelect(null))}
+            modal={false}
+            detents={SHEET_DETENTS}
+            scrollable
+            height={SHEET_HEIGHT}
+            onDetentChange={onSheetDetent}
+            contentRef={sheetScroller}
+            // Over the shell's bottom navigation bar, like a dialog over the whole page.
+            className="z-[56] pb-[env(safe-area-inset-bottom)]"
+            overlayClassName="z-[55] bg-black/30"
+          >
+            <BottomSheetTitle className="sr-only">Details</BottomSheetTitle>
+            {sheetSelection ? (
+              <div
+                key={selectionKey(sheetSelection)}
+                className={cn(swapFade && 'animate-in fade-in-0 duration-fast ease-out transition-none')}
+              >
+                {inspectorFor(sheetSelection)}
               </div>
-              {inspector}
-            </div>
-          </>
+            ) : null}
+          </BottomSheet>
         ) : null}
-        <InfraLegend wifi={overlay ? { summary: overlaySummary(overlay) } : null} />
+        <InfraLegend wifi={overlay ? { summary: overlaySummary(overlay) } : null} traffic={trafficOn} />
         <InfraTable layout={structure} index={index} stateIndex={stateIndex} onSelect={onSelect} />
       </>
     )
@@ -587,7 +734,7 @@ export function InfrastructurePage() {
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Infrastructure"
-        description="The Gateway agent, your access points and what you draw: their Ethernet ports with live link state, and the cables between them."
+        description="The Gateway agent, your access points and what you draw: their Ethernet ports with live link state, and the cables between them with the traffic they carry."
         actions={actions}
       />
       {editing ? (
@@ -615,29 +762,7 @@ export function InfrastructurePage() {
           {overlay ? '; showing the last list that loaded.' : '.'}
         </p>
       ) : null}
-      {notice ? (
-        <Alert
-          className={cn(
-            'rounded-lg',
-            notice.tone === 'error' ? 'border-destructive/30 bg-destructive/5' : 'border-primary/20 bg-primary/5',
-          )}
-          data-notice={notice.tone}
-        >
-          {notice.tone === 'error' ? (
-            <WarningCircle className="size-4 text-destructive" />
-          ) : (
-            <CheckCircle className="size-4 text-primary" />
-          )}
-          <AlertDescription className={notice.tone === 'error' ? 'text-destructive' : 'text-foreground'}>
-            {notice.text}
-          </AlertDescription>
-          <AlertAction>
-            <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={() => setNotice(null)}>
-              <X />
-            </Button>
-          </AlertAction>
-        </Alert>
-      ) : null}
+      {notice && !mapShown ? noticeAlert : null}
       {body}
     </div>
   )

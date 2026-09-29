@@ -31,6 +31,8 @@ export default defineConfig({
         // `recharts`; otherwise the entry or the map would import the Recharts
         // chunk just for them. @xyflow/react and dagre have no group: only the
         // infrastructure page imports them, so they stay in its chunk.
+        // react-spring and use-gesture (`motion`) are shared by the bottom sheet
+        // and the map, so they get a long-cached chunk of their own.
         codeSplitting: {
           groups: [
             {
@@ -69,6 +71,13 @@ export default defineConfig({
                 'detect-node-es',
               ),
               priority: 30,
+            },
+            {
+              // Physics springs and gestures for the sheets and the map camera.
+              // Only lazily loaded modules import them, so the entry never does.
+              name: 'motion',
+              test: packages('@react-spring/*', '@use-gesture/*'),
+              priority: 28,
             },
             {
               // Class-name helpers behind cn() and the component variants.

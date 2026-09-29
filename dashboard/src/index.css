@@ -70,6 +70,28 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Motion tokens (STYLEGUIDE.md › Motion). Curves: ease-out for anything
+ * entering or leaving, ease-in-out for something moving on screen,
+ * ease-drawer for sheets and panels that slide in from an edge. The spring
+ * curves are critically damped Apple springs (no overshoot) sampled into
+ * linear(): snappy (response 0.30 s, pair with 360ms) for indicators, the
+ * title swap and camera moves; sheet (0.35 s, 475ms) to present a sheet;
+ * exit (0.30 s cut at 1 %, 320ms) to dismiss one. Where linear() is not
+ * supported the declaration drops and `ease` applies. Durations keep UI
+ * motion under 300 ms; src/lib/motion.ts mirrors all of it for JS.
+ * `static`: the variables exist even where only plain CSS reads them. */
+@theme static {
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+    --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+    --ease-spring-snappy: linear(0, 0.09, 0.264, 0.443, 0.594, 0.713, 0.801, 0.864, 0.909, 0.939, 0.96, 0.974, 0.983, 0.989, 0.993, 1);
+    --ease-spring-sheet: linear(0, 0.075, 0.227, 0.39, 0.536, 0.656, 0.75, 0.821, 0.873, 0.911, 0.938, 0.957, 0.971, 0.98, 0.986, 0.991, 0.994, 0.996, 0.997, 1);
+    --ease-spring-exit: linear(0, 0.095, 0.277, 0.459, 0.612, 0.73, 0.815, 0.876, 0.918, 0.946, 0.965, 0.977, 0.985, 1);
+    --transition-duration-fast: 150ms;
+    --transition-duration-base: 200ms;
+    --transition-duration-slow: 300ms;
+}
+
 :root {
     --background: oklch(0.975 0.002 90);
     --foreground: oklch(0.145 0 0);
@@ -128,6 +150,10 @@
     --sidebar-width: 15rem;
     --sidebar-width-collapsed: 3.5rem;
     --topbar-height: 3.25rem;
+    /* The phone / tablet bottom tab bar (components/layout/bottom-nav.tsx) with
+     * the home-indicator safe area under it; 0 where there is none (lg+, print).
+     * Full-height pages subtract it with the top bar. */
+    --bottom-nav-height: calc(3.5rem + env(safe-area-inset-bottom, 0px));
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
     --sidebar-primary: oklch(0.205 0 0);
@@ -204,6 +230,26 @@
     /* Keep the scrollbar's room when a page is shorter than the window (the
      * spinner of a page still loading), so the shell never shifts sideways. */
     scrollbar-gutter: stable;
+    /* No grey/blue platform flash over whatever was tapped: controls, rows and
+     * tabs draw their own press state (`active:`). Inherited, so once is enough. */
+    -webkit-tap-highlight-color: transparent;
+    /* A pull past the top doesn't reload the whole app (the page refreshes
+     * itself); the rubber band / glow stays. */
+    overscroll-behavior-y: contain;
+    }
+  /* Taps act at once and a quick double tap never zooms the page. */
+  a[href],
+  button,
+  summary,
+  label,
+  select,
+  [role='button'],
+  [role='tab'],
+  [role='radio'],
+  [role='option'],
+  [role='switch'],
+  tr[data-clickable='true'] {
+    touch-action: manipulation;
     }
   /* Numbers, MACs and IPs opt in with `font-mono`; tables align digits. */
   .tabular-nums {
@@ -229,13 +275,59 @@
   .data-table tbody tr:last-child td {
     @apply border-b-0;
   }
+  /* The press tint lands with the finger and fades out on release (iOS list cells). */
   .data-table tbody tr[data-clickable='true'] {
-    @apply cursor-pointer transition-colors hover:bg-muted/40;
+    @apply cursor-pointer transition-colors duration-base hover:bg-muted/40 active:bg-muted/70 active:duration-0;
   }
   .card-surface {
     @apply rounded-lg border border-border bg-card;
   }
+  /* Pressable controls (Button): colours ease on hover, the press scales with
+   * the strong ease-out. A press tint lands at once and fades on release; the
+   * scale still eases in. Never `transition: all`. */
+  .pressable {
+    transition-property: color, background-color, border-color, box-shadow, opacity, scale;
+    transition-duration: var(--transition-duration-fast);
+    transition-timing-function: ease, ease, ease, ease, ease, var(--ease-out);
+  }
+  .pressable:active {
+    transition-duration: 0ms, 0ms, 0ms, 0ms, 0ms, var(--transition-duration-fast);
+  }
+  /* The top and bottom bars' one material (topbar.tsx, bottom-nav.tsx): thin
+   * enough that content visibly passes under it. */
+  .bar-material {
+    @apply bg-background/80 backdrop-blur-xl backdrop-saturate-150;
+  }
 }
+/* …solid where the browser can't blur. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .bar-material {
+    background-color: var(--background);
+  }
+}
+@media (width >= 64rem) {
+  :root {
+    --bottom-nav-height: 0px;
+  }
+}
+
+@media print {
+  :root {
+    --bottom-nav-height: 0px;
+  }
+}
+
+/* iOS zooms into any focused field whose text is under 16px and stays zoomed:
+ * on touch phones every text field gets 16px. Unlayered, so it beats the
+ * components' text-size utilities. */
+@media (width < 40rem) and (pointer: coarse) {
+  input:not([type='checkbox'], [type='radio'], [type='range'], [type='color']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 /* Page-level loading indicator (PageSpinner): invisible for the first 150 ms so
  * fast loads don't flash it, then a short fade. With reduced motion it keeps the
  * delay and skips the fade (the glyph itself stops spinning via motion-safe). */
@@ -249,13 +341,131 @@
 }
 
 .page-spinner-reveal {
-  animation: page-spinner-reveal 200ms ease-out 150ms both;
+  animation: page-spinner-reveal var(--transition-duration-base) var(--ease-out) 150ms both;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .page-spinner-reveal {
     animation-duration: 1ms;
   }
+}
+
+/* Reduced motion: every tw-animate enter/exit (Radix dialogs, sheets,
+ * popovers) keeps a fade and loses its movement, no slide and no zoom; a
+ * surface that only slides fades instead of popping. Unlayered, so it beats the
+ * utilities whatever their own slide/zoom says. React Flow's wireless march and
+ * the cable being drawn stand still (still dashed); the extra class outranks
+ * xyflow's stylesheet, which loads later. */
+@media (prefers-reduced-motion: reduce) {
+  [class*='animate-in'],
+  [class*='animate-out'] {
+    --tw-enter-opacity: 0;
+    --tw-enter-scale: 1;
+    --tw-enter-rotate: 0;
+    --tw-enter-translate-x: 0;
+    --tw-enter-translate-y: 0;
+    --tw-exit-opacity: 0;
+    --tw-exit-scale: 1;
+    --tw-exit-rotate: 0;
+    --tw-exit-translate-x: 0;
+    --tw-exit-translate-y: 0;
+  }
+  .react-flow .react-flow__edge.animated path,
+  .react-flow .react-flow__connection .animated {
+    animation: none;
+  }
+  /* A pressed button keeps its tint, not the shrink. */
+  .pressable:active {
+    scale: none;
+  }
+}
+
+/* Theme switch (hooks/use-theme.ts): every colour changes in the same frame,
+ * never control by control… */
+.theme-swap,
+.theme-swap *,
+.theme-swap *::before,
+.theme-swap *::after {
+  transition: none !important;
+}
+
+/* …and while the page is open, with motion allowed, the two themes crossfade
+ * (a same-document View Transition of the whole page). */
+::view-transition-group(root),
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--transition-duration-base);
+  animation-timing-function: var(--ease-out);
+}
+
+/* Phone search (layout/topbar.tsx): the field grows out of the magnifier it
+ * was opened from (--search-from-*: that button's box inside the layer,
+ * measured on open) and shrinks back into it. Visible at once on open, so the
+ * field can take focus in the same tap and the keyboard comes up; hidden only
+ * once the close has played. The open state's clip reaches far below the bar
+ * so the results list under it shows. */
+@media (width < 40rem) {
+  .topbar-search {
+    clip-path: inset(
+      var(--search-from-top, 0px) var(--search-from-right, 0px) var(--search-from-bottom, 0px)
+        var(--search-from-left, 0px) round calc(var(--radius) * 0.8)
+    );
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      clip-path var(--transition-duration-base) var(--ease-out),
+      opacity var(--transition-duration-base) var(--ease-out),
+      visibility 0s linear var(--transition-duration-base);
+  }
+  .topbar-search[data-open='true'] {
+    clip-path: inset(0px 0px -100vh 0px round 0px);
+    opacity: 1;
+    visibility: visible;
+    transition:
+      clip-path 360ms var(--ease-spring-snappy),
+      opacity var(--transition-duration-fast) var(--ease-out);
+  }
+  /* Cancel follows from the trailing edge, a beat behind the field. */
+  .topbar-search-cancel {
+    opacity: 0;
+    translate: 8px 0;
+    transition:
+      opacity var(--transition-duration-fast) var(--ease-out),
+      translate var(--transition-duration-fast) var(--ease-out);
+  }
+  .topbar-search[data-open='true'] .topbar-search-cancel {
+    opacity: 1;
+    translate: 0 0;
+    transition-duration: var(--transition-duration-base);
+    transition-delay: 60ms;
+  }
+}
+
+/* Reduced motion: the search only fades. */
+@media (width < 40rem) and (prefers-reduced-motion: reduce) {
+  .topbar-search,
+  .topbar-search[data-open='true'] {
+    clip-path: none;
+  }
+  .topbar-search-cancel,
+  .topbar-search[data-open='true'] .topbar-search-cancel {
+    translate: none;
+  }
+}
+
+/* Setup: a router that announces itself while the wizard waits gets a brand
+ * ring that fades once (components/setup/discovered-collectors.tsx). */
+@keyframes arrival-ring {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.arrival-ring {
+  animation: arrival-ring 1200ms var(--ease-out) var(--transition-duration-slow) both;
 }
 
 /* Voucher print sheet (pages/portal-voucher-print-page.tsx): A4 with a small

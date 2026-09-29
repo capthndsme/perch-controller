@@ -280,7 +280,7 @@ export function DevicePage() {
         />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <Panel
           title="Bandwidth"
           description="Mbps over the selected window. Drag to zoom."
@@ -423,7 +423,7 @@ export function DevicePage() {
 
       <DeviceUsageCard mac={mac} pageWindow={window} onPageWindow={setWindow} />
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Panel
           title="Who it talks to"
           description="Peers over the window, from the hourly peer history."
@@ -484,7 +484,7 @@ export function DevicePage() {
         />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Panel
           title="Destinations"
           description="Where this device's WAN bytes went, by site. Click a name for its history."
@@ -526,28 +526,30 @@ export function DevicePage() {
               />
             </div>
           ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Server name</th>
-                  <th>Protocol</th>
-                  <th className="text-right">Served</th>
-                  <th className="text-right">Share</th>
-                </tr>
-              </thead>
-              <tbody>
-                {servicesData.services.map((service) => (
-                  <tr key={`${service.serverName}|${service.protocol}`}>
-                    <td className="font-mono text-[12px]">{service.serverName}</td>
-                    <td className="text-[12px]">{formatProtocolLabel(service.protocol)}</td>
-                    <td className="text-right font-mono font-medium tabular-nums">{formatBytes(service.bytesServed)}</td>
-                    <td>
-                      <ShareBar percentage={service.percentage} color="var(--chart-served)" />
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Server name</th>
+                    <th>Protocol</th>
+                    <th className="text-right">Served</th>
+                    <th className="text-right">Share</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {servicesData.services.map((service) => (
+                    <tr key={`${service.serverName}|${service.protocol}`}>
+                      <td className="font-mono text-[12px]">{service.serverName}</td>
+                      <td className="text-[12px]">{formatProtocolLabel(service.protocol)}</td>
+                      <td className="text-right font-mono font-medium tabular-nums">{formatBytes(service.bytesServed)}</td>
+                      <td>
+                        <ShareBar percentage={service.percentage} color="var(--chart-served)" />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
           {servicesData && servicesData.services.length > 0 ? (
             <div className="border-t border-border/70 px-4 py-2 text-right">

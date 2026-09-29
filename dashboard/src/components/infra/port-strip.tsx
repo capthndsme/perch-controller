@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { Handle, Position } from '@xyflow/react'
 import { useInfraView } from '@/components/infra/infra-context'
+import { usePlaybackRate } from '@/components/infra/use-playback-rate'
 import { formatDurationSince } from '@/lib/collectors'
 import {
   describePort,
@@ -23,6 +24,7 @@ import {
   type PortLed,
   type StateIndex,
 } from '@/lib/infra'
+import { BLINK_SECONDS, nextPortBlink, portTrafficText, SCOPE_LABELS } from '@/lib/infra-traffic'
 import { cn } from '@/lib/utils'
 import type { InfraNode, InfraPort } from '@/types/api'
 
@@ -52,6 +54,25 @@ const HANDLE_STYLE: CSSProperties = {
   background: 'transparent',
 }
 
+/**
+ * The activity light under a busy port's socket (infra-traffic.css): one blink
+ * per second at playback rate 1, its speed step sets the rate (a new reading
+ * never restarts the blink), and a phase by port id keeps neighbouring lights
+ * out of step, like a real switch's.
+ */
+function ActivityLight({ portId, speed }: { portId: number; speed: number }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  usePlaybackRate(ref, 1 / BLINK_SECONDS[speed])
+  return (
+    <span
+      ref={ref}
+      aria-hidden
+      className="infra-port-activity pointer-events-none absolute inset-x-[4px] bottom-[2px] h-[2px] rounded-full bg-brand"
+      style={{ animationDelay: `-${(portId % 7) * 0.11}s` }}
+    />
+  )
+}
+
 type PortSocketProps = {
   node: InfraNode
   port: InfraPort
@@ -66,6 +87,14 @@ function PortSocket({ node, port, handlePosition, connectable, cellWidth, showLa
   const state = view.state.ports.get(port.id)
   const led = portLed(port, state)
   const focused = view.focusedPortId === port.id
+  // A6.5: a blinking activity light under the socket while the port moves traffic
+  // (on at 2 kbps, off under 1 kbps; three blink speeds, lib/infra-traffic.ts).
+  const traffic = state?.traffic ?? null
+  const shown = view.showTraffic ? traffic : null
+  const [blink, setBlink] = useState(() => nextPortBlink(shown, null))
+  const blinkNow = nextPortBlink(shown, blink)
+  if (blinkNow !== blink) setBlink(blinkNow)
+  const active = blinkNow.moving
   // A4.1: a free port picked in edit mode offers to plug a device from Perch's list into it.
   const offerConnect = view.editing && focused && port.present && !port.hidden && !view.index.linkByPort.has(port.id)
   return (
@@ -73,7 +102,8 @@ function PortSocket({ node, port, handlePosition, connectable, cellWidth, showLa
       <div
         data-port-id={port.id}
         data-led={led}
-        aria-label={`${port.label}: ${portStateText(port, state)}`}
+        data-active={active ? '' : undefined}
+        aria-label={`${port.label}: ${portStateText(port, state)}${traffic ? `, ${portTrafficText(traffic)}` : ''}`}
         className={cn(
           'relative shrink-0 cursor-pointer rounded-[3px] border bg-muted/80',
           socketClass(port, led),
@@ -91,6 +121,7 @@ function PortSocket({ node, port, handlePosition, connectable, cellWidth, showLa
           aria-hidden
           className={cn('pointer-events-none absolute inset-x-[2px] top-[2px] h-[3px] rounded-full', PORT_LED_CLASSES[led])}
         />
+        {active ? <ActivityLight portId={port.id} speed={blinkNow.speed} /> : null}
         <Handle
           type="source"
           id={String(port.id)}
@@ -260,6 +291,7 @@ export function PortTooltip({ portId, anchor, index, state }: PortTooltipProps) 
   const portState = state.ports.get(port.id)
   const led = portLed(port, portState)
   const link = index.linkByPort.get(port.id)
+  const traffic = portState?.traffic ?? null
   const facts = [
     port.role ? PORT_ROLE_LABELS[port.role] : null,
     port.medium ? PORT_MEDIUM_LABELS[port.medium] : null,
@@ -290,6 +322,13 @@ export function PortTooltip({ portId, anchor, index, state }: PortTooltipProps) 
       <p className="text-muted-foreground">
         {link ? `→ ${describePort(index, otherEnd(link, port.id).portId)}` : 'No cable'}
       </p>
+      {traffic ? (
+        <p data-tooltip-traffic>
+          {portTrafficText(traffic)}
+          {traffic.derivedFrom !== null ? <span className="text-muted-foreground"> (measured at the far end)</span> : null}
+          {traffic.scope === 'cpu' ? <span className="text-status-warning"> · {SCOPE_LABELS.cpu}</span> : null}
+        </p>
+      ) : null}
       {facts.length > 0 ? <p className="text-muted-foreground">{facts.join(' · ')}</p> : null}
       {history.length > 0 ? <p className="text-muted-foreground">{history.join(' · ')}</p> : null}
     </div>,

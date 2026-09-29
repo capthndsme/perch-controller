@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Broadcast, CaretDown, CaretRight, PlugsConnected, Prohibit, WarningCircle } from '@phosphor-icons/react'
 import { Fact } from '@/components/collectors/fact'
 import { LoopbackNotice } from '@/components/security/loopback-notice'
@@ -49,6 +49,14 @@ export function DiscoveredCollectors({
   onSessionExpired,
 }: DiscoveredCollectorsProps) {
   const [showInstructions, setShowInstructions] = useState(false)
+  // The routers already waiting when the list first loaded. One that announces
+  // itself after that, while the wizard waits, arrives with a little ceremony:
+  // it is what the user just set up.
+  const [waitingAtFirst, setWaitingAtFirst] = useState<ReadonlySet<number> | null>(() =>
+    loading ? null : new Set(candidates.map((c) => c.id)),
+  )
+  if (waitingAtFirst === null && !loading) setWaitingAtFirst(new Set(candidates.map((c) => c.id)))
+  const arrived = candidates.filter((c) => waitingAtFirst !== null && !waitingAtFirst.has(c.id))
 
   return (
     <section className="space-y-3">
@@ -78,14 +86,14 @@ export function DiscoveredCollectors({
       {candidates.length > 0 ? (
         <>
           <div className="space-y-3">
-            {candidates.map((collector) => (
-              <CandidateCard
-                key={collector.id}
-                collector={collector}
-                onAdopted={onAdopted}
-                onSessionExpired={onSessionExpired}
-              />
-            ))}
+            {candidates.map((collector) => {
+              const order = arrived.indexOf(collector)
+              return (
+                <Arrival key={collector.id} order={order < 0 ? null : order}>
+                  <CandidateCard collector={collector} onAdopted={onAdopted} onSessionExpired={onSessionExpired} />
+                </Arrival>
+              )
+            })}
           </div>
           <button
             type="button"
@@ -116,6 +124,25 @@ export function DiscoveredCollectors({
         </div>
       ) : null}
     </section>
+  )
+}
+
+/**
+ * A router that announced itself while the wizard waited (`order` among those
+ * that arrived together; null for one that was already there): it rises into
+ * place, several a beat apart, and a brand ring around it fades once.
+ * Reduced motion keeps the fade and the ring, not the rise.
+ */
+function Arrival({ order, children }: { order: number | null; children: ReactNode }) {
+  if (order === null) return children
+  return (
+    <div
+      className="relative rounded-lg transition-[opacity,translate,scale] duration-slow ease-out starting:opacity-0 motion-safe:starting:translate-y-2 motion-safe:starting:scale-[0.98]"
+      style={{ transitionDelay: `${Math.min(order, 4) * 60}ms` }}
+    >
+      {children}
+      <span aria-hidden className="arrival-ring pointer-events-none absolute inset-0 rounded-lg ring-2 ring-brand" />
+    </div>
   )
 }
 

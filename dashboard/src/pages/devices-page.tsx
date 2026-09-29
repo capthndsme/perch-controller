@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { ArrowDown, ArrowUp, MagnifyingGlass } from '@phosphor-icons/react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ScopeToggle } from '@/components/dashboard/scope-toggle'
@@ -16,6 +16,7 @@ import { ShareBar } from '@/components/ui/share-bar'
 import { useDashboardScope, useDashboardTime } from '@/hooks/use-dashboard-time'
 import { useDeviceLabels } from '@/hooks/use-device-labels'
 import { useDevices, useTopTraffic } from '@/hooks/use-devices'
+import { useMediaQuery } from '@/hooks/use-media-query'
 import { uplinkLine } from '@/lib/attachment'
 import { formatLastSeen } from '@/lib/collectors'
 import {
@@ -72,6 +73,76 @@ const FILTER_SELECT_CLASS =
   'h-8 rounded-md border border-border bg-card px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50'
 
 type SortState = { key: SortKey; dir: 'asc' | 'desc' }
+
+/** How long the phone list keeps its order after the finger leaves it (ms). */
+const HOLD_ORDER_MS = 1000
+
+const rowKey = (row: { device: DeviceSummary }) => `${row.device.collector.id}-${row.device.mac}`
+
+/**
+ * The phone list re-sorts on every refresh when sorted by a live rate. While a
+ * finger is on the list, and for a second after it lifts or the page stops
+ * scrolling, the rows keep their order, so nothing jumps under the thumb
+ * between touching a row and the tap landing. No motion: afterwards the new
+ * order applies at once. A sort the user picks applies at once too.
+ */
+function useHeldOrder<T>(rows: T[], keyOf: (row: T) => string, sort: SortState) {
+  const [held, setHeld] = useState<{ keys: string[]; sort: SortState } | null>(null)
+  const down = useRef(false)
+  const timer = useRef<number | undefined>(undefined)
+  const holding = held !== null
+
+  const releaseLater = useCallback(() => {
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => {
+      if (!down.current) setHeld(null)
+    }, HOLD_ORDER_MS)
+  }, [])
+
+  useEffect(() => {
+    if (!holding) return
+    window.addEventListener('scroll', releaseLater, { passive: true })
+    return () => window.removeEventListener('scroll', releaseLater)
+  }, [holding, releaseLater])
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  const ordered = useMemo(() => {
+    if (held === null || held.sort !== sort) return rows
+    const byKey = new Map(rows.map((row) => [keyOf(row), row]))
+    const out: T[] = held.keys.flatMap((key) => {
+      const row = byKey.get(key)
+      return row === undefined ? [] : [row]
+    })
+    const kept = new Set(held.keys)
+    for (const row of rows) if (!kept.has(keyOf(row))) out.push(row)
+    return out
+  }, [rows, held, keyOf, sort])
+
+  const lift = () => {
+    down.current = false
+    releaseLater()
+  }
+  return {
+    rows: ordered,
+    listeners: {
+      onPointerDown: () => {
+        down.current = true
+        window.clearTimeout(timer.current)
+        setHeld((current) => (current && current.sort === sort ? current : { keys: ordered.map(keyOf), sort }))
+      },
+      onPointerUp: lift,
+      onPointerCancel: lift,
+    },
+  }
+}
+
+/** The phone list's sort menu: the table's column headers, each in its usual direction. */
+const PHONE_SORTS: ReadonlyArray<{ id: string; label: string; sort: SortState }> = [
+  { id: 'total', label: 'Total', sort: { key: 'total', dir: 'desc' } },
+  { id: 'down', label: 'Down now', sort: { key: 'down', dir: 'desc' } },
+  { id: 'up', label: 'Up now', sort: { key: 'up', dir: 'desc' } },
+  { id: 'name', label: 'Name', sort: { key: 'name', dir: 'asc' } },
+]
 
 function SortHeader({
   label,
@@ -154,6 +225,8 @@ export function DevicesPage() {
   const [tag, setTag] = useState('all')
   const [sort, setSort] = useState<SortState>({ key: 'total', dir: 'desc' })
   const labels = useDeviceLabels()
+  // A phone gets the list as stacked rows instead of the six-column table.
+  const phone = useMediaQuery('(width < 40rem)')
 
   // Only offer a type the user has actually assigned — a 17-entry dropdown
   // where 15 match nothing is noise.
@@ -197,6 +270,8 @@ export function DevicesPage() {
     })
     return { total, filtered, count: all.length }
   }, [devices.data, scope, query, connection, activeOnly, deviceType, tag, sort])
+
+  const phoneList = useHeldOrder(rows.filtered, rowKey, sort)
 
   const toggleSort = (key: SortKey) =>
     setSort((current) =>
@@ -351,7 +426,31 @@ export function DevicesPage() {
         )}
       </Panel>
 
-      <Panel title="All devices" description="Click a row for the device card." updating={devices.isPlaceholderData} flush>
+      <Panel
+        title="All devices"
+        description={phone ? 'Tap a device for its card.' : 'Click a row for the device card.'}
+        updating={devices.isPlaceholderData}
+        flush
+        actions={
+          phone ? (
+            <select
+              aria-label="Sort devices"
+              value={sort.key}
+              className={FILTER_SELECT_CLASS}
+              onChange={(event) => {
+                const next = PHONE_SORTS.find((option) => option.id === event.target.value)
+                if (next) setSort(next.sort)
+              }}
+            >
+              {PHONE_SORTS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  Sort: {option.label}
+                </option>
+              ))}
+            </select>
+          ) : null
+        }
+      >
         {devices.isPending ? (
           <p className="px-4 pb-4 text-xs text-muted-foreground">Loading devices…</p>
         ) : devices.error ? (
@@ -363,6 +462,31 @@ export function DevicesPage() {
               description={rows.count === 0 ? 'Devices appear once the collector poller has written traffic.' : 'Try a different filter.'}
             />
           </div>
+        ) : phone ? (
+          <ul className="divide-y divide-border/70 border-t border-border/70" {...phoneList.listeners}>
+            {phoneList.rows.map(({ device, mbpsIn, mbpsOut, bytes }) => (
+              <li key={`${device.collector.id}-${device.mac}`}>
+                <Link
+                  to={`/devices/${macPath(device.mac)}`}
+                  className="flex items-start gap-3 px-4 py-3 transition-colors duration-base active:bg-muted/60 active:duration-0"
+                >
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <DeviceCell device={device} />
+                    <ConnectionLine device={device} />
+                  </div>
+                  <div className="shrink-0 text-right font-mono tabular-nums">
+                    <p className="text-[13px] font-medium">{formatBytes(bytes)}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      <span className="text-chart-download">↓</span> {formatMbps(mbpsIn)}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      <span className="text-chart-upload">↑</span> {formatMbps(mbpsOut)}
+                    </p>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
         ) : (
           <div className="overflow-x-auto">
             <table className="data-table">
@@ -388,40 +512,7 @@ export function DevicesPage() {
                       <DeviceCell device={device} />
                     </td>
                     <td>
-                      {device.wifi.connected ? (
-                        <span className="flex items-center gap-1.5 text-[12px]">
-                          <span
-                            aria-hidden
-                            className={`inline-block size-2 rounded-full ${wifiSignalQualityDotClass(device.wifi.signalQuality)}`}
-                          />
-                          <span className="truncate">
-                            {device.wifi.ap} · {formatWifiBand(device.wifi.band)} · {formatSignal(device.wifi.signalDbm)}
-                          </span>
-                        </span>
-                      ) : device.presence.via === 'wifi' && device.wifi.last ? (
-                        <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                          <span aria-hidden className="inline-block size-2 rounded-full bg-muted-foreground/40" />
-                          <span className="truncate">
-                            Last seen on WiFi · {device.wifi.last.ap} · {formatLastSeen(device.presence.lastSeenAt)}
-                          </span>
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                          <span aria-hidden className="inline-block size-2 shrink-0 rounded-full bg-muted-foreground/40" />
-                          <span className="truncate" data-connection-line>
-                            {/* On the map with a cable (A4): "Ethernet · Garage AP · lan1 · 100 Mb/s". */}
-                            {[connectionLabel(device.presence.via), uplinkLine(device.attachment)]
-                              .filter(Boolean)
-                              .join(' · ')}
-                            {device.presence.status === 'disconnected' && device.presence.lastSeenAt
-                              ? ` · last seen ${formatLastSeen(device.presence.lastSeenAt)}`
-                              : null}
-                          </span>
-                          {device.collector.lastStatus?.ok === false ? (
-                            <span className="shrink-0 text-status-critical">· collector offline</span>
-                          ) : null}
-                        </span>
-                      )}
+                      <ConnectionLine device={device} />
                     </td>
                     <td className="text-right font-mono tabular-nums">{formatMbps(mbpsIn)}</td>
                     <td className="text-right font-mono tabular-nums">{formatMbps(mbpsOut)}</td>
@@ -437,6 +528,44 @@ export function DevicesPage() {
         )}
       </Panel>
     </div>
+  )
+}
+
+/** How the device is connected: its AP, band and signal, the Wi-Fi it was last seen on, or the wired line. */
+function ConnectionLine({ device }: { device: DeviceSummary }) {
+  return device.wifi.connected ? (
+    <span className="flex items-center gap-1.5 text-[12px]">
+      <span
+        aria-hidden
+        className={`inline-block size-2 rounded-full ${wifiSignalQualityDotClass(device.wifi.signalQuality)}`}
+      />
+      <span className="truncate">
+        {device.wifi.ap} · {formatWifiBand(device.wifi.band)} · {formatSignal(device.wifi.signalDbm)}
+      </span>
+    </span>
+  ) : device.presence.via === 'wifi' && device.wifi.last ? (
+    <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+      <span aria-hidden className="inline-block size-2 rounded-full bg-muted-foreground/40" />
+      <span className="truncate">
+        Last seen on WiFi · {device.wifi.last.ap} · {formatLastSeen(device.presence.lastSeenAt)}
+      </span>
+    </span>
+  ) : (
+    <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+      <span aria-hidden className="inline-block size-2 shrink-0 rounded-full bg-muted-foreground/40" />
+      <span className="truncate" data-connection-line>
+        {/* On the map with a cable (A4): "Ethernet · Garage AP · lan1 · 100 Mb/s". */}
+        {[connectionLabel(device.presence.via), uplinkLine(device.attachment)]
+          .filter(Boolean)
+          .join(' · ')}
+        {device.presence.status === 'disconnected' && device.presence.lastSeenAt
+          ? ` · last seen ${formatLastSeen(device.presence.lastSeenAt)}`
+          : null}
+      </span>
+      {device.collector.lastStatus?.ok === false ? (
+        <span className="shrink-0 text-status-critical">· collector offline</span>
+      ) : null}
+    </span>
   )
 }
 

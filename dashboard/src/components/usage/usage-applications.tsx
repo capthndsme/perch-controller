@@ -26,57 +26,59 @@ export function UsageApplications({ protocols, other }: UsageApplicationsProps) 
     )
   }
   return (
-    <table className="data-table">
-      <thead>
-        <tr>
-          <th>Protocol</th>
-          <th>Category</th>
-          <th className="text-right">Down / up</th>
-          <th className="text-right">Share</th>
-        </tr>
-      </thead>
-      <tbody>
-        {protocols.map((p) => (
-          <tr key={p.protocol}>
-            <td>
-              <span className="flex items-center gap-2">
-                <span
-                  aria-hidden
-                  className="size-2.5 shrink-0 rounded-[2px]"
-                  style={{ backgroundColor: protocolColor(p.protocol) }}
-                />
-                <span className="truncate font-medium">{formatProtocolLabel(p.protocol)}</span>
-              </span>
-            </td>
-            <td>
-              <CategoryChip category={p.category} />
-            </td>
-            <td className="text-right font-mono text-[11px] tabular-nums text-muted-foreground">
-              <span className="text-foreground">{formatBytes(p.bytesIn)}</span> / {formatBytes(p.bytesOut)}
-            </td>
-            <td>
-              <ShareBar percentage={p.percentage} color={protocolColor(p.protocol)} />
-            </td>
+    <div className="overflow-x-auto">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Protocol</th>
+            <th>Category</th>
+            <th className="text-right">Down / up</th>
+            <th className="text-right">Share</th>
           </tr>
-        ))}
-        {other ? (
-          <tr className="text-muted-foreground">
-            <td>
-              <span className="flex items-center gap-2">
-                <span aria-hidden className="size-2.5 shrink-0 rounded-[2px] bg-series-other" />
-                {other.count} other {other.count === 1 ? 'protocol' : 'protocols'}
-              </span>
-            </td>
-            <td />
-            <td className="text-right font-mono text-[11px] tabular-nums">
-              {formatBytes(other.bytesIn)} / {formatBytes(other.bytesOut)}
-            </td>
-            <td>
-              <ShareBar percentage={other.percentage} color="var(--series-other)" />
-            </td>
-          </tr>
-        ) : null}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {protocols.map((p) => (
+            <tr key={p.protocol}>
+              <td>
+                <span className="flex items-center gap-2">
+                  <span
+                    aria-hidden
+                    className="size-2.5 shrink-0 rounded-[2px]"
+                    style={{ backgroundColor: protocolColor(p.protocol) }}
+                  />
+                  <span className="truncate font-medium">{formatProtocolLabel(p.protocol)}</span>
+                </span>
+              </td>
+              <td>
+                <CategoryChip category={p.category} />
+              </td>
+              <td className="text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+                <span className="text-foreground">{formatBytes(p.bytesIn)}</span> / {formatBytes(p.bytesOut)}
+              </td>
+              <td>
+                <ShareBar percentage={p.percentage} color={protocolColor(p.protocol)} />
+              </td>
+            </tr>
+          ))}
+          {other ? (
+            <tr className="text-muted-foreground">
+              <td>
+                <span className="flex items-center gap-2">
+                  <span aria-hidden className="size-2.5 shrink-0 rounded-[2px] bg-series-other" />
+                  {other.count} other {other.count === 1 ? 'protocol' : 'protocols'}
+                </span>
+              </td>
+              <td />
+              <td className="text-right font-mono text-[11px] tabular-nums">
+                {formatBytes(other.bytesIn)} / {formatBytes(other.bytesOut)}
+              </td>
+              <td>
+                <ShareBar percentage={other.percentage} color="var(--series-other)" />
+              </td>
+            </tr>
+          ) : null}
+        </tbody>
+      </table>
+    </div>
   )
 }

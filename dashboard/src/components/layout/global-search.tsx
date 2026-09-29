@@ -17,12 +17,18 @@ type SearchHit = {
 
 const SEARCH_WINDOW = { kind: 'relative', range: '24h' } as const
 
+type GlobalSearchProps = {
+  className?: string
+  /** A result was opened or the search dismissed (the phone top bar then closes its search). */
+  onDone?: () => void
+}
+
 /**
  * Global search over what the API already knows: devices (hostname / IP /
  * MAC), WiFi clients and SSIDs. Results are matched client-side against the
  * loaded lists; Enter or click navigates to the entity's page.
  */
-export function GlobalSearch({ className }: { className?: string }) {
+export function GlobalSearch({ className, onDone }: GlobalSearchProps) {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
@@ -106,6 +112,7 @@ export function GlobalSearch({ className }: { className?: string }) {
     if (!hit) return
     setOpen(false)
     setQuery('')
+    onDone?.()
     navigate(hit.to)
   }
 
@@ -140,6 +147,7 @@ export function GlobalSearch({ className }: { className?: string }) {
             } else if (event.key === 'Escape') {
               setOpen(false)
               inputRef.current?.blur()
+              onDone?.()
             }
           }}
           aria-label="Global search"
@@ -152,7 +160,7 @@ export function GlobalSearch({ className }: { className?: string }) {
         <div
           id="global-search-results"
           role="listbox"
-          className="absolute left-0 right-0 top-full z-50 mt-1 max-h-96 overflow-auto rounded-md border border-border bg-popover p-1 shadow-lg"
+          className="absolute left-0 right-0 top-full z-50 mt-1 max-h-[min(24rem,calc(100svh-var(--topbar-height)-var(--bottom-nav-height)-1rem))] overflow-auto overscroll-contain rounded-md border border-border bg-popover p-1 shadow-lg"
         >
           {hits.length === 0 ? (
             <p className="px-2 py-3 text-xs text-muted-foreground">
@@ -169,7 +177,7 @@ export function GlobalSearch({ className }: { className?: string }) {
                 onMouseEnter={() => setActive(index)}
                 onClick={() => go(hit)}
                 className={cn(
-                  'flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-left',
+                  'flex w-full items-center gap-2.5 rounded px-2 py-2 text-left lg:py-1.5',
                   index === active ? 'bg-muted' : 'hover:bg-muted/60',
                 )}
               >

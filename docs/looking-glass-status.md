@@ -2669,3 +2669,170 @@ GitHub "Latest" (so `releases/latest`, install.sh and the Docker `latest` tag no
 Every 1.1 commit was checked for fixes that belong in 1.0; only that UI fix touched 1.0 code. GitHub `main`
 fast-forwarded to each release commit. `stable` merged back into local `main` (1.1.0-pre versions kept, daemon pins
 1.0.0 there too). Live system unchanged (local 1.1.0-pre line).
+
+## 2026-09-30 — Port traffic, accounting and cable rates; phone navigation
+
+Owner: "routers/APs can show switch state right? lets add 1: Bytes sent/recv (and minimal accounting)
+2: Infrastructure view shows bandwidth rate between 'wires' … like how we have garage ap linked to
+1f-router", and "making our webapp look better like in mobile. Make use of Navigation bars. Make sure
+desktop experience isnt compromised." Contract: `docs/infrastructure-view.md` amendment A6. Work on branch
+`ports-traffic-mobile-nav` (metrics-be) and `port-counters` (perch-agentkit, perch-apd, perch-collector),
+uncommitted; nothing pushed.
+
+### Finding: a DSA port's netdev counters only count the CPU
+Measured read-only on the live APs before designing (details in A6):
+- Garage AP (MT7621): `lan1` carries the wired camera at 1.5 Mbit/s, but `/sys/class/net/lan1/statistics`
+  did not move in 10 s. The MT7530 switches `lan1` → `lan4` in hardware.
+- RAX-1F (MT7981): `lan3`, the cable to the garage AP, read ~0 received.
+- The switch MIB (`ethtool -S`: `TxBytes` / `RxBytes`) has all of it: garage `lan4` sent 1500.9 kbit/s and
+  RAX `lan3` received 1500.9 kbit/s.
+- A 20 MB transfer through that cable counted 21.10 MB at the garage and 22.05 MB at RAX. RAX also put a
+  steady ~1 Mbit/s of full-size frames on the wire that the garage switch counted nowhere, so a cable
+  shows the larger of its two ends.
+- The WRX36 (nss-dp) netdev counters equal its hardware ones. A container gateway's veths count all
+  they carry.
+
+### Agents (local 1.1 line)
+- **perch-agentkit**: `PortOptions.Counters`; `Port.rxBytes` / `txBytes` / `counterScope`.
+  - A DSA port reads the switch through the ethtool ioctl. Names are cached with the port's facts; the
+    count is re-checked before every `GSTATS`, with 16 entries of slack; one ioctl per port and push.
+  - Known byte counters: mt7530, qca8k, b53, mv88e6xxx, rtl8365mb, ksz, ocelot. Otherwise the netdev
+    counters with scope `cpu`.
+  - Only ports with a link are read.
+  - `safchain/ethtool` was not used: v0.5.10, the last release that builds on Go 1.22, allocates
+    1.25 MB per call, and v0.6+ needs Go 1.23+.
+  - Tests: fake switch source, netdev fallback, name re-lookup, a live ioctl check on the host's NICs;
+    Go 1.22.12 too.
+- **perch-apd 1.1.0-pre.2** and **perch-collector 1.1.0-pre.3** turn the counters on (docs: PROTOCOL.md,
+  CONFIG.md, README).
+  - Read-only `ports` check from `/tmp` on all three APs first: scope `port` everywhere.
+  - Live 2026-09-29 20:01–20:05 UTC:
+    - APs: binary swaps over the 1.0.0-rc.2 package records.
+    - Gateway: static nDPI build.
+    - Rollbacks: `~/metricslite-rollback/2026-09-30-port-counters/` (pre.1 AP binaries and configs,
+      collector pre.2); on the gateway `/root/perch-collector-1.1.0-pre.2.bak`.
+  - AX23 cost: ~63 ms CPU per push against ~52–55 ms before, i.e. the two linked switch ports at ~3.7 ms
+    of MDIO each. RSS 12.7 MB; flash unchanged at 4.2 MB free.
+- perch-apd `internal/groups`: `TestApplyConfirm` and `TestConfirmRefusesABindingWithoutItsMAC` fail with
+  or without this change (a fixed 2026-09-24 test clock meets real time). Not fixed here.
+
+### Controller 1.1.0-pre.3 (A6.2–A6.4)
+- `infra_port_traffic.ts`:
+  - Per-port samples and rates in memory (4096 ports, bounded).
+  - Deltas: reset / scope change / `BUCKET_MAX_DELTA_BYTES` guard; the 5-minute split with remainder; a
+    rate within 120 s.
+  - One `ON DUPLICATE KEY` upsert per table and report into `infra_port_buckets_5m` / `_hourly`
+    (migration 124; both in the 730 d retention groups).
+  - The counters stay out of the port fingerprint, so `infra_ports` is still written only on change.
+- `/infra/state`: `traffic` on ports (a manual port gets its far end's, turned around, with
+  `derivedFrom`) and links (per direction the larger end, `partial` when only CPU-scoped ends measure).
+- Reads:
+  - `GET /infra/ports/:id/traffic`, `/infra/links/:id/traffic`: dense, `planWindowSeries` over `[5m, 1h]`.
+  - `/infra/nodes/:id/traffic`: per-port totals from `coveredFrom`, so they can hold one slot more than
+    a port's series total.
+- Tests 1317 → 1342, typecheck, lint.
+- Deployed 2026-09-29 20:32 UTC: rollback image `perch-controller:rollback-pre2-2026-09-30`, migration
+  in 420 ms, all four agents back within seconds, 14 ports accounting in the first minute.
+- Live: garage AP → RAX-1F 1.62 Mbit/s (the camera), RAX → garage 54 kbit/s, the two ends within 0.3 %.
+
+### Dashboard
+- **Infrastructure page**:
+  - A "Traffic" toggle (default on). Cables carry a rate chip (speed, ↓/↑), a stroke by rate and dashes
+    running the busier way; "CPU only" when partial. Ports blink while moving traffic.
+  - Inspectors:
+    - port: now, plus 24 h / 7 d / 30 d totals and chart, "Recording since";
+    - cable: both directions by node name, both ends' readings;
+    - node: traffic by port.
+  - The chart is a lazy chunk: Recharts stays out of the page chunk.
+- **Phone shell (below lg)**:
+  - Bottom tab bar: Dashboard, Devices, WiFi, Gateway, More. More is a sheet with Traffic, Usage, Servers,
+    Infrastructure, Settings; the tabs are `MOBILE_TAB_PATHS` in `lib/nav.ts`.
+  - Compact top bar that takes the page title on scroll, and a full-width search.
+  - `--bottom-nav-height`, safe areas, `viewport-fit=cover`, a theme-coloured status bar, 16 px inputs
+    on touch.
+  - Scrolling section strips (gateway, portal).
+  - Stacked device rows on phones; wide tables scroll inside their cards; a phone-sized time picker.
+- **Desktop**: top bar and sidebar pixel-identical at 1440 px. Fixed on the way: the sticky time
+  toolbar no longer slides over the top bar, and Traffic's legend no longer overflows at 1440.
+- Entry chunk 205.9 → 214.5 kB. tsc, eslint and build pass.
+- Not done: gateway leases, QoS and firewall tables still scroll rather than stack; no test on a real
+  phone yet.
+
+## 2026-09-30 — Motion pass: skills as agents, springs, controller 1.1.0-pre.4
+
+Owner: "let's review the animations and use those as individual agents … focus more on Animations because, fluid
+animations are LOVE", then "You can also just add react-spring (and possibly @use-gesture/react)".
+
+**Audit.** Five read-only agents, one skill each (Emil Kowalski's set, installed in `.agents/skills/`):
+- review-animations: last session's motion; verdict Block, 27 findings.
+- improve-animations: the whole app; 8 plans.
+- find-animation-opportunities: 7 places.
+- apple-design: sheets, springs, momentum.
+- mobile-native: touch feel.
+
+They agreed on the worst ones:
+- The cable dashes jumped on every 5 s refresh (their duration was re-set mid-animation) and flipped on balanced
+  links.
+- Sheets faded in place and their grab handles did nothing; the map's phone sheet had no motion at all.
+- Popovers grew from their centre.
+- The phone title swapped in one frame.
+- No reduced-motion handling.
+- Dead taps behind a grey flash.
+- A frame at the old scroll position after navigation.
+
+Already right: nothing moved on data refreshes, the "/" search opened instantly, and numbers swapped without
+counting.
+
+**Build.** Three implementers on disjoint files.
+- **Tokens** (`index.css` `@theme static`, `lib/motion.ts`, `lib/spring.ts`):
+  - strong ease-out / ease-in-out / drawer curves;
+  - critically damped spring curves as `linear()`;
+  - 150/200/300 ms.
+- **@react-spring/web 10.1.2 and @use-gesture/react 10.3.1**, in a `motion` vendor chunk. Only the lazily loaded
+  bottom sheet and the infrastructure page import them; entry 214.5 → 221.6 kB (+2.5 kB gzip).
+- **A: chrome.**
+  - Press feedback (scale 0.97, instant tint), no tap flash, `touch-action: manipulation`, contained overscroll.
+  - Global reduced-motion rule; popovers from their trigger (150/100 ms); panel overlay delayed 150 ms.
+  - Dialog content held while closing; one-step theme switch with a 200 ms crossfade and no dark-mode flash on
+    load; sidebar collapse that moves only the rail.
+  - Title swap: stacked crossfade with an 8 px hysteresis band. Search grows out of the magnifier. One bar
+    material with a scroll hairline.
+  - `ScrollRestoration` by path; section strips positioned before paint.
+  - Tap-to-show chart tooltips on touch; apply banner height + fade; first-run collector arrival; the phone
+    device list holds its order under a finger.
+- **B: sheets.**
+  - `BottomSheet` (Radix Dialog + react-spring + useDrag): 1:1 drag, flick projection, velocity handed to the
+    settle, rubber-band, interruptible mid-flight, backdrop driven by the same spring, scroll hand-off at the
+    top.
+  - More sheet on it; the map's phone sheet with 45 % / 90 % detents, non-modal at the lower one.
+  - Tab bar: one sliding pill, icon press 0.9, re-tap glides to top on the tab's root only.
+  - Phone dialogs rise from the bottom edge; the drawer slides both ways.
+  - Desktop inspector and map notice glide in.
+- **C: map.**
+  - Round dots on a fixed 1 s lap, speed and direction via the animation's playback rate. Speed tiers 2.4 /
+    1.6 / 1.0 / 0.6 s, width tiers, hysteresis on speed, direction and on/off. Paused while the map moves or
+    under a full sheet.
+  - Port blink tiers with a phase offset; rate chip with a fixed width and an inner scale.
+  - Camera on react-spring (`map-camera.ts`): `?node=` lands without a flight on arrival; the selection is
+    brought out from under a sheet or panel, retargeting mid-flight; a touch flick glides (decay 0.99, ≤ 900 ms).
+  - Traffic windows keep the previous figures dimmed; boxes glide on Arrange.
+  - Acceptance: over 36 s and 8 changing polls, the worst dot-position error was 0.035 of a period, and 0 flips
+    on a link alternating ±10 %.
+
+**Integration.** Found by B, fixed by the coordinator: a real tap on a node never brought it out from under the
+sheet. xyflow starts a d3 gesture on every press but ends it in a `setTimeout`, after the click's reveal had
+checked "user is panning"; a gesture now counts as a pan only once the view moves.
+
+**Final review-animations gate.** 26/27 original findings resolved, 1 partly (the rail animates `width`, by
+decision). One new blocker fixed: `?node=` re-framed the box on every layout change. Three lows fixed:
+- `transition-none` beside the sheet's content fade;
+- wireless edges pause with the dots;
+- the checkmark starts at scale 0.9.
+
+tsc, eslint and build pass.
+
+**Live** 2026-09-30: controller 1.1.0-pre.4 (dashboard only), rollback image
+`perch-controller:rollback-pre3-2026-09-30`.
+
+Needs a real phone: flick thresholds, the momentum feel, the cost of two blurred bars on mid-range Android,
+iOS pull-down hand-off inside sheets, and dot speeds at 120 Hz.

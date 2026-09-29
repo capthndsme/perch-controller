@@ -406,45 +406,48 @@ export function DashboardPage() {
               <EmptyState title="No devices in window" />
             </div>
           ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Device</th>
-                  <th className="text-right">Now</th>
-                  <th className="text-right">Share</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topTalkers.rows.map(({ device, mbpsIn, mbpsOut, bytes }) => (
-                  <tr key={`${device.collector.id}-${device.mac}`}>
-                    <td>
-                      <Link to={`/devices/${macPath(device.mac)}`} className="block min-w-0 hover:text-brand">
-                        <span className="block truncate font-medium">
-                          {deviceDisplayName(device)}
-                        </span>
-                        <span className="block truncate font-mono text-[11px] text-muted-foreground">
-                          {device.primaryIp ?? device.mac}
-                          {device.wifi.connected ? ` · ${device.wifi.ap}` : ''}
-                        </span>
-                      </Link>
-                    </td>
-                    <td className="text-right font-mono text-[11px] tabular-nums text-muted-foreground">
-                      <span className="text-foreground">
-                        <span className="text-chart-download">↓</span> {formatMbps(mbpsIn, 1)}
-                      </span>
-                      <br />
-                      <span className="text-chart-upload">↑</span> {formatMbps(mbpsOut, 1)}
-                    </td>
-                    <td>
-                      <ShareBar percentage={topTalkers.total > 0 ? (bytes / topTalkers.total) * 100 : 0} />
-                      <p className="text-right font-mono text-[11px] tabular-nums text-muted-foreground">
-                        {formatBytes(bytes)}
-                      </p>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Device</th>
+                    <th className="text-right">Now</th>
+                    <th className="text-right">Share</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {topTalkers.rows.map(({ device, mbpsIn, mbpsOut, bytes }) => (
+                    <tr key={`${device.collector.id}-${device.mac}`}>
+                      {/* max-w-0 + w-full: the name column takes what is left and truncates (a phone). */}
+                      <td className="w-full max-w-0">
+                        <Link to={`/devices/${macPath(device.mac)}`} className="block min-w-0 hover:text-brand">
+                          <span className="block truncate font-medium">
+                            {deviceDisplayName(device)}
+                          </span>
+                          <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                            {device.primaryIp ?? device.mac}
+                            {device.wifi.connected ? ` · ${device.wifi.ap}` : ''}
+                          </span>
+                        </Link>
+                      </td>
+                      <td className="text-right font-mono text-[11px] whitespace-nowrap tabular-nums text-muted-foreground">
+                        <span className="text-foreground">
+                          <span className="text-chart-download">↓</span> {formatMbps(mbpsIn, 1)}
+                        </span>
+                        <br />
+                        <span className="text-chart-upload">↑</span> {formatMbps(mbpsOut, 1)}
+                      </td>
+                      <td>
+                        <ShareBar percentage={topTalkers.total > 0 ? (bytes / topTalkers.total) * 100 : 0} />
+                        <p className="text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+                          {formatBytes(bytes)}
+                        </p>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
           <div className="border-t border-border/70 px-4 py-2 text-right">
             <Link to="/devices" className="text-xs text-brand hover:underline">
@@ -551,35 +554,37 @@ export function DashboardPage() {
                   </p>
                 )}
               </div>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>SSID</th>
-                    <th className="text-right">Clients</th>
-                    <th className="text-right">Signal</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(wifi.data?.ssids ?? []).map((ssid) => (
-                    <tr key={ssid.ssid}>
-                      <td>
-                        <Link to={`/wifi/ssids/${encodeURIComponent(ssid.ssid)}`} className="font-medium hover:text-brand">
-                          {ssid.ssid}
-                        </Link>
-                        <p className="truncate text-[11px] text-muted-foreground">{ssid.accessPoints.join(', ')}</p>
-                      </td>
-                      <td className="text-right font-mono tabular-nums">{ssid.clientCount}</td>
-                      <td className="text-right font-mono tabular-nums">
-                        <span
-                          aria-hidden
-                          className={`mr-1.5 inline-block size-2 rounded-full ${wifiSignalQualityDotClass(ssid.signalQuality)}`}
-                        />
-                        {formatSignal(ssid.averageSignalDbm)}
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>SSID</th>
+                      <th className="text-right">Clients</th>
+                      <th className="text-right">Signal</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {(wifi.data?.ssids ?? []).map((ssid) => (
+                      <tr key={ssid.ssid}>
+                        <td>
+                          <Link to={`/wifi/ssids/${encodeURIComponent(ssid.ssid)}`} className="font-medium hover:text-brand">
+                            {ssid.ssid}
+                          </Link>
+                          <p className="truncate text-[11px] text-muted-foreground">{ssid.accessPoints.join(', ')}</p>
+                        </td>
+                        <td className="text-right font-mono tabular-nums">{ssid.clientCount}</td>
+                        <td className="text-right font-mono tabular-nums">
+                          <span
+                            aria-hidden
+                            className={`mr-1.5 inline-block size-2 rounded-full ${wifiSignalQualityDotClass(ssid.signalQuality)}`}
+                          />
+                          {formatSignal(ssid.averageSignalDbm)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
               {signalMix ? (
                 <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-border/70 px-4 py-2 text-[11px] text-muted-foreground">
                   <span>

@@ -28,6 +28,7 @@ import {
   useUpdateReservation,
   useUpdateTag,
 } from '@/hooks/use-gateway-native'
+import { useRetained } from '@/hooks/use-retained'
 import { apiErrorCode } from '@/lib/api'
 import { nativeErrorMessage, optionLines, optionsDraft, optionsPatch, type OptionsDraft } from '@/lib/gateway-native'
 import { poolRange, refusalIssues } from '@/lib/networks'
@@ -255,6 +256,7 @@ function PoolDialog({ pool, ctx, onClose }: { pool: DhcpPool; ctx: NativeContext
 function TagsPanel({ ctx, tags }: { ctx: NativeContext; tags: DhcpTag[] }) {
   const [editing, setEditing] = useState<DhcpTag | 'new' | null>(null)
   const [deleting, setDeleting] = useState<DhcpTag | null>(null)
+  const shownDeleting = useRetained(deleting)
   const remove = useDeleteTag(ctx.gateway.id)
   return (
     <Panel
@@ -316,7 +318,7 @@ function TagsPanel({ ctx, tags }: { ctx: NativeContext; tags: DhcpTag[] }) {
             remove.reset()
           }
         }}
-        title={`Delete tag ${deleting?.name ?? ''}?`}
+        title={`Delete tag ${shownDeleting?.name ?? ''}?`}
         description="The router drops the tag's options at the next apply."
         confirmLabel="Delete and apply"
         destructive

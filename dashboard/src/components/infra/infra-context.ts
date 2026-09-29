@@ -10,6 +10,8 @@ export type InfraView = {
   index: LayoutIndex
   state: StateIndex
   editing: boolean
+  /** A6.5: cables carry their rate and ports their activity light ("Traffic" in the header). */
+  showTraffic: boolean
   /** A port picked in the inspector or on the map, drawn with a ring. */
   focusedPortId: number | null
   onPortClick: (nodeId: number, portId: number) => void

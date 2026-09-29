@@ -1,0 +1,86 @@
+/*
+ * Traffic on the network map (docs/infrastructure-view.md A6.5): dots that run
+ * along a busy cable in its busier direction, and a port's activity light.
+ * Loaded with the map's chunk only, after React Flow's stylesheet.
+ *
+ * Both animations run one lap per second here; their speed and direction are
+ * WAAPI playback rates (components/infra/use-playback-rate.ts), never
+ * `animation-duration`/`-direction`, which would jump them on every poll. They
+ * hold still while the map moves (`data-moving` on the canvas, the pan/zoom
+ * repaints enough already) and while something covers it (`data-flow-paused`,
+ * the phone sheet at its full height). With reduced motion the dots (and
+ * React Flow's wireless march) stand still and the light stays on.
+ */
+@keyframes infra-cable-flow {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Round dots, one every 12 units (diameter = the stroke width, so a 6 px cable
+ * still shows gaps); the 24-unit lap is two periods, so it loops seamlessly. */
+.infra-cable-flow {
+  fill: none;
+  stroke-dasharray: 0 12;
+  stroke-linecap: round;
+  animation-name: infra-cable-flow;
+  animation-duration: 1s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  pointer-events: none;
+  /* A cable that gets busy fades its dots in; a width step eases over 250 ms. */
+  transition:
+    opacity 200ms var(--ease-out),
+    stroke-width 250ms var(--ease-in-out);
+}
+
+@starting-style {
+  .infra-cable-flow {
+    opacity: 0;
+  }
+}
+
+/* The cable under the dots changes width and opacity in steps: ease them. */
+.infra-cable {
+  transition:
+    stroke-width 250ms var(--ease-in-out),
+    stroke-opacity 250ms var(--ease-in-out);
+}
+
+@keyframes infra-port-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}
+
+.infra-port-activity {
+  animation-name: infra-port-blink;
+  animation-duration: 1s;
+  animation-timing-function: steps(2, jump-none);
+  animation-iteration-count: infinite;
+}
+
+[data-moving] .infra-cable-flow,
+[data-moving] .infra-port-activity,
+[data-moving] .react-flow__edge.animated path,
+[data-flow-paused] .infra-cable-flow,
+[data-flow-paused] .infra-port-activity,
+[data-flow-paused] .react-flow__edge.animated path {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .infra-cable-flow,
+  .infra-port-activity,
+  .react-flow__edge.animated path,
+  .react-flow__connection .animated {
+    animation: none;
+  }
+}

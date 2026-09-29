@@ -1,10 +1,14 @@
 import '@xyflow/react/dist/style.css'
+import '@/components/infra/infra-traffic.css'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   Background,
   BackgroundVariant,
   ConnectionMode,
+  ControlButton,
   Controls,
+  getViewportForBounds,
   ReactFlow,
   useEdgesState,
   useNodesState,
@@ -14,11 +18,13 @@ import {
   type NodeChange,
   type NodeTypes,
   type OnBeforeDelete,
+  type Viewport,
 } from '@xyflow/react'
 import { CableEdge, type CableFlowEdge } from '@/components/infra/cable-edge'
 import { ClientNode, type ClientFlowNode } from '@/components/infra/client-node'
 import { DeviceNode, type DeviceFlowNode } from '@/components/infra/device-node'
 import { HostNode, type HostFlowNode } from '@/components/infra/host-node'
+import { MapCamera, planGlide, revealShift, type ViewportSample } from '@/components/infra/map-camera'
 import {
   InfraOverlayContext,
   InfraViewContext,
@@ -28,6 +34,7 @@ import {
 import { PortTooltip } from '@/components/infra/port-strip'
 import { WifiEdge, type WifiFlowEdge } from '@/components/infra/wifi-edge'
 import {
+  infraPositionsMutationKey,
   useCreateInfraLink,
   useDeleteInfraLink,
   useSaveInfraPositions,
@@ -50,6 +57,7 @@ import {
   WIFI_HANDLE_ID,
   type WifiOverlay,
 } from '@/lib/infra-overlay'
+import { easeInOut, MOTION_MS, prefersReducedMotion } from '@/lib/motion'
 import type { InfraLayoutResponse, InfraPositionEntry } from '@/types/api'
 
 /** Boxes of the map, plus the Wi-Fi overlay's chips (never written anywhere). */
@@ -67,6 +75,25 @@ export type InfraSelection =
   | { type: 'clients'; apNodeId: number }
 
 export type InfraNotice = { tone: 'error' | 'info'; text: string }
+
+/** How much of the canvas something covers from its right and bottom edges (px): an inspector, the phone sheet. */
+export type InfraOccludedInsets = { right: number; bottom: number }
+
+const NO_INSETS: InfraOccludedInsets = { right: 0, bottom: 0 }
+
+/** A selection as a string, to notice when it changes. */
+function selectionKey(selection: InfraSelection | null): string | null {
+  if (!selection) return null
+  if (selection.type === 'node') return `n${selection.id}`
+  if (selection.type === 'link') return `l${selection.id}`
+  if (selection.type === 'client') return `c${selection.mac}`
+  return `a${selection.apNodeId}`
+}
+
+/** A move of the viewport (pan, pinch, wheel) made by a finger rather than a mouse. */
+function isTouch(event: MouseEvent | TouchEvent | null): boolean {
+  return event !== null && event.type.startsWith('touch')
+}
 
 /** What the page may ask of the canvas (header actions live outside it). */
 export type InfraCanvasApi = {
@@ -102,8 +129,25 @@ const FLOW_STYLE = {
 } as CSSProperties
 
 const FIT_VIEW_OPTIONS = { padding: 0.15, maxZoom: 1.1 }
+const MIN_ZOOM = 0.15
+/** How a `?node=` box is framed: in the uncovered part of the canvas, not too close, not too far. */
+const FOCUS = { minZoom: 0.35, maxZoom: 1, padding: 0.4 }
+/** What stays clear around a selection brought into view (px), and the least room worth panning for. */
+const REVEAL_MARGIN = 16
+const REVEAL_MIN_ROOM = 48
+/** The canvas counts as moving until its viewport has been still this long (ms): the flow dots hold meanwhile. */
+const MOVING_IDLE_MS = 150
 /** What a new one-port device box measures, for finding it a free spot. */
 const NEW_BOX = { width: NODE_MIN_WIDTH, height: 100 }
+
+/** React Flow's fit-view icon (its Controls do not export it). */
+function FitViewIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 30" aria-hidden>
+      <path d="M3.692 4.63c0-.53.4-.938.939-.938h5.215V0H4.708C2.13 0 0 2.054 0 4.63v5.216h3.692V4.631zM27.354 0h-5.2v3.692h5.17c.53 0 .984.4.984.939v5.215H32V4.631A4.624 4.624 0 0027.354 0zm.954 24.83c0 .532-.4.94-.939.94h-5.215v3.768h5.215c2.577 0 4.631-2.13 4.631-4.707v-5.139h-3.692v5.139zm-23.677.94c-.531 0-.939-.4-.939-.94v-5.138H0v5.139c0 2.577 2.13 4.707 4.708 4.707h5.138V25.77H4.631z" />
+    </svg>
+  )
+}
 
 /** A box of the map, as opposed to a chip of the Wi-Fi overlay: only these are ever written. */
 function isMapNode(node: InfraFlowNode | undefined): node is DeviceFlowNode | HostFlowNode {
@@ -275,6 +319,25 @@ function mergeFlowEdges(current: InfraFlowEdge[], next: InfraFlowEdge[]): InfraF
 }
 
 type Rect = { x: number; y: number; width: number; height: number }
+type XY = { x: number; y: number }
+
+/**
+ * The boxes a rebuild moves (same parent, not under a hand), from where they
+ * are to where the layout puts them.
+ */
+function movedNodes(current: InfraFlowNode[], next: InfraFlowNode[]): Map<string, { from: XY; to: XY }> {
+  const previous = new Map(current.map((node) => [node.id, node]))
+  const moved = new Map<string, { from: XY; to: XY }>()
+  for (const node of next) {
+    const prev = previous.get(node.id)
+    if (!prev || prev.dragging || prev.parentId !== node.parentId) continue
+    const { x, y } = prev.position
+    if (Math.abs(x - node.position.x) > 0.5 || Math.abs(y - node.position.y) > 0.5) {
+      moved.set(node.id, { from: { x, y }, to: node.position })
+    }
+  }
+  return moved
+}
 
 /**
  * The first spot at or after `start` (stepping down, then right) where a box of
@@ -305,6 +368,8 @@ type InfraCanvasProps = {
   /** The Wi-Fi overlay while it is on (A4.4), else null. */
   overlay: WifiOverlay | null
   editing: boolean
+  /** A6.5: rates on the cables and activity lights on the ports. */
+  showTraffic: boolean
   isDark: boolean
   selection: InfraSelection | null
   onSelect: (selection: InfraSelection | null) => void
@@ -315,6 +380,12 @@ type InfraCanvasProps = {
   onConnectDevice: (nodeId: number, portId: number) => void
   /** `?node=`: the box to centre on (A4.3). */
   focusNodeId: number | null
+  /**
+   * What covers the canvas (the inspector, the phone sheet at the detent it is
+   * heading for; px). A selection is brought into the rest of it, and a
+   * `?node=` box is framed there.
+   */
+  occludedInsets?: InfraOccludedInsets
   apiRef: RefObject<InfraCanvasApi | null>
 }
 
@@ -325,6 +396,7 @@ export function InfraCanvas({
   mapLayout,
   overlay,
   editing,
+  showTraffic,
   isDark,
   selection,
   onSelect,
@@ -333,6 +405,7 @@ export function InfraCanvas({
   onAddPorts,
   onConnectDevice,
   focusNodeId,
+  occludedInsets = NO_INSETS,
   apiRef,
 }: InfraCanvasProps) {
   const flow = useReactFlow<InfraFlowNode, InfraFlowEdge>()
@@ -366,10 +439,55 @@ export function InfraCanvas({
   const updateLink = useUpdateInfraLink()
   const deleteLink = useDeleteInfraLink()
 
-  // The layout or the overlay changed: swap what changed, keep React Flow's own facts.
+  // The layout or the overlay changed: swap what changed, keep React Flow's own
+  // facts. Boxes that Auto-arrange moves (a batch of positions being saved)
+  // glide to their new places in 300 ms (`easeInOut`, moving on screen); the
+  // cables follow, being drawn from the boxes. Anything else (a poll, someone
+  // else's edit, reduced motion) lands at once.
+  const queryClient = useQueryClient()
+  const glide = useRef<{ frame: number; target: InfraFlowNode[] } | null>(null)
   useEffect(() => {
-    setNodes((current) => mergeFlowNodes(current, builtNodes))
-  }, [builtNodes, setNodes])
+    const running = glide.current
+    if (running) {
+      // A refetch during the glide: it ends on the latest layout.
+      running.target = builtNodes
+      return
+    }
+    const arranging = queryClient.isMutating({ mutationKey: infraPositionsMutationKey }) > 0
+    const moved = arranging && !prefersReducedMotion() ? movedNodes(flow.getNodes(), builtNodes) : null
+    if (!moved || moved.size === 0) {
+      setNodes((current) => mergeFlowNodes(current, builtNodes))
+      return
+    }
+    const state = { frame: 0, target: builtNodes }
+    glide.current = state
+    const place = (at: (from: XY, to: XY) => XY) => (current: InfraFlowNode[]) =>
+      current.map((node) => {
+        const move = moved.get(node.id)
+        return move ? ({ ...node, position: at(move.from, move.to) } as InfraFlowNode) : node
+      })
+    // Everything but the moved boxes' positions changes now.
+    setNodes((current) => place((from) => from)(mergeFlowNodes(current, builtNodes)))
+    const start = performance.now()
+    const step = (now: number) => {
+      const t = Math.min(1, Math.max(0, (now - start) / MOTION_MS.slow))
+      if (t < 1) {
+        const e = easeInOut(t)
+        setNodes(place((from, to) => ({ x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e })))
+        state.frame = window.requestAnimationFrame(step)
+        return
+      }
+      glide.current = null
+      setNodes((current) => mergeFlowNodes(current, state.target))
+    }
+    state.frame = window.requestAnimationFrame(step)
+  }, [builtNodes, flow, queryClient, setNodes])
+  useEffect(
+    () => () => {
+      if (glide.current) window.cancelAnimationFrame(glide.current.frame)
+    },
+    [],
+  )
   useEffect(() => {
     setEdges((current) => mergeFlowEdges(current, builtEdges))
   }, [builtEdges, setEdges])
@@ -408,15 +526,249 @@ export function InfraCanvas({
     viewTouched.current = true
   }, [])
 
-  // `?node=` (A4.3): centre that box, once the map is measured. A later
-  // fitView replaces the initial one while it is still queued.
+  // ── Camera (map-camera.ts): every programmatic move and the flick glide. ──
+  const [camera] = useState(
+    () =>
+      new MapCamera(
+        (viewport) => void flow.setViewport(viewport),
+        () => flow.getViewport(),
+      ),
+  )
+  useEffect(() => () => camera.stop(), [camera])
+  // A pan or pinch by hand is under way: nothing moves the camera meanwhile.
+  const userMoving = useRef(false)
+  const panSamples = useRef<ViewportSample[]>([])
+  // A selection or inset change waits a frame to be brought into view.
+  const revealPending = useRef(false)
+  const movingTimer = useRef<number | null>(null)
+  const insetRight = occludedInsets.right
+  const insetBottom = occludedInsets.bottom
+  // The latest selection and insets, for camera moves that finish later.
+  const latest = useRef({ selection, insets: NO_INSETS })
   useEffect(() => {
-    if (focusNodeId === null) return
+    latest.current = { selection, insets: { right: insetRight, bottom: insetBottom } }
+  })
+
+  /** The whole map in view (the fit button, after Arrange, when the Wi-Fi chips arrive). */
+  const fitAll = useCallback(() => {
+    const box = containerRef.current?.getBoundingClientRect()
+    const all = flow.getNodes()
+    if (!box || box.width === 0 || all.length === 0) return
+    const bounds = glide.current ? landedBounds(glide.current.target) : flow.getNodesBounds(all)
+    const { maxZoom, padding } = FIT_VIEW_OPTIONS
+    camera.moveTo(getViewportForBounds(bounds, box.width, box.height, MIN_ZOOM, maxZoom, padding))
+    // Where the boxes of a running Arrange glide end up: the top-level boxes and frames at their new places.
+    function landedBounds(target: InfraFlowNode[]): Rect {
+      let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity]
+      for (const node of target) {
+        if (node.parentId) continue
+        const measured = flow.getInternalNode(node.id)?.measured
+        const width = measured?.width ?? node.width ?? 200
+        const height = measured?.height ?? node.height ?? 100
+        x0 = Math.min(x0, node.position.x)
+        y0 = Math.min(y0, node.position.y)
+        x1 = Math.max(x1, node.position.x + width)
+        y1 = Math.max(y1, node.position.y + height)
+      }
+      return Number.isFinite(x0) ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : flow.getNodesBounds(all)
+    }
+  }, [camera, flow])
+
+  // The part of the canvas nothing covers, in canvas pixels (null before layout).
+  const openArea = useCallback((insets: InfraOccludedInsets) => {
+    const box = containerRef.current?.getBoundingClientRect()
+    if (!box || box.width === 0) return null
+    return { width: box.width - insets.right, height: box.height - insets.bottom }
+  }, [])
+
+  /** `?node=`: frame the box in the uncovered part of the canvas. */
+  const focusNode = useCallback(
+    (id: string, animate: boolean) => {
+      const node = flow.getInternalNode(id)
+      const area = openArea(latest.current.insets)
+      if (!node?.measured.width || !area) return
+      // Too little left uncovered: frame it in the whole canvas instead.
+      const box = containerRef.current!.getBoundingClientRect()
+      const cramped = area.width < REVEAL_MIN_ROOM * 2 || area.height < REVEAL_MIN_ROOM * 2
+      const { width, height } = cramped ? box : area
+      const bounds = flow.getNodesBounds([id])
+      const target = getViewportForBounds(bounds, width, height, FOCUS.minZoom, FOCUS.maxZoom, FOCUS.padding)
+      camera.moveTo(target, animate)
+    },
+    [camera, flow, openArea],
+  )
+
+  /** A selection's box in flow coordinates, or null when it is not on the map (or not measured yet). */
+  const selectionBox = useCallback(
+    (picked: InfraSelection): Rect | null => {
+      const nodeBox = (id: string): Rect | null => {
+        const node = flow.getInternalNode(id)
+        const width = node?.measured.width
+        const height = node?.measured.height
+        if (!node || node.hidden || !width || !height) return null
+        return { ...node.internals.positionAbsolute, width, height }
+      }
+      if (picked.type === 'node') return nodeBox(String(picked.id))
+      if (picked.type === 'client') return nodeBox(`wifi:${picked.mac}`)
+      if (picked.type === 'clients') return nodeBox(`wifi-more:${picked.apNodeId}`)
+      // A cable: its two sockets, with room for the rate chip beside them.
+      const link = index.links.get(picked.id)
+      if (!link) return null
+      const ends = [link.a, link.b].map((end) => {
+        const node = flow.getInternalNode(String(end.nodeId))
+        const socket = node?.internals.handleBounds?.source?.find((handle) => handle.id === String(end.portId))
+        if (!node || !socket) return null
+        const at = node.internals.positionAbsolute
+        return { x: at.x + socket.x + socket.width / 2, y: at.y + socket.y + socket.height / 2 }
+      })
+      if (!ends[0] || !ends[1]) return null
+      const pad = 24
+      const x = Math.min(ends[0].x, ends[1].x) - pad
+      const y = Math.min(ends[0].y, ends[1].y) - pad
+      const width = Math.abs(ends[0].x - ends[1].x) + pad * 2
+      return { x, y, width, height: Math.abs(ends[0].y - ends[1].y) + pad * 2 }
+    },
+    [flow, index],
+  )
+
+  /**
+   * Brings the selection into the uncovered part of the canvas, moving the
+   * least (never zooming), and not at all when it is already in view. A cable
+   * too long to fit shows its middle.
+   */
+  const revealSelection = useCallback(
+    (animate: boolean) => {
+      const { selection: picked, insets } = latest.current
+      if (!picked || dragRef.current || userMoving.current) return
+      const rect = selectionBox(picked)
+      const area = openArea(insets)
+      if (!rect || !area) return
+      const room = {
+        left: REVEAL_MARGIN,
+        top: REVEAL_MARGIN,
+        right: area.width - REVEAL_MARGIN,
+        bottom: area.height - REVEAL_MARGIN,
+      }
+      if (room.right - room.left < REVEAL_MIN_ROOM || room.bottom - room.top < REVEAL_MIN_ROOM) return
+      // From where a running move is heading, so a second move does not undo the first.
+      const vp = camera.target() ?? flow.getViewport()
+      let box = {
+        left: rect.x * vp.zoom + vp.x,
+        top: rect.y * vp.zoom + vp.y,
+        right: (rect.x + rect.width) * vp.zoom + vp.x,
+        bottom: (rect.y + rect.height) * vp.zoom + vp.y,
+      }
+      const fits = box.right - box.left <= room.right - room.left && box.bottom - box.top <= room.bottom - room.top
+      if (picked.type === 'link' && !fits) {
+        const cx = (box.left + box.right) / 2
+        const cy = (box.top + box.bottom) / 2
+        box = { left: cx - 24, top: cy - 24, right: cx + 24, bottom: cy + 24 }
+      }
+      const { dx, dy } = revealShift(box, room)
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return
+      camera.moveTo({ x: vp.x + dx, y: vp.y + dy, zoom: vp.zoom }, animate)
+    },
+    [camera, flow, openArea, selectionBox],
+  )
+
+  // `?node=` (A4.3): frame that box. Arriving on such a link (the map not
+  // measured yet) lands on it with no flight: the fit replaces the queued
+  // initial one and waits for the measurements. Once the map is up, a change
+  // of the address flies there.
+  const landing = useRef(false)
+  // The box this address was framed for: the effect re-runs whenever the
+  // layout changes (a drag, a rename, a poll), and the address stays in the
+  // URL, so without this the camera would fly back to it each time.
+  const framedFor = useRef<number | null>(null)
+  useEffect(() => {
+    if (focusNodeId === null) {
+      framedFor.current = null
+      return
+    }
     const id = String(focusNodeId)
     if (!flow.getNode(id)) return
+    if (framedFor.current === focusNodeId) return
+    framedFor.current = focusNodeId
     viewTouched.current = true
-    void flow.fitView({ nodes: [{ id }], maxZoom: 1, minZoom: 0.35, padding: 0.4, duration: 250 })
-  }, [focusNodeId, flow])
+    if (flow.getInternalNode(id)?.measured.width && !landing.current) {
+      focusNode(id, true)
+      return
+    }
+    landing.current = true
+    camera.stop()
+    void flow.fitView({ nodes: [{ id }], ...FOCUS, duration: 0 }).then(() => {
+      landing.current = false
+      revealPending.current = false
+      // Measured now: frame it in what the inspector or sheet leaves, in the same frame.
+      focusNode(id, false)
+      revealSelection(false)
+    })
+  }, [camera, focusNodeId, flow, focusNode, revealSelection])
+
+  // Keep the selection in view when it changes (a pick in the table, a link in
+  // the inspector) or when more of the canvas gets covered (the phone sheet
+  // rising, the inspector opening). One frame later, so a change of both in
+  // successive renders makes one move, and so the sheet and the camera start
+  // together.
+  const selected = selectionKey(selection)
+  const revealSeen = useRef<{ key: string | null; right: number; bottom: number } | null>(null)
+  useEffect(() => {
+    const seen = revealSeen.current
+    revealSeen.current = { key: selected, right: insetRight, bottom: insetBottom }
+    // On mount the camera is the page's fit or the `?node=` landing.
+    if (seen === null) return
+    if (selected !== seen.key || insetRight > seen.right || insetBottom > seen.bottom) revealPending.current = true
+    if (!revealPending.current) return
+    if (selected === null) {
+      revealPending.current = false
+      return
+    }
+    const frame = window.requestAnimationFrame(() => {
+      // The landing brings it into view itself once the map is measured.
+      if (landing.current) return
+      revealPending.current = false
+      revealSelection(true)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [selected, insetRight, insetBottom, revealSelection])
+
+  /** The viewport moved (by hand or not): the flow dots hold still until it rests (infra-traffic.css). */
+  const markMoving = useCallback(() => {
+    const el = containerRef.current
+    if (!el) return
+    if (el.dataset.moving === undefined) el.dataset.moving = ''
+    if (movingTimer.current !== null) window.clearTimeout(movingTimer.current)
+    movingTimer.current = window.setTimeout(() => {
+      movingTimer.current = null
+      delete el.dataset.moving
+    }, MOVING_IDLE_MS)
+  }, [])
+  useEffect(
+    () => () => {
+      if (movingTimer.current !== null) window.clearTimeout(movingTimer.current)
+    },
+    [],
+  )
+
+  /**
+   * The translations a glide may reach (per axis): at least a third of the map
+   * (or of the canvas, whichever is smaller) stays on screen.
+   */
+  const glideRoom = useCallback(
+    (vp: Viewport) => {
+      const box = containerRef.current?.getBoundingClientRect()
+      const all = flow.getNodes()
+      if (!box || all.length === 0) return null
+      const bounds = flow.getNodesBounds(all)
+      const axis = (start: number, size: number, view: number): [number, number] => {
+        const scaled = size * vp.zoom
+        const keep = Math.min(scaled, view) / 3
+        return [keep - scaled - start * vp.zoom, view - keep - start * vp.zoom]
+      }
+      return { x: axis(bounds.x, bounds.width, box.width), y: axis(bounds.y, bounds.height, box.height) }
+    },
+    [flow],
+  )
 
   // The overlay's chips arrive after the map was fitted: fit again to take them
   // in, as long as the view is untouched. Keyed on the nodes React Flow was
@@ -424,11 +776,9 @@ export function InfraCanvas({
   const hasChips = nodes.some((node) => node.type === 'client')
   useEffect(() => {
     if (!hasChips || viewTouched.current) return
-    const frame = window.requestAnimationFrame(() => {
-      void flow.fitView({ ...FIT_VIEW_OPTIONS, duration: 200 })
-    })
+    const frame = window.requestAnimationFrame(fitAll)
     return () => window.cancelAnimationFrame(frame)
-  }, [hasChips, flow])
+  }, [hasChips, fitAll])
 
   // Never leave the page's polls paused behind.
   useEffect(() => () => onInteractingChange(false), [onInteractingChange])
@@ -512,9 +862,11 @@ export function InfraCanvas({
 
   const onDragStart = useCallback(() => {
     dragRef.current = true
+    // A box under a hand: the camera holds still.
+    camera.stop()
     setHover(null)
     onInteractingChange(true)
-  }, [onInteractingChange])
+  }, [camera, onInteractingChange])
 
   const onDragStop = useCallback(
     (movedIds: string[]) => {
@@ -635,9 +987,7 @@ export function InfraCanvas({
         // A new box lands near the middle of the screen, on free space.
         return freeSpot({ x: at.x - 92, y: at.y - 50 }, { width: 200, height: 100 }, rootRects())
       },
-      fitView: () => {
-        void flow.fitView({ ...FIT_VIEW_OPTIONS, duration: 300 })
-      },
+      fitView: fitAll,
       outsideFrame: (nodeId) => {
         const internal = flow.getInternalNode(String(nodeId))
         if (!internal) return null
@@ -664,7 +1014,7 @@ export function InfraCanvas({
     return () => {
       apiRef.current = null
     }
-  }, [apiRef, flow])
+  }, [apiRef, fitAll, flow])
 
   const focusedPortId = selection?.type === 'node' ? (selection.portId ?? null) : null
   const view = useMemo<InfraView>(
@@ -672,6 +1022,7 @@ export function InfraCanvas({
       index,
       state: stateIndex,
       editing,
+      showTraffic,
       focusedPortId,
       onPortClick: (_nodeId, portId) => {
         portClickRef.current = portId
@@ -686,7 +1037,18 @@ export function InfraCanvas({
         saveFrame(nodeId, frame)
       },
     }),
-    [editing, focusedPortId, index, onAddPorts, onConnectDevice, onInteractingChange, onSelect, saveFrame, stateIndex],
+    [
+      editing,
+      focusedPortId,
+      index,
+      onAddPorts,
+      onConnectDevice,
+      onInteractingChange,
+      onSelect,
+      saveFrame,
+      showTraffic,
+      stateIndex,
+    ],
   )
 
   const selectedChipId =
@@ -751,12 +1113,43 @@ export function InfraCanvas({
             onReconnectEnd={() => onInteractingChange(false)}
             onMoveStart={(event) => {
               setHover(null)
-              // A pan or zoom by hand (programmatic moves have no event).
-              if (event) markViewTouched()
+              // A press on the map by hand (programmatic moves have no event)
+              // stops any camera move or glide where it is (d3 interrupts it).
+              // It is not a pan yet: d3 starts a gesture on every press, and the
+              // end of a tap arrives in a timeout, after the click's reveal may
+              // already have run. Only a view that moves counts (onMove).
+              if (!event) return
+              camera.stop()
+              panSamples.current = []
+            }}
+            onMove={(event, viewport) => {
+              markMoving()
+              if (!event) return
+              if (!userMoving.current) {
+                userMoving.current = true
+                markViewTouched()
+              }
+              // The finger's last stretch, for the glide after it lifts.
+              if (!isTouch(event)) return
+              const t = performance.now()
+              const samples = panSamples.current
+              samples.push({ ...viewport, t })
+              while (samples.length > 2 && t - samples[0].t > 100) samples.shift()
+            }}
+            onMoveEnd={(event, viewport) => {
+              const samples = panSamples.current
+              panSamples.current = []
+              if (!event) return
+              userMoving.current = false
+              // A flick-pan on a touch screen glides on and slows to a stop
+              // (at most 900 ms); the next touch stops it.
+              if (!isTouch(event) || prefersReducedMotion()) return
+              const glide = planGlide(samples, performance.now(), viewport, glideRoom(viewport))
+              if (glide) camera.glide(glide.velocity, glide.tau)
             }}
             fitView
             fitViewOptions={FIT_VIEW_OPTIONS}
-            minZoom={0.15}
+            minZoom={MIN_ZOOM}
             maxZoom={2}
             colorMode={isDark ? 'dark' : 'light'}
             style={FLOW_STYLE}
@@ -772,10 +1165,21 @@ export function InfraCanvas({
             />
             <Controls
               showInteractive={false}
+              showFitView={false}
               position="bottom-left"
               onZoomIn={markViewTouched}
               onZoomOut={markViewTouched}
-            />
+            >
+              {/* React Flow's own fit button, moving like every other camera move. */}
+              <ControlButton
+                className="react-flow__controls-fitview"
+                title="Fit view"
+                aria-label="Fit view"
+                onClick={fitAll}
+              >
+                <FitViewIcon />
+              </ControlButton>
+            </Controls>
           </ReactFlow>
         </div>
         {hover ? <PortTooltip portId={hover.portId} anchor={hover.anchor} index={index} state={stateIndex} /> : null}

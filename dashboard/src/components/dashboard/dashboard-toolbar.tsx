@@ -18,17 +18,21 @@ type DashboardToolbarProps = {
  * opacity higher on browsers that can't do the blur, so the bar still
  * reads as a distinct strip without losing legibility.
  *
- * Anchored at `top-3` (small breather from the viewport edge) and
- * `z-30` so it sits below Radix popovers (which run at `z-50`) but
- * above page content like cards and charts.
+ * Below sm it is solid instead: a phone already scrolls under the frosted top
+ * and bottom bars, and a third blurred layer over live charts costs frames.
+ *
+ * Anchored a small breather below the sticky top bar (it used to pin at
+ * `top-3` and slid over the bar's account menu) and `z-20`, under the top
+ * bar (`z-30`) and Radix popovers (`z-50`) but above page content like
+ * cards and charts.
  */
 export function DashboardToolbar({ children, className }: DashboardToolbarProps) {
   return (
     <div
       className={cn(
-        'sticky top-3 z-30 flex flex-wrap items-center justify-end gap-3',
-        'rounded-xl border border-border/70 bg-background/70 px-3 py-2 shadow-md',
-        'backdrop-blur-md supports-[backdrop-filter]:bg-background/55',
+        'sticky top-[calc(var(--topbar-height)+0.75rem)] z-20 flex flex-wrap items-center justify-end gap-3',
+        'rounded-xl border border-border/70 bg-background px-3 py-2 shadow-md',
+        'sm:bg-background/70 sm:backdrop-blur-md sm:supports-[backdrop-filter]:bg-background/55',
         className,
       )}
       role="toolbar"

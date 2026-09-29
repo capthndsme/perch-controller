@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowCounterClockwise,
@@ -22,6 +22,7 @@ import {
   refusalMessage,
   secondsUntil,
 } from '@/lib/gateway-config'
+import { MOTION_MS } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { Gateway, GatewayApply } from '@/types/gateway-config'
 
@@ -64,6 +65,27 @@ export function GatewayApplyBanner() {
 
   const open = (gateways.data ?? []).filter((g) => g.pendingApply)
 
+  // A job that just left `pendingApply` keeps its banner, as it was, until its
+  // outcome is in: then one collapses while the other opens, in the same beat,
+  // and the page below moves only by the difference (not up, then down again).
+  const [resolving, setResolving] = useState<Gateway[]>([])
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (open.length !== prevOpen.length || open.some((g, i) => g !== prevOpen[i])) {
+    setPrevOpen(open)
+    const live = new Set(open.map((g) => g.pendingApply!.id))
+    const gone = prevOpen.filter((g) => !live.has(g.pendingApply!.id))
+    setResolving((current) => [...current.filter((g) => !live.has(g.pendingApply!.id)), ...gone])
+  }
+  const settle = (applyId: string) =>
+    setResolving((current) => current.filter((g) => g.pendingApply!.id !== applyId))
+  // …but never for long: without an outcome it goes after a few seconds.
+  useEffect(() => {
+    if (resolving.length === 0) return
+    const timer = window.setTimeout(() => setResolving([]), 4000)
+    return () => window.clearTimeout(timer)
+  }, [resolving])
+  const shownOpen = [...open, ...resolving]
+
   // Watch open jobs; when one leaves `pendingApply`, fetch its outcome once.
   useEffect(() => {
     const list = gateways.data
@@ -92,9 +114,11 @@ export function GatewayApplyBanner() {
             ...current.filter((f) => f.apply.id !== apply.id),
             { gatewayId: w.gatewayId, gatewayName: w.gatewayName, apply, seenAt: Date.now() },
           ])
+          settle(w.applyId)
         })
         .catch(() => {
           // The job is gone (pruned) or the API is unreachable: nothing to report.
+          settle(w.applyId)
         })
     }
   }, [gateways.data])
@@ -110,29 +134,149 @@ export function GatewayApplyBanner() {
     return () => window.clearTimeout(timer)
   }, [finished])
 
-  if (open.length === 0 && finished.length === 0) return null
+  return (
+    <BannerStack
+      open={shownOpen}
+      finished={finished}
+      isAdmin={isAdmin}
+      onDismiss={(id) => setFinished((current) => current.filter((x) => x.apply.id !== id))}
+    />
+  )
+}
+
+/** How long a banner takes to open or collapse away (index.css `duration-base`). */
+const BANNER_MS = MOTION_MS.base
+
+type Shown<T> = { key: string; item: T; leaving: boolean }
+
+/**
+ * `items`, plus for `BANNER_MS` the ones that just left (`leaving`, at their
+ * old place), so a banner collapses out instead of vanishing. It keeps the
+ * last data it had. `items` must keep its elements' identity while they don't
+ * change (query data does).
+ */
+function useWithLeaving<T>(items: readonly T[], keyOf: (item: T) => string): Shown<T>[] {
+  const [prev, setPrev] = useState(items)
+  const [leaving, setLeaving] = useState<(Shown<T> & { index: number })[]>([])
+  if (items.length !== prev.length || items.some((item, i) => item !== prev[i])) {
+    setPrev(items)
+    const live = new Set(items.map(keyOf))
+    const gone = prev.flatMap((item, index) =>
+      live.has(keyOf(item)) ? [] : [{ key: keyOf(item), item, leaving: true, index }],
+    )
+    setLeaving((current) => [
+      ...current.filter((s) => !live.has(s.key) && !gone.some((g) => g.key === s.key)),
+      ...gone,
+    ])
+  }
+  useEffect(() => {
+    if (leaving.length === 0) return
+    const timer = window.setTimeout(() => setLeaving([]), BANNER_MS)
+    return () => window.clearTimeout(timer)
+  }, [leaving])
+  const shown: Shown<T>[] = items.map((item) => ({ key: keyOf(item), item, leaving: false }))
+  for (const s of [...leaving].sort((a, b) => a.index - b.index)) {
+    shown.splice(Math.min(s.index, shown.length), 0, s)
+  }
+  return shown
+}
+
+/**
+ * Opens from nothing (height and opacity) and collapses back, so the page
+ * below slides instead of jumping when a banner comes, changes or goes. Height
+ * is the right property here: the page has to move, and it is rare. Reduced
+ * motion keeps the fade and drops the height change.
+ */
+function Collapse({
+  leaving,
+  className,
+  clipClassName,
+  children,
+}: {
+  leaving: boolean
+  className?: string
+  clipClassName?: string
+  children: ReactNode
+}) {
+  return (
+    <div
+      className={cn(
+        'grid transition-[grid-template-rows,opacity] duration-base ease-out motion-reduce:transition-opacity',
+        leaving ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100 starting:grid-rows-[0fr] starting:opacity-0',
+        className,
+      )}
+      aria-hidden={leaving || undefined}
+      inert={leaving}
+    >
+      <div className={cn('min-h-0 overflow-hidden', clipClassName)}>{children}</div>
+    </div>
+  )
+}
+
+/**
+ * The banners, with their spacing inside what collapses: the stack's own gap
+ * and the shell's `gap-5` around it (cancelled by the negative margins), so
+ * the last one leaving takes every pixel with it.
+ */
+function BannerStack({
+  open,
+  finished,
+  isAdmin,
+  onDismiss,
+}: {
+  open: Gateway[]
+  finished: Finished[]
+  isAdmin: boolean
+  onDismiss: (applyId: string) => void
+}) {
+  const shownOpen = useWithLeaving(open, (g) => g.pendingApply!.id)
+  const shownFinished = useWithLeaving(finished, (f) => f.apply.id)
+  if (shownOpen.length === 0 && shownFinished.length === 0) return null
+  const allLeaving = [...shownOpen, ...shownFinished].every((s) => s.leaving)
+  // The clip is wider than the banners by their shadow's reach.
+  const clip = '-mx-2 px-2'
 
   return (
-    <div className="flex flex-col gap-2" aria-live="polite">
-      {open.map((g) => (
-        <OpenApplyBanner key={g.pendingApply!.id} gateway={g} apply={g.pendingApply!} isAdmin={isAdmin} />
+    <div className="-mb-5 flex flex-col not-first:-mt-5" aria-live="polite">
+      <Collapse leaving={allLeaving} className="[:first-child>&]:hidden">
+        <div className="h-5" />
+      </Collapse>
+      {shownOpen.map(({ key, item: g, leaving }) => (
+        <Collapse key={key} leaving={leaving} clipClassName={clip}>
+          <div className="pb-2">
+            <OpenApplyBanner gateway={g} apply={g.pendingApply!} isAdmin={isAdmin} />
+          </div>
+        </Collapse>
       ))}
-      {finished.map((f) => (
-        <FinishedBanner
-          key={f.apply.id}
-          item={f}
-          onDismiss={() => setFinished((current) => current.filter((x) => x.apply.id !== f.apply.id))}
-        />
+      {shownFinished.map(({ key, item: f, leaving }) => (
+        <Collapse key={key} leaving={leaving} clipClassName={clip}>
+          <div className="pb-2">
+            <FinishedBanner item={f} onDismiss={() => onDismiss(f.apply.id)} />
+          </div>
+        </Collapse>
       ))}
+      <Collapse leaving={allLeaving}>
+        <div className="h-3" />
+      </Collapse>
     </div>
   )
 }
 
 function Step({ done, label }: { done: boolean; label: string }) {
+  // Only a step that gets done while the banner is up ticks in; the ones done
+  // when it appeared come with it.
+  const [doneAtFirst] = useState(done)
   return (
     <li className={cn('flex items-center gap-1.5', done ? 'text-foreground' : 'text-muted-foreground')}>
       {done ? (
-        <CheckCircle weight="fill" className="size-3.5 text-status-good" />
+        <CheckCircle
+          weight="fill"
+          className={cn(
+            'size-3.5 text-status-good',
+            !doneAtFirst &&
+              'transition-[scale,opacity] duration-base ease-out starting:opacity-0 motion-safe:starting:scale-90',
+          )}
+        />
       ) : (
         <span aria-hidden className="inline-block size-3.5 rounded-full border border-muted-foreground/50" />
       )}

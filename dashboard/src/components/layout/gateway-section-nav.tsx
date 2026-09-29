@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { Globe } from '@phosphor-icons/react'
+import { useActiveIntoView } from '@/hooks/use-active-into-view'
 import { GATEWAY_SECTION, sectionItemActive } from '@/lib/nav'
 import { cn } from '@/lib/utils'
 
@@ -27,21 +28,13 @@ export function GatewaySectionNav() {
   const navRef = useRef<HTMLElement>(null)
 
   // On a phone the strip scrolls: keep the current page's entry in view.
-  useEffect(() => {
-    const nav = navRef.current
-    const active = nav?.querySelector<HTMLElement>('[aria-current="page"]')
-    if (!nav || !active) return
-    const left = active.offsetLeft - nav.offsetLeft
-    if (left < nav.scrollLeft || left + active.offsetWidth > nav.scrollLeft + nav.clientWidth) {
-      nav.scrollLeft = Math.max(0, left - 16)
-    }
-  }, [pathname])
+  useActiveIntoView(navRef, pathname)
 
   return (
     <nav
       ref={navRef}
       aria-label="Gateway"
-      className="-mx-4 -mb-1 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden"
+      className="-mx-4 -mb-1 overflow-x-auto overscroll-x-contain px-4 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden"
     >
       <div className="flex w-max items-center gap-1 rounded-lg border border-border bg-card p-1">
         <span className="flex items-center gap-1.5 px-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -57,8 +50,12 @@ export function GatewaySectionNav() {
               to={to}
               aria-current={active ? 'page' : undefined}
               className={cn(
-                'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium whitespace-nowrap transition-colors',
-                active ? 'bg-brand/10 text-brand' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                // A control, not content: no long-press link preview or text selection;
+                // the press tint lands with the finger and fades on release.
+                'flex items-center gap-1.5 rounded-md px-2.5 py-2 text-xs font-medium whitespace-nowrap select-none transition-colors duration-base [-webkit-touch-callout:none] active:duration-0 lg:py-1.5',
+                active
+                  ? 'bg-brand/10 text-brand'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground active:bg-muted active:text-foreground',
               )}
             >
               <item.icon className="size-3.5 shrink-0" aria-hidden />

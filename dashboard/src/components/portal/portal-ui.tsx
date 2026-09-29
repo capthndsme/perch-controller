@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react'
-import { NavLink } from 'react-router-dom'
+import { useRef, type ReactNode } from 'react'
+import { NavLink, useLocation } from 'react-router-dom'
 import { ClockCountdown, Warning } from '@phosphor-icons/react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { useActiveIntoView } from '@/hooks/use-active-into-view'
 import { useIsPortalAdmin } from '@/hooks/use-portal'
 import {
   GRANT_END_REASONS,
@@ -45,12 +46,16 @@ const SECTIONS = [
 /** Tabs of the Guest portal section; the admin catalogs are hidden for other roles. */
 export function PortalSectionNav() {
   const { isAdmin } = useIsPortalAdmin()
+  const { pathname } = useLocation()
+  const navRef = useRef<HTMLElement>(null)
+  useActiveIntoView(navRef, pathname)
   const sections = SECTIONS.filter((s) => isAdmin || !s.admin)
   if (sections.length < 2) return null
   return (
     <nav
+      ref={navRef}
       aria-label="Guest portal"
-      className="-mx-4 flex gap-1 overflow-x-auto border-b border-border px-4 [scrollbar-width:none]"
+      className="-mx-4 flex gap-1 overflow-x-auto overscroll-x-contain border-b border-border px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
       {sections.map((section) => (
         <NavLink
@@ -59,10 +64,11 @@ export function PortalSectionNav() {
           end={section.end}
           className={({ isActive }) =>
             cn(
-              '-mb-px shrink-0 border-b-2 px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors',
+              // A control, not content: no long-press link preview or text selection.
+              '-mb-px shrink-0 border-b-2 px-3 py-2.5 text-xs font-medium whitespace-nowrap select-none transition-colors duration-base [-webkit-touch-callout:none] active:duration-0 lg:py-2',
               isActive
                 ? 'border-foreground text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
+                : 'border-transparent text-muted-foreground hover:text-foreground active:text-foreground',
             )
           }
         >
