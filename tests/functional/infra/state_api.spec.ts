@@ -73,6 +73,7 @@ test.group('infra | state', (group) => {
       carrierChanges: null,
       changedAt: lan1.changedAt,
       derivedFrom: null,
+      traffic: null,
     })
     assert.match(lan1.changedAt, ISO)
     assert.deepInclude(byId(online.ports, ap.ports.lan3), {
@@ -212,6 +213,7 @@ test.group('infra | state', (group) => {
       carrierChanges: null,
       changedAt: null,
       derivedFrom: null,
+      traffic: null,
     })
   })
 
@@ -282,6 +284,7 @@ test.group('infra | state', (group) => {
       state: 'up',
       speedMbps: 1000,
       detail: null,
+      traffic: null,
     })
     assert.deepInclude(byId(state.links, toSwitch), { state: 'up', speedMbps: 1000 })
     assert.deepInclude(byId(state.links, manualOnly), { state: 'unknown', speedMbps: null })
@@ -293,6 +296,7 @@ test.group('infra | state', (group) => {
       state: 'mismatch',
       speedMbps: 100,
       detail: 'speed',
+      traffic: null,
     })
 
     await report(two.apId, apPorts({ wan: { carrier: false } }))
@@ -306,6 +310,7 @@ test.group('infra | state', (group) => {
       state: 'down',
       speedMbps: null,
       detail: null,
+      traffic: null,
     })
     assert.deepInclude(byId(state.links, toSwitch), { state: 'down' })
     assert.deepInclude(byId(state.ports, sw.ports['1']), { live: true, up: false })

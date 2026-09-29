@@ -1,5 +1,6 @@
 import WifiAccessPoint from '#models/wifi_access_point'
 import hub from '#services/ap_agent_hub'
+import { recordPortTraffic } from '#services/infra_port_traffic'
 import { recordAgentPorts } from '#services/infra_ports'
 import { getPresenceSettings } from '#services/presence_settings'
 import { ingestWifiMetrics, type WifiPollOutcome } from '#services/wifi_metrics_poller'
@@ -170,10 +171,24 @@ async function ingestPush(
 
   // The device's ports, after the Wi-Fi data and never at its expense. A push
   // without `ports` (perch-apd ≤ 0.1.2) writes nothing.
+  let recorded: Awaited<ReturnType<typeof recordAgentPorts>> = null
   try {
-    await recordAgentPorts({ type: 'ap', id: apId }, ports, receivedAt)
+    recorded = await recordAgentPorts({ type: 'ap', id: apId }, ports, receivedAt)
   } catch (error) {
     logger.warn({ apId, error: String(error) }, 'ap_agent_metrics: port report failed (non-fatal)')
+  }
+  // Their byte counters (docs/infrastructure-view.md A6.2), last and non-fatal too.
+  if (recorded) {
+    try {
+      await recordPortTraffic(recorded.nodeId, ports, receivedAt, {
+        portsChanged: recorded.changed > 0,
+      })
+    } catch (error) {
+      logger.warn(
+        { apId, error: String(error) },
+        'ap_agent_metrics: port traffic failed (non-fatal)'
+      )
+    }
   }
   return { status: 'ingested', outcome }
 }

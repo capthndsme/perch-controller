@@ -8,6 +8,7 @@ import { _resetPollerState } from '#services/collector_poller'
 import { resetDeviceLabelCacheForTesting } from '#services/device_labels'
 import { _resetGatewayDhcpState } from '#services/gateway_dhcp'
 import { resetHostnameEnrichmentCacheForTesting } from '#services/hostname_enrichment'
+import { _resetPortTrafficState } from '#services/infra_port_traffic'
 import { _resetInfraPortsState, recordAgentPorts } from '#services/infra_ports'
 import { _resetQueryCache } from '#services/query_cache'
 import { _resetRouterState } from '#services/router_metrics'
@@ -32,6 +33,7 @@ export async function resetInfraTests() {
 
 export function resetInfraState() {
   _resetInfraPortsState()
+  _resetPortTrafficState()
   _resetAgentMetricsState()
   _resetWifiPollerState()
   _resetPollerState()

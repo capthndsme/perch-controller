@@ -1483,6 +1483,32 @@ export class InfraPortSchema extends BaseModel {
   declare updatedAt: DateTime | null
 }
 
+export class InfraPortBuckets5MSchema extends BaseModel {
+  static $columns = ['portId', 'rxBytes', 'slotStart', 'txBytes'] as const
+  $columns = InfraPortBuckets5MSchema.$columns
+  @column({ isPrimary: true })
+  declare portId: number
+  @column()
+  declare rxBytes: bigint | number
+  @column.dateTime()
+  declare slotStart: DateTime
+  @column()
+  declare txBytes: bigint | number
+}
+
+export class InfraPortBucketsHourlySchema extends BaseModel {
+  static $columns = ['hourStart', 'portId', 'rxBytes', 'txBytes'] as const
+  $columns = InfraPortBucketsHourlySchema.$columns
+  @column.dateTime()
+  declare hourStart: DateTime
+  @column({ isPrimary: true })
+  declare portId: number
+  @column()
+  declare rxBytes: bigint | number
+  @column()
+  declare txBytes: bigint | number
+}
+
 export class PortalSchema extends BaseModel {
   static $columns = ['appliedRevision', 'createdAt', 'deletedAt', 'gatewayId', 'id', 'name', 'networkPerchId', 'privacyNotice', 'revision', 'templateId', 'updatedAt'] as const
   $columns = PortalSchema.$columns

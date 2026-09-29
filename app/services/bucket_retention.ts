@@ -19,8 +19,10 @@ import { DateTime } from 'luxon'
  *   router samples   recorded_at    90 d   (ROUTER_SAMPLE_RETENTION_DAYS; also the
  *                                          per-network gateway samples)
  *   destination hourly hour_start   365 d  (DESTINATION_HOURLY_RETENTION_DAYS)
- *   5-minute         slot_start     730 d  (BUCKET_5M_RETENTION_DAYS)
- *   hourly           hour_start     730 d  (BUCKET_HOURLY_RETENTION_DAYS)
+ *   5-minute         slot_start     730 d  (BUCKET_5M_RETENTION_DAYS; also the
+ *                                          infrastructure view's port accounting)
+ *   hourly           hour_start     730 d  (BUCKET_HOURLY_RETENTION_DAYS; also the
+ *                                          port accounting)
  *   daily            day_start      1825 d (BUCKET_DAILY_RETENTION_DAYS)
  *
  * Invariant: each coarser bucket tier lives at least as long as the finer
@@ -42,11 +44,13 @@ const FIVE_MIN_TABLES = [
   'ap_system_buckets_5m',
   'wifi_client_distribution',
   'wifi_client_totals',
+  'infra_port_buckets_5m',
 ] as const
 const HOURLY_TABLES = [
   'device_traffic_buckets_hourly',
   'device_protocol_buckets_hourly',
   'wifi_interface_buckets_hourly',
+  'infra_port_buckets_hourly',
 ] as const
 const DAILY_TABLES = [
   'device_traffic_buckets_daily',

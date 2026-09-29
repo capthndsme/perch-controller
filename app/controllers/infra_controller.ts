@@ -1,3 +1,10 @@
+import { getChartSettings } from '#services/chart_settings'
+import {
+  queryLinkTraffic,
+  queryNodeTraffic,
+  queryPortTraffic,
+  type TrafficWindow,
+} from '#services/infra_port_traffic'
 import {
   InfraError,
   addPorts,
@@ -13,6 +20,9 @@ import {
   updateLink,
   updateNode,
   updatePort,
+  linkNotFound,
+  nodeNotFound,
+  portNotFound,
 } from '#services/infra_topology'
 import {
   addInfraPortsValidator,
@@ -22,9 +32,11 @@ import {
   saveInfraPositionsValidator,
   updateInfraLinkValidator,
   updateInfraNodeValidator,
+  infraTrafficQueryValidator,
   updateInfraPortValidator,
 } from '#validators/infra'
 import type { HttpContext } from '@adonisjs/core/http'
+import { DateTime } from 'luxon'
 
 /** Keys `PATCH /infra/nodes/:id` refuses: kind is fixed, binding has its own endpoint. */
 const FIXED_NODE_FIELDS = ['kind', 'collectorId', 'apId'] as const
@@ -55,6 +67,42 @@ export default class InfraController {
    */
   async state({ serialize }: HttpContext) {
     return serialize(await loadState())
+  }
+
+  /**
+   * GET /api/v1/infra/ports/:id/traffic — a port's accounting over the
+   * window (amendment A6.4), dense, seen from the port.
+   */
+  async portTraffic({ params, request, response, serialize }: HttpContext) {
+    const qs = await infraTrafficQueryValidator.validate(request.qs())
+    const window = trafficWindow(qs)
+    if ('errors' in window) return response.unprocessableEntity(window)
+    const id = Number(params.id)
+    const series = await queryPortTraffic(id, window, await getChartSettings(), qs.resolution)
+    return series ? serialize(series) : refusal(response, portNotFound(id))
+  }
+
+  /**
+   * GET /api/v1/infra/links/:id/traffic — a cable's accounting, per bucket and
+   * direction the larger of what its two ends counted.
+   */
+  async linkTraffic({ params, request, response, serialize }: HttpContext) {
+    const qs = await infraTrafficQueryValidator.validate(request.qs())
+    const window = trafficWindow(qs)
+    if ('errors' in window) return response.unprocessableEntity(window)
+    const id = Number(params.id)
+    const series = await queryLinkTraffic(id, window, await getChartSettings(), qs.resolution)
+    return series ? serialize(series) : refusal(response, linkNotFound(id))
+  }
+
+  /** GET /api/v1/infra/nodes/:id/traffic — per-port totals of one node over the window. */
+  async nodeTraffic({ params, request, response, serialize }: HttpContext) {
+    const qs = await infraTrafficQueryValidator.validate(request.qs())
+    const window = trafficWindow(qs)
+    if ('errors' in window) return response.unprocessableEntity(window)
+    const id = Number(params.id)
+    const totals = await queryNodeTraffic(id, window)
+    return totals ? serialize(totals) : refusal(response, nodeNotFound(id))
   }
 
   /**
@@ -203,6 +251,37 @@ export default class InfraController {
       return refusal(response, error)
     }
   }
+}
+
+/** The last 24 h up to now unless `from` / `to` say otherwise. */
+const DEFAULT_TRAFFIC_WINDOW_HOURS = 24
+
+type FieldErrors = { errors: Array<{ field: string; message: string; rule: string }> }
+
+/** A traffic read's window from `from` / `to`, or Vine-shaped errors. */
+function trafficWindow(qs: { from?: string; to?: string }): TrafficWindow | FieldErrors {
+  const parse = (field: 'from' | 'to'): DateTime | FieldErrors | null => {
+    const raw = qs[field]
+    if (raw === undefined) return null
+    const at = DateTime.fromISO(raw, { zone: 'utc' })
+    return at.isValid
+      ? at
+      : {
+          errors: [{ field, message: `\`${field}\` must be an ISO-8601 timestamp.`, rule: 'date' }],
+        }
+  }
+  const from = parse('from')
+  const to = parse('to')
+  if (from && 'errors' in from) return from
+  if (to && 'errors' in to) return to
+  const until = to ?? DateTime.utc()
+  const since = from ?? until.minus({ hours: DEFAULT_TRAFFIC_WINDOW_HOURS })
+  if (until <= since) {
+    return {
+      errors: [{ field: 'to', message: '`to` must be later than `from`.', rule: 'afterField' }],
+    }
+  }
+  return { since, until }
 }
 
 /** Sends a service refusal as is; anything else is a real error. */

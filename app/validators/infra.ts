@@ -144,3 +144,21 @@ export const saveInfraPositionsValidator = vine.compile(
       .maxLength(INFRA_LIMITS.nodes),
   })
 )
+
+/**
+ * `GET /api/v1/infra/{ports,links,nodes}/:id/traffic` (amendment A6.4): an ISO
+ * window (default: the last 24 h up to now) and an optional bucket width in
+ * seconds. The controller parses the timestamps.
+ */
+export const infraTrafficQueryValidator = vine.compile(
+  vine.object({
+    from: vine.string().trim().maxLength(40).optional(),
+    to: vine.string().trim().maxLength(40).optional(),
+    resolution: vine
+      .number()
+      .withoutDecimals()
+      .min(1)
+      .max(7 * 86_400)
+      .optional(),
+  })
+)

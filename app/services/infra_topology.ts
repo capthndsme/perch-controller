@@ -14,7 +14,13 @@ import { isDuplicateEntryError } from '#services/db_errors'
 import { getDeviceLabels, normalizeMac, type DeviceLabel } from '#services/device_labels'
 import { queryDevicePresences } from '#services/device_presence_query'
 import { getHostnameMatches } from '#services/hostname_enrichment'
-import { ensureNodeFor, forgetAgentPorts, type PortBinding } from '#services/infra_ports'
+import { livePortRates, type PortRate } from '#services/infra_port_traffic'
+import {
+  ensureNodeFor,
+  forgetAgentPorts,
+  type InfraTrafficScope,
+  type PortBinding,
+} from '#services/infra_ports'
 import { getPresenceSettings } from '#services/presence_settings'
 import { gatewaySource } from '#services/router_metrics'
 import {
@@ -276,6 +282,30 @@ export type InfraPortState = {
   changedAt: string | null
   /** Manual ports: the link whose far end the state was taken from. */
   derivedFrom: number | null
+  /** The port's rate now (amendment A6.3), in bits per second. */
+  traffic: InfraPortTraffic | null
+}
+
+export type InfraPortTraffic = {
+  /** Received from its cable. */
+  rxBps: number
+  /** Sent into its cable. */
+  txBps: number
+  scope: InfraTrafficScope | null
+  at: string
+  /** Manual port: the link whose far agent port measured it (turned to this side). */
+  derivedFrom: number | null
+}
+
+export type InfraLinkEndRate = { rxBps: number; txBps: number; scope: InfraTrafficScope | null }
+
+export type InfraLinkTraffic = {
+  aToBBps: number
+  bToABps: number
+  /** No measuring end counts every frame (`scope: 'port'`). */
+  partial: boolean
+  at: string
+  ends: { a: InfraLinkEndRate | null; b: InfraLinkEndRate | null }
 }
 
 export type InfraLinkState = {
@@ -283,6 +313,8 @@ export type InfraLinkState = {
   state: 'up' | 'down' | 'unknown' | 'mismatch'
   speedMbps: number | null
   detail: 'carrier' | 'speed' | null
+  /** The cable's rate now (amendment A6.3): the larger of what its ends measured. */
+  traffic: InfraLinkTraffic | null
 }
 
 // ── errors ────────────────────────────────────────────────────────────────
@@ -309,15 +341,15 @@ function refuse(
   return new InfraError(status, { error, message, ...extra })
 }
 
-function nodeNotFound(id: number): InfraError {
+export function nodeNotFound(id: number): InfraError {
   return refuse(404, 'infra_node_not_found', `There is no node ${id}.`, { nodeId: id })
 }
 
-function portNotFound(id: number): InfraError {
+export function portNotFound(id: number): InfraError {
   return refuse(404, 'infra_port_not_found', `There is no port ${id}.`, { portId: id })
 }
 
-function linkNotFound(id: number): InfraError {
+export function linkNotFound(id: number): InfraError {
   return refuse(404, 'infra_link_not_found', `There is no cable ${id}.`, { linkId: id })
 }
 
@@ -1067,7 +1099,11 @@ function isLiveAgentEnd(end: PortEnd | undefined): end is PortEnd {
  * are both up at different speeds, mean the cable is not between these two
  * ports: `mismatch`.
  */
-function linkState(link: LinkRow, a: PortEnd | undefined, b: PortEnd | undefined): InfraLinkState {
+function linkState(
+  link: LinkRow,
+  a: PortEnd | undefined,
+  b: PortEnd | undefined
+): Omit<InfraLinkState, 'traffic'> {
   const ends = [a, b].filter(isLiveAgentEnd)
   const id = Number(link.id)
   if (ends.length === 0) return { id, state: 'unknown', speedMbps: null, detail: null }
@@ -1086,6 +1122,47 @@ function linkState(link: LinkRow, a: PortEnd | undefined, b: PortEnd | undefined
   return { id, state: 'down', speedMbps: null, detail: null }
 }
 
+/** An end's own measured rate: a live agent port with a rate (never a derived one). */
+function measuredRate(end: PortEnd | undefined): InfraPortTraffic | null {
+  if (!end || end.row.origin !== 'agent' || !end.state.live) return null
+  const traffic = end.state.traffic
+  return traffic && traffic.derivedFrom === null ? traffic : null
+}
+
+/**
+ * Amendment A6.3: the ends that measure decide, and per direction the larger
+ * reading wins (a's sent vs b's received), since one end of a cable can
+ * under-count. One measuring end gives both directions.
+ */
+function linkTraffic(a: PortEnd | undefined, b: PortEnd | undefined): InfraLinkTraffic | null {
+  const ra = measuredRate(a)
+  const rb = measuredRate(b)
+  if (!ra && !rb) return null
+  const most = (...values: Array<number | undefined>) =>
+    Math.max(...values.filter((value): value is number => value !== undefined))
+  const end = (rate: InfraPortTraffic | null): InfraLinkEndRate | null =>
+    rate ? { rxBps: rate.rxBps, txBps: rate.txBps, scope: rate.scope } : null
+  const measuring = [ra, rb].filter((rate): rate is InfraPortTraffic => rate !== null)
+  return {
+    aToBBps: most(ra?.txBps, rb?.rxBps),
+    bToABps: most(rb?.txBps, ra?.rxBps),
+    partial: !measuring.some((rate) => rate.scope === 'port'),
+    at: measuring.map((rate) => rate.at).sort()[measuring.length - 1],
+    ends: { a: end(ra), b: end(rb) },
+  }
+}
+
+function portTraffic(rate: PortRate | undefined): InfraPortTraffic | null {
+  if (!rate) return null
+  return {
+    rxBps: rate.rxBps,
+    txBps: rate.txBps,
+    scope: rate.scope,
+    at: new Date(rate.atMs).toISOString(),
+    derivedFrom: null,
+  }
+}
+
 export type InfraState = {
   generatedAt: string
   nodes: InfraNodeState[]
@@ -1102,6 +1179,7 @@ export async function loadState(): Promise<InfraState> {
     loadAgents(client),
     getPresenceSettings(),
   ])
+  const rates = livePortRates()
 
   const statuses = nodes.map((node) => ({
     id: Number(node.id),
@@ -1112,13 +1190,14 @@ export async function loadState(): Promise<InfraState> {
   const ends = new Map<number, PortEnd>()
   for (const row of ports) {
     const agentPort = row.origin === 'agent'
+    const live = agentPortLive(row, nodeLive.get(Number(row.nodeId)) ?? false)
     ends.set(Number(row.id), {
       row,
       state: {
         id: Number(row.id),
         nodeId: Number(row.nodeId),
         present: bool(row.present),
-        live: agentPortLive(row, nodeLive.get(Number(row.nodeId)) ?? false),
+        live,
         // An agent port keeps its last reported state when it is not live
         // (the dashboard greys it); a manual port has none of its own.
         up: agentPort ? portUp(row) : null,
@@ -1129,6 +1208,8 @@ export async function loadState(): Promise<InfraState> {
         carrierChanges: agentPort ? nullableNumber(row.carrierChanges) : null,
         changedAt: agentPort ? row.stateChangedAt : null,
         derivedFrom: null,
+        // A rate is believed while the port is (amendment A6.3).
+        traffic: agentPort && live ? portTraffic(rates.get(Number(row.id))) : null,
       },
     })
   }
@@ -1137,14 +1218,29 @@ export async function loadState(): Promise<InfraState> {
   for (const link of links) {
     const a = ends.get(Number(link.aPortId))
     const b = ends.get(Number(link.bPortId))
-    linkStates.push(linkState(link, a, b))
+    linkStates.push({ ...linkState(link, a, b), traffic: linkTraffic(a, b) })
     // A manual port shows what the live agent port at the other end of its
     // cable reports: that is what makes an unmanaged switch worth drawing.
     for (const [near, far] of [
       [a, b],
       [b, a],
     ] as const) {
-      if (!near || near.row.origin === 'agent' || !isLiveAgentEnd(far)) continue
+      if (!near || near.row.origin === 'agent') continue
+      // Its rate is the far port's, seen from this side.
+      const farRate = measuredRate(far)
+      if (farRate) {
+        near.state = {
+          ...near.state,
+          traffic: {
+            rxBps: farRate.txBps,
+            txBps: farRate.rxBps,
+            scope: farRate.scope,
+            at: farRate.at,
+            derivedFrom: Number(link.id),
+          },
+        }
+      }
+      if (!isLiveAgentEnd(far)) continue
       near.state = {
         ...near.state,
         live: true,

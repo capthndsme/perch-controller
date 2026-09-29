@@ -1825,3 +1825,199 @@ this:
 10. **`/infra/state` `presence`** stays `{ status, via, lastSeenAt }`. The map is on the
     page already, so it has no `attachment`.
 11. **`/devices`** gives a MAC the same attachment on every collector's row.
+
+### A6 — 2026-09-30: port traffic, accounting, and rates on the cables
+
+The owner: "routers/APs can show switch state right? lets add 1: Bytes sent/recv (and minimal
+accounting) 2: Infrastructure view shows bandwidth rate between 'wires' … so we can see bytes
+flowing from AP 1 to AP 2, like how we have garage ap linked to 1f-router." This is §11 item 2
+("per-port traffic"), with one finding that changes what §3 assumed about the data.
+
+**Finding: netdev counters of a DSA port only count the CPU's traffic.** Measured on the live
+access points (read-only, 2026-09-30): on the garage AP (MT7621, kernel 6.12) `lan1` carries a
+wired camera at 1.5 Mbit/s, yet `/sys/class/net/lan1/statistics` did not move at all over 10 s;
+the camera's frames are switched `lan1` → `lan4` by the MT7530 and never reach the CPU. The same
+on RAX-1F (MT7981/MT7531): its `lan3` (the cable to the garage AP) showed 0 bytes received while
+the garage end sent 1.5 Mbit/s. The switch's own MIB counters (`ethtool -S`, strings `TxBytes` /
+`RxBytes` on mt7530) have it all: garage `lan4` TxBytes 1500.9 kbit/s = RAX `lan3` RxBytes
+1500.9 kbit/s. A 20 MB transfer through that cable counted 21.10 MB (garage `lan4` RxBytes) and
+22.05 MB (RAX `lan3` TxBytes). The ~1 Mbit/s difference is a steady stream of full-size frames
+that RAX puts on the wire and the garage switch does not count anywhere (no error or drop counter
+moves): one end of a cable can under-count, so a cable's rate is the larger of the two ends.
+Non-DSA ports are fine as they are: the WRX36's `wan` (nss-dp) netdev counters equal its
+hardware counters, and a container gateway's veths count everything they carry.
+`/proc/net/dev` in the AP push (`node_network_*_total`) is the netdev view, so the port counters
+come with the port report instead.
+
+#### A6.1 Wire (perch-agentkit `hoststat`, both daemons)
+
+`hoststat.Port` gains three optional fields, filled when `PortOptions.Counters` is true (both
+daemons turn it on; perch-apd from 1.1.0-pre.2, perch-collector from 1.1.0-pre.3):
+
+```jsonc
+{ "name": "lan4", …,
+  "rxBytes": 17260817141,      // bytes the port received from its cable (uint64)
+  "txBytes": 275427536004,     // bytes the port sent into its cable
+  "counterScope": "port" }     // "port" | "cpu"
+```
+
+- `counterScope: "port"`: every frame through the socket. A DSA user port reads the switch's
+  MIB byte counters (`ETHTOOL_GSTATS`; the string set is looked up with the port's other facts
+  and cached for the same TTL, so a push costs one ioctl per port). Any other port reads its
+  netdev counters (`statistics/rx_bytes`, `tx_bytes`).
+- `counterScope: "cpu"`: a DSA user port whose switch driver has no byte counter the kit
+  recognises (`TxBytes`/`RxBytes` mt7530, `TxByte`/`RxGoodByte` qca8k, `TxOctets`/`RxOctets`
+  b53, `out_octets`/`in_good_octets` mv88e6xxx, `ifOutOctets`/`ifInOctets` rtl8365mb,
+  `tx_total`/`rx_total` ksz, and a few spellings more): the netdev counters, which miss frames
+  the switch forwards between its ports.
+- All three are left out when the port's `carrier` is false (nothing moves; it also spares the
+  MDIO reads, ~3.7 ms per DSA port on MT7621/MT7981) and when no counter can be read. The
+  counters are cumulative and restart when the device reboots or the driver resets them.
+
+#### A6.2 Controller: ingest and storage
+
+- `normalizePort` and the report fingerprint **ignore** the three fields (a counter changes on
+  every push; the latest-state mirror must still write only on a real change). A separate
+  `extractPortCounters(ports)` takes them per port name (case-insensitive like the keys):
+  `rxBytes` / `txBytes` non-negative safe integers (both or neither), `counterScope` one of
+  `port` / `cpu`, else null.
+- New service `app/services/infra_port_traffic.ts`, `recordPortTraffic(nodeId, ports, at)`,
+  called right after `recordAgentPorts` at both call sites (`ap_agent_metrics.ts`,
+  `collector_poller.ts`) with the node id it returned, non-fatal the same way.
+- In process, per agent port id (bounded, 4096 entries, oldest evicted): the last sample
+  `{ rx, tx, scope, atMs }` and the last rate `{ rxBps, txBps, scope, atMs }` (bits per second,
+  like `gateway_network_accounting.ts`).
+- Per report and port with counters:
+  - first sample since start, a counter that went backwards (reboot, driver reset), or a scope
+    change: store the sample, no delta, no rate;
+  - a delta above `BUCKET_MAX_DELTA_BYTES` in either direction (the existing guard): dropped, sample
+    stored;
+  - otherwise the delta is accounted, and a rate is kept when the two samples are at most
+    `PORT_RATE_MAX_GAP_MS` (120 s, as networks) apart.
+  - A port in the report without counters (carrier down) loses its rate; its sample is kept.
+  - Ports are matched by key to the node's `origin='agent'` rows; the name → id map is cached per
+    node (bounded like `MAX_REMEMBERED_REPORTS`) and reloaded when `recordAgentPorts` changed rows
+    or a name is missing.
+- Accounting tables (migration `1779000000124_create_infra_port_buckets.ts`):
+  `infra_port_buckets_5m (port_id, slot_start, rx_bytes, tx_bytes)` and
+  `infra_port_buckets_hourly (port_id, hour_start, rx_bytes, tx_bytes)`, primary key
+  `(port_id, <time>)`, byte columns `BIGINT UNSIGNED`, `port_id` → `infra_ports.id`
+  `ON DELETE CASCADE`. Written at ingest with one multi-row
+  `INSERT … ON DUPLICATE KEY UPDATE x = x + VALUES(x)` per table and report (only ports with a
+  non-zero delta). A delta covering up to one hour is split over the 5-minute slots its interval
+  spans in proportion to the seconds in each (the last slot takes the rounding remainder); a longer
+  interval goes to the slot of the report. Hourly rows get the same parts summed per hour. Retention:
+  the 5-minute and hourly groups of `bucket_retention.ts` (730 d by default). No rollup job.
+  Neither table references `collectors`, so `collectors:merge` needs no registry change.
+- Bytes lost by design: the interval between the last report before a controller restart and the
+  first after it (in-process samples, like the traffic poller's).
+
+#### A6.3 `GET /api/v1/infra/state` (additive)
+
+```ts
+type InfraTrafficScope = 'port' | 'cpu'
+
+// on every ports[] entry
+traffic: {
+  rxBps: number                  // bits/s this port received from its cable
+  txBps: number                  // bits/s this port sent into its cable
+  scope: InfraTrafficScope | null
+  at: string                     // ISO, the report the rate ends at
+  derivedFrom: number | null     // manual port: the link whose far agent port measured it
+} | null
+
+// on every links[] entry
+traffic: {
+  aToBBps: number                // bits/s from end a (InfraLink.a) to end b
+  bToABps: number
+  partial: boolean               // no measuring end has scope 'port': may miss switched frames
+  at: string                     // the newest measuring end's `at`
+  ends: {
+    a: { rxBps: number; txBps: number; scope: InfraTrafficScope | null } | null
+    b: { rxBps: number; txBps: number; scope: InfraTrafficScope | null } | null
+  }
+} | null
+```
+
+- A port's `traffic` is its rate when the port is `live` (§7.3) and has one; else null. A manual
+  port whose link's far end is a live agent port with a rate gets that rate seen from its side
+  (rx = far tx, tx = far rx) and `derivedFrom: <linkId>`, like its derived link state.
+- A link's `traffic`: the ends that are live agent ports with a rate measure it.
+  `aToBBps = max(a.txBps, b.rxBps)` and `bToABps = max(b.txBps, a.rxBps)` over the measuring
+  ends (one end alone gives both directions). null when no end measures. `ends.x` is null for an
+  end that does not measure.
+- No extra query: the rates come from memory.
+
+#### A6.4 Accounting reads (any signed-in user)
+
+Window: `from` / `to` ISO (default: the last 24 h, `to` = now); `resolution` seconds optional
+(an explicit value wins, as elsewhere). Planned with `planWindowSeries` over the tiers
+`[5m (freshness 'poll'), 1h]` and Settings → Charts (floor, point cap). Dense: every bucket of the
+window with its `seconds`; rates are bytes × 8 ÷ seconds. 422 (Vine shape) on a bad window.
+
+`GET /api/v1/infra/ports/:id/traffic` — 404 `infra_port_not_found`
+
+```jsonc
+{ "data": {
+  "portId": 12, "nodeId": 3,
+  // the agent port whose counters answer: itself, or for a manual port the far end of its
+  // link (rx/tx already turned to this port's side); null = nothing measures this port
+  "measuredBy": { "portId": 12, "linkId": null } | null,
+  "window": { "from": "…", "to": "…" },
+  "bucketSeconds": 300, "source": "5m",
+  "since": "2026-09-30T04:00:00.000Z" | null,   // first stored bucket of the measuring port
+  "totals": { "rxBytes": 123, "txBytes": 456 },
+  "points": [ { "bucketStart": "…", "seconds": 300,
+                "rxBytes": 1, "txBytes": 2, "rxBps": 0.03, "txBps": 0.05 } ]
+}}
+```
+With `measuredBy: null`: `since: null`, totals 0, points all 0 (still dense).
+
+`GET /api/v1/infra/links/:id/traffic` — 404 `infra_link_not_found`
+
+```jsonc
+{ "data": {
+  "linkId": 4,
+  "measuredBy": { "a": 7 | null, "b": 12 | null },   // agent port ids with counters
+  "window": …, "bucketSeconds": 300, "source": "5m", "since": "…" | null,
+  "totals": { "aToBBytes": 1, "bToABytes": 2 },
+  "points": [ { "bucketStart": "…", "seconds": 300,
+                "aToBBytes": 1, "bToABytes": 2, "aToBBps": 0.03, "bToABps": 0.05 } ]
+}}
+```
+Per bucket and direction the larger of the two ends (a's tx vs b's rx; b's tx vs a's rx); totals
+are the sums of the points.
+
+`GET /api/v1/infra/nodes/:id/traffic` — 404 `infra_node_not_found`; per-port totals of one node
+for the window (no points), for the inspector's port table:
+
+```jsonc
+{ "data": {
+  "nodeId": 3, "window": …,
+  "ports": [ { "portId": 12, "measuredBy": { "portId": 12, "linkId": null } | null,
+               "rxBytes": 1, "txBytes": 2 } ]         // every port of the node, display order
+}}
+```
+
+#### A6.5 Dashboard
+
+- Cables carry their rate: a label at the middle of the edge with both directions
+  ("↑ 1.5 Mb/s ↓ 840 kb/s" oriented along the cable, or a compact "1.5 / 0.8 Mb/s" with a tooltip),
+  a stroke that thickens with the rate and a flow animation in the busier direction; a `partial`
+  link is marked (e.g. "CPU only"). A header toggle "Traffic" (default on, remembered per browser
+  like "WiFi clients") hides it. Values come from the 5 s `/infra/state` poll.
+  As built (motion pass, 2026-09-30): the flow is round dots on a fixed 1 s lap whose speed and
+  direction are set through the animation's playback rate, never its duration, so a 5 s refresh
+  never makes the dots jump. Four speed steps (2.4 / 1.6 / 1.0 / 0.6 s per lap), five width steps
+  (2–6 px, eased over 250 ms), and hysteresis on every step, on the direction (the other way must
+  be 1.25× busier) and on on/off (on at 1.5 kbit/s, off below 0.8), so a rate sitting on a
+  boundary never flips each poll. The dots pause while the map moves and under a full-height sheet.
+- Port chips show a small activity mark when a port moves traffic; the port's tooltip or
+  inspector row shows ↓/↑ now.
+- Inspector: a port shows rates now and accounting (window picker 24 h / 7 d / 30 d, totals
+  received / sent, a small chart from `/infra/ports/:id/traffic`, "Recording since …"); a cable
+  shows both directions now with both ends' readings and its accounting from
+  `/infra/links/:id/traffic`; a node's port list shows per-port totals from
+  `/infra/nodes/:id/traffic`.
+- Direction words from the device's side: a port "received" / "sent"; a cable "A → B" / "B → A"
+  with the node names. Units: bits per second for rates, bytes for totals (existing formatters).

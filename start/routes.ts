@@ -419,6 +419,18 @@ router
         router.get('layout', [InfraController, 'layout']).as('layout')
         router.get('state', [InfraController, 'state']).as('state')
         router
+          .get('ports/:id/traffic', [InfraController, 'portTraffic'])
+          .as('ports.traffic')
+          .where('id', router.matchers.number())
+        router
+          .get('links/:id/traffic', [InfraController, 'linkTraffic'])
+          .as('links.traffic')
+          .where('id', router.matchers.number())
+        router
+          .get('nodes/:id/traffic', [InfraController, 'nodeTraffic'])
+          .as('nodes.traffic')
+          .where('id', router.matchers.number())
+        router
           .group(() => {
             router.post('nodes', [InfraController, 'createNode']).as('nodes.store')
             router

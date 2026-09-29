@@ -133,6 +133,47 @@ export function normalizePortReport(ports: readonly unknown[]): PortReport[] {
   return out
 }
 
+/** How much a port's byte counters see (amendment A6.1). */
+export const INFRA_TRAFFIC_SCOPES = ['port', 'cpu'] as const
+export type InfraTrafficScope = (typeof INFRA_TRAFFIC_SCOPES)[number]
+
+/** One port's cumulative byte counters as its agent read them. */
+export type PortCounters = { rxBytes: number; txBytes: number; scope: InfraTrafficScope | null }
+
+function byteCounter(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
+}
+
+/**
+ * The byte counters of a report (amendment A6.2), by lowercased port name,
+ * kept apart from `normalizePort`: they change with every push, and the
+ * latest-state mirror must only write on a real change. Same entries as
+ * `normalizePortReport` (valid names, first of a case-insensitive pair, at
+ * most `MAX_AGENT_PORTS`). A port without both counters maps to null: it was
+ * reported, but nothing can be counted for it now (its carrier is down).
+ */
+export function extractPortCounters(ports: readonly unknown[]): Map<string, PortCounters | null> {
+  const out = new Map<string, PortCounters | null>()
+  for (const entry of ports.slice(0, MAX_SCANNED_ENTRIES)) {
+    if (out.size >= MAX_AGENT_PORTS) break
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) continue
+    const raw = entry as Record<string, unknown>
+    const name = typeof raw.name === 'string' ? raw.name.trim() : ''
+    if (!PORT_KEY_REGEX.test(name)) continue
+    const key = name.toLowerCase()
+    if (out.has(key)) continue
+    const rxBytes = byteCounter(raw.rxBytes)
+    const txBytes = byteCounter(raw.txBytes)
+    out.set(
+      key,
+      rxBytes === undefined || txBytes === undefined
+        ? null
+        : { rxBytes, txBytes, scope: oneOf(raw.counterScope, INFRA_TRAFFIC_SCOPES) ?? null }
+    )
+  }
+  return out
+}
+
 export function reportFingerprint(report: PortReport[]): string {
   return createHash('sha1').update(JSON.stringify(report)).digest('base64')
 }

@@ -18,6 +18,7 @@ import {
 } from '#services/bucket_writer'
 import { upsertDeviceIdentities, type DeviceIdentityInput } from '#services/device_identity_writer'
 import { recordGatewayObservationSerial } from '#services/gateway_observe'
+import { recordPortTraffic } from '#services/infra_port_traffic'
 import { recordAgentPorts } from '#services/infra_ports'
 import { recordQosReport } from '#services/qos_live'
 import { upsertProtocolCategories, type ProtocolCategoryInput } from '#services/protocol_categories'
@@ -836,13 +837,27 @@ async function ingest(
       // docs/infrastructure-view.md 4.3). Non-fatal the same way; a report
       // without `ports` (a collector older than the feature) writes nothing.
       const ports = snapshot.gateway.ports
+      let recorded: Awaited<ReturnType<typeof recordAgentPorts>> = null
       try {
-        await recordAgentPorts({ type: 'collector', id: collector.id }, ports, now)
+        recorded = await recordAgentPorts({ type: 'collector', id: collector.id }, ports, now)
       } catch (portsErr) {
         logger.warn(
           { collectorId: collector.id, error: String(portsErr) },
           'collector_poller: port report failed (non-fatal)'
         )
+      }
+      // The ports' byte counters (docs/infrastructure-view.md A6.2).
+      if (recorded) {
+        try {
+          await recordPortTraffic(recorded.nodeId, ports, now, {
+            portsChanged: recorded.changed > 0,
+          })
+        } catch (trafficErr) {
+          logger.warn(
+            { collectorId: collector.id, error: String(trafficErr) },
+            'collector_poller: port traffic failed (non-fatal)'
+          )
+        }
       }
       if (gateway) gateway = withPortsReported(gateway, Array.isArray(ports))
       // Per-network counters (docs/gateway/networks.md). Non-fatal the same
