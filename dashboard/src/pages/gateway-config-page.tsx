@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { ArrowRight, Network as RouterIcon } from '@phosphor-icons/react'
 import { GatewayBadges } from '@/components/gateway-config/gateway-badges'
+import { AmbiguityPanel } from '@/components/gateway-sync/ambiguity-panel'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -38,6 +39,10 @@ export function GatewayConfigPage() {
           description="A perch-collector running on an OpenWrt router becomes a gateway once it is adopted under Settings → Collectors."
         />
       ) : (
+        <>
+        {gateways.data!.map((g) => (
+          <AmbiguityPanel key={g.id} gateway={g} isAdmin={isAdmin} />
+        ))}
         <ul className="grid gap-3 lg:grid-cols-2">
           {gateways.data!.map((g) => (
             <li key={g.id}>
@@ -97,6 +102,7 @@ export function GatewayConfigPage() {
             </li>
           ))}
         </ul>
+        </>
       )}
     </div>
   )

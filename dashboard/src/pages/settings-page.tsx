@@ -163,6 +163,18 @@ export function SettingsPage() {
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
                 <div className="space-y-1">
+                  <p className="text-sm font-medium">Gateway sync</p>
+                  <p className="text-xs text-muted-foreground">
+                    How the router verifies internet changes before they are kept, WAN edits under Authoritative
+                    Mode, VPN peers and multi-WAN writes.
+                  </p>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/settings/gateway-sync">Open</Link>
+                </Button>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+                <div className="space-y-1">
                   <p className="text-sm font-medium">Charts</p>
                   <p className="text-xs text-muted-foreground">
                     Finest bucket and point cap of the server and destination traffic charts.

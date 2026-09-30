@@ -13,6 +13,9 @@ const TAKES_GATEWAY_PARAM = new Set([
   '/gateway/dns',
   '/gateway/routing',
   '/gateway/system',
+  '/gateway/internet',
+  '/gateway/vpn',
+  '/gateway/ipv6',
 ])
 
 /**
