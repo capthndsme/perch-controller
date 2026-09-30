@@ -105,6 +105,51 @@ test.group('agent updates: signify', () => {
     assert.throws(() => parsePublicKey('RWQ2'))
   })
 
+  // Fixtures made by the tools themselves in throwaway containers (README in
+  // tests/fixtures/agent_updates): signify-openbsd and usign sign the same
+  // bytes with the same key identically, and a second key made by usign.
+  test('usign signatures verify: same key, and a second usign-made key', ({ assert }) => {
+    const key = parsePublicKey(read('signify/test.pub').toString('utf8'))
+    const key2 = parsePublicKey(read('signify/test2.pub').toString('utf8'))
+    const manifest = read('signify/manifest.json')
+    const usign = read('signify/manifest.json.usign.sig').toString('utf8')
+    assert.deepEqual(verifySignature(manifest, usign, [key]), { ok: true, keyId: key.keyId })
+    // Ed25519 is deterministic: the two tools' signature lines are equal.
+    assert.equal(
+      usign.trim().split('\n')[1],
+      read('signify/manifest.json.sig').toString('utf8').trim().split('\n')[1]
+    )
+    const byKey2 = read('signify/manifest.json.key2.sig').toString('utf8')
+    assert.deepEqual(verifySignature(manifest, byKey2, [key, key2]), {
+      ok: true,
+      keyId: key2.keyId,
+    })
+    const unknown = verifySignature(manifest, byKey2, [key])
+    assert.equal(!unknown.ok && unknown.error, 'unknown_key')
+    const tampered = verifySignature(read('signify/manifest.tampered.json'), usign, [key])
+    assert.equal(!tampered.ok && tampered.error, 'bad_signature')
+  })
+
+  test("the kit's fixtures verify here too (same format on both sides)", ({ assert }) => {
+    const manifest = read('signify/kit/perch-manifest.json')
+    const tampered = read('signify/kit/perch-manifest.tampered.json')
+    const keys = [
+      parsePublicKey(read('signify/kit/perch-test-1.pub').toString('utf8')),
+      parsePublicKey(read('signify/kit/perch-test-2.pub').toString('utf8')),
+    ]
+    assert.equal(keys[0].keyId, read('signify/kit/perch-test-1.keyid').toString('utf8').trim())
+    assert.equal(keys[1].keyId, read('signify/kit/perch-test-2.keyid').toString('utf8').trim())
+    for (const [sig, keyId] of [
+      ['perch-manifest.json.signify.sig', keys[0].keyId],
+      ['perch-manifest.json.usign.sig', keys[0].keyId],
+      ['perch-manifest.json.usign-key2.sig', keys[1].keyId],
+    ]) {
+      const text = read(`signify/kit/${sig}`).toString('utf8')
+      assert.deepEqual(verifySignature(manifest, text, keys), { ok: true, keyId })
+      assert.isFalse(verifySignature(tampered, text, keys).ok)
+    }
+  })
+
   test('trusted keys come from extraTrustedKeys, invalid entries skipped', ({ assert }) => {
     const pub = read('signify/test.pub').toString('utf8')
     const keys = trustedKeys({ extraTrustedKeys: [pub, 'not a key', pub] })

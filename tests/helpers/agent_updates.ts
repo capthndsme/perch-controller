@@ -35,7 +35,26 @@ export const TEST_PUBLIC_KEY = fixture('signify/test.pub').toString('utf8')
 export const TEST_KEY_LINE = TEST_PUBLIC_KEY.trim().split('\n')[1]
 export const TEST_KEY_ID = Buffer.from(TEST_KEY_LINE, 'base64').subarray(2, 10).toString('hex')
 
-const seed = Buffer.from(fixture('signify/test.seed').toString('utf8').trim(), 'hex')
+/**
+ * The test secret key as signify-openbsd wrote it (`signify-openbsd -G -n`, no
+ * passphrase; tests/fixtures/agent_updates/README.md): base64 of "Ed" "BK",
+ * kdfrounds (u32 BE, 0 = not encrypted), salt[16], checksum[8], keynum[8],
+ * seckey[64] = the Ed25519 seed and public key. Only tests sign at run time;
+ * the fixture signatures themselves were made by signify-openbsd and usign.
+ */
+function testSeed(): Buffer {
+  const raw = Buffer.from(
+    fixture('signify/test.sec').toString('utf8').trim().split('\n')[1],
+    'base64'
+  )
+  if (raw.length !== 104 || raw.subarray(0, 4).toString('latin1') !== 'EdBK') {
+    throw new Error('signify/test.sec is not a signify Ed25519 secret key')
+  }
+  if (raw.readUInt32BE(4) !== 0) throw new Error('signify/test.sec must have no passphrase')
+  return raw.subarray(40, 72)
+}
+
+const seed = testSeed()
 const publicRaw = Buffer.from(TEST_KEY_LINE, 'base64').subarray(10)
 const privateKey = createPrivateKey({
   key: {
