@@ -1,4 +1,5 @@
 import Collector from '#models/collector'
+import { alertChecksOverridden } from '#services/gateway_config/sync_alerts'
 import Gateway from '#models/gateway'
 import GatewayApply, { type GatewayApplyPostActions } from '#models/gateway_apply'
 import GatewaySecret from '#models/gateway_secret'
@@ -1115,6 +1116,7 @@ export async function adminConfirm(
         applyId: Number(apply.id),
         detail: { applyId: apply.applyKey, items: apply.checkResults?.items ?? [] },
       })
+      await alertChecksOverridden(gateway, userId, apply.applyKey)
     }
     apply.adminConfirmedAt = DateTime.utc()
     apply.adminConfirmedBy = userId

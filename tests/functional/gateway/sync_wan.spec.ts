@@ -20,6 +20,7 @@ import { eventually, seedSetupComplete } from '#tests/helpers/ap_agent'
 import { TEST_API_KEY, TEST_INSTANCE_ID } from '#tests/helpers/collector_agent'
 import { FakeGateway, type Section } from '#tests/helpers/fake_gateway'
 import { gatewaySyncConfig } from '#tests/unit/services/fixtures/gateway_sync'
+import { captureAlertEvents } from '#tests/helpers/alerts'
 import testUtils from '@adonisjs/core/services/test_utils'
 import { test } from '@japa/runner'
 
@@ -330,8 +331,15 @@ test.group('gateway sync | WAN and apply checks', (group) => {
     const wrong = await confirm({ overrideChecks: true, confirm: 'nope' })
     wrong.assertStatus(422)
     assert.equal(wrong.body().error, 'confirm_mismatch')
-    const ok = await confirm({ overrideChecks: true, confirm: 'gateway' })
+    const capture = captureAlertEvents()
+    const ok = await confirm({ overrideChecks: true, confirm: 'gateway' }).finally(() =>
+      capture.restore()
+    )
     ok.assertStatus(200)
+    const overridden = capture.ofType('gateway.apply.checks_overridden')
+    assert.lengthOf(overridden, 1)
+    assert.deepEqual(overridden[0].subject, { kind: 'gateway', id: env.gatewayId })
+    assert.deepInclude(overridden[0].payload!, { gatewayName: 'gateway', applyId })
     assert.equal(ok.body().data.checks.state, 'overridden')
     assert.isNotNull(ok.body().data.checks.overriddenBy)
     const apply = await settled(env, applyId, ['confirmed', 'rolled_back', 'failed'])
@@ -533,12 +541,15 @@ test.group('gateway sync | WAN and apply checks', (group) => {
       .bearerToken(adminToken)
       .json({ multiWanWrites: true })
     noPassword.assertStatus(403)
+    const capture = captureAlertEvents()
     const on = await client
       .patch('/api/v1/settings/gateway-sync')
       .bearerToken(adminToken)
       .json({ multiWanWrites: true, currentPassword: PASSWORD })
+      .finally(() => capture.restore())
     on.assertStatus(200)
     assert.isTrue(body(on).data.settings.multiWanWrites)
+    assert.deepEqual(capture.types(), ['gateway.multiwan.writes_enabled'])
   })
 
   test('WAN transitions from the interfaces observation', async ({ client, assert }) => {
@@ -581,5 +592,26 @@ test.group('gateway sync | WAN and apply checks', (group) => {
       .get(`/api/v1/gateways/${env.gatewayId}/wan/history?range=1y`)
       .bearerToken(env.adminToken)
     bad.assertStatus(400)
+
+    // A new delegated prefix on an up uplink: a transition and an alert notice.
+    const v6 = (prefix: string) => iface('wan', true, { ipv6: [`${prefix}::1/64`] })
+    await recordGatewayObservation(env.collectorId, {
+      interfaces: [v6('2001:db8:1'), iface('lan2', true)],
+    })
+    const capture = captureAlertEvents()
+    try {
+      await recordGatewayObservation(env.collectorId, {
+        interfaces: [v6('2001:db8:2'), iface('lan2', true)],
+      })
+    } finally {
+      capture.restore()
+    }
+    const changed = capture.ofType('gateway.ipv6.prefix_changed')
+    assert.lengthOf(changed, 1)
+    assert.deepInclude(changed[0].payload!, {
+      network: 'wan',
+      before: ['2001:db8:1::1/64'],
+      after: ['2001:db8:2::1/64'],
+    })
   })
 })

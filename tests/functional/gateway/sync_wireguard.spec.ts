@@ -17,6 +17,7 @@ import { forgetObservations } from '#services/gateway_observation_common'
 import { _resetRouterState } from '#services/router_metrics'
 import { eventually, seedSetupComplete } from '#tests/helpers/ap_agent'
 import { TEST_API_KEY, TEST_INSTANCE_ID } from '#tests/helpers/collector_agent'
+import { captureAlertEvents } from '#tests/helpers/alerts'
 import { FakeGateway, type Section } from '#tests/helpers/fake_gateway'
 import testUtils from '@adonisjs/core/services/test_utils'
 import { test } from '@japa/runner'
@@ -373,11 +374,20 @@ test.group('gateway sync | WireGuard (B2)', (group) => {
     both.assertStatus(422)
     both.assertBodyContains({ error: 'wg_keys_choice' })
 
+    const capture = captureAlertEvents()
     const r = await client
       .post(`/api/v1/gateways/${env.gatewayId}/wireguard/interfaces/${wg0.id}/peers`)
       .bearerToken(env.adminToken)
       .json({ label: 'phone', generateKeys: true, currentPassword: PASSWORD })
+      .finally(() => capture.restore())
     r.assertStatus(201)
+    const added = capture.ofType('gateway.wireguard.peer_added')
+    assert.lengthOf(added, 1)
+    assert.deepInclude(added[0].payload!, {
+      interface: 'wg0',
+      label: 'phone',
+      publicKeyPrefix: r.body().data.object.publicKey.slice(0, 8),
+    })
     assert.equal(r.header('cache-control'), 'no-store')
     const data = r.body().data
     assert.deepInclude(data.object, { label: 'phone', routeAllowedIps: true })
@@ -442,11 +452,17 @@ test.group('gateway sync | WireGuard (B2)', (group) => {
     bad.assertStatus(422)
     bad.assertBodyContains({ error: 'confirm_mismatch' })
     const before = env.gw.configs.network.find((s) => s.name === 'wg0')!.secrets!.private_key
+    const capture = captureAlertEvents()
     const rot = await client
       .post(`/api/v1/gateways/${env.gatewayId}/wireguard/interfaces/${wg0.id}/rotate-key`)
       .bearerToken(env.adminToken)
       .json({ confirm: 'wg0', currentPassword: PASSWORD })
+      .finally(() => capture.restore())
     rot.assertStatus(200)
+    assert.deepEqual(
+      capture.ofType('gateway.wireguard.key_rotated').map((e) => e.payload!.interface),
+      ['wg0']
+    )
     await allConfirmed(env)
     assert.notEqual(
       env.gw.configs.network.find((s) => s.name === 'wg0')!.secrets!.private_key,

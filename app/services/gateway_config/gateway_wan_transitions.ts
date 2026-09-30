@@ -1,4 +1,5 @@
 import GatewayWanTransition, { type WanTransitionEvent } from '#models/gateway_wan_transition'
+import { alertIpv6PrefixChanged } from '#services/gateway_config/sync_alerts'
 import { gatewayForCollector } from '#services/gateway_config/gateway_registry'
 import { getGatewaySyncSettings } from '#services/gateway_config/gateway_sync_settings'
 import { loadSections } from '#services/gateway_config/gateway_store'
@@ -174,6 +175,10 @@ export async function recordWanTransitions(
       row.detail = d.detail
       row.at = at.toUTC()
       await row.save()
+      if (d.event === 'prefix_changed') {
+        const detail = d.detail as { before: string[]; after: string[] }
+        alertIpv6PrefixChanged(gatewayId, d.network, detail.before, detail.after)
+      }
     }
     return drafts.length
   } catch (error) {

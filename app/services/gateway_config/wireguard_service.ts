@@ -1,4 +1,5 @@
 import GatewayApply from '#models/gateway_apply'
+import { alertWgKeyRotated, alertWgPeerAdded } from '#services/gateway_config/sync_alerts'
 import GatewayWireguardPeer from '#models/gateway_wireguard_peer'
 import type User from '#models/user'
 import { normalizeMac } from '#services/device_labels'
@@ -785,6 +786,7 @@ export async function rotateWgKey(
     userId: user.id,
     detail: { interface: row.name, perchId: row.perchId },
   })
+  await alertWgKeyRotated(ctx.gateway, user, { name: row.name, perchId: row.perchId })
   const { apply, applyError } = await applyNow(ctx.gateway, user.id, [row.perchId], options.apply)
   return {
     gatewayId: ctx.gateway.id,
@@ -1032,6 +1034,12 @@ export async function createWgPeer(
     })
   }
   const { apply, applyError } = await applyNow(ctx.gateway, user.id, [id], options.apply)
+  await alertWgPeerAdded(ctx.gateway, user, {
+    interface: iface,
+    label: input.label,
+    publicKey,
+    perchId: id,
+  })
   return {
     gatewayId: ctx.gateway.id,
     object: await peerViewById(ctx.gateway.id, id),

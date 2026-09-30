@@ -2,6 +2,9 @@ import db from '@adonisjs/lucid/services/db'
 import type { StrictValues } from '@adonisjs/lucid/types/querybuilder'
 import logger from '@adonisjs/core/services/logger'
 import { DateTime } from 'luxon'
+import { gatewayForCollector } from '#services/gateway_config/gateway_registry'
+import { getGatewaySyncSettings } from '#services/gateway_config/gateway_sync_settings'
+import { alertUpnpOpened, type OpenedMapping } from '#services/gateway_config/sync_alerts'
 import {
   bool,
   count,
@@ -132,6 +135,18 @@ async function macsForAddresses(
   return out
 }
 
+/** `gateway.upnp.mapping_opened` for a managed gateway's collector, when the setting asks for it. */
+async function alertOpenedMappings(collectorId: number, opened: OpenedMapping[]): Promise<void> {
+  try {
+    const settings = await getGatewaySyncSettings()
+    if (!settings.upnpOpenedEvents) return
+    const gateway = await gatewayForCollector(collectorId)
+    if (gateway) alertUpnpOpened(gateway.id, opened)
+  } catch (error) {
+    logger.warn({ collectorId, err: error }, 'gateway_upnp: opened alerts not emitted')
+  }
+}
+
 /**
  * Mirrors one `upnp` report and records what opened and closed. Callers
  * serialise it with the collector's other parts and make it non-fatal.
@@ -163,6 +178,7 @@ export async function recordUpnpObservation(
     mappings: obs.mappings.length,
   }
 
+  let opened: OpenedMapping[] = []
   await db.transaction(async (trx) => {
     const before = rawRows<StoredMapping>(
       await trx.rawQuery(
@@ -261,8 +277,19 @@ export async function recordUpnpObservation(
       )
     }
     await writeObservationRow(trx, collectorId, OBSERVATION_KIND_UPNP, payload, fingerprint, now)
+    opened = events
+      .filter((e) => e[1] === 'opened')
+      .map((e) => ({
+        proto: String(e[2]),
+        extPort: Number(e[3]),
+        intIp: String(e[4]),
+        intPort: Number(e[5]),
+        description: (e[7] as string | null) ?? null,
+      }))
   })
   remember(collectorId, OBSERVATION_KIND_UPNP, { fingerprint, observedWrittenAt: now.toMillis() })
+  // The first report after install lists what was already open: not news.
+  if (last && opened.length > 0) await alertOpenedMappings(collectorId, opened)
   logger.debug({ collectorId, ...payload }, 'gateway_upnp: observation written')
   return 'written'
 }

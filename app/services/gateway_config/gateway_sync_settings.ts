@@ -1,4 +1,5 @@
 import Gateway from '#models/gateway'
+import { alertMultiwanWritesEnabled } from '#services/gateway_config/sync_alerts'
 import SystemSetting from '#models/system_setting'
 import type User from '#models/user'
 import { recordGatewayEvent } from '#services/gateway_config/events'
@@ -238,6 +239,7 @@ export async function updateGatewaySyncSettings(
         detail: { multiWanWrites: settings.multiWanWrites },
       })
     }
+    if (settings.multiWanWrites) alertMultiwanWritesEnabled(user)
   }
   return settings
 }
