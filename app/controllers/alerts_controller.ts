@@ -17,14 +17,13 @@ import {
 import { deliveryView, loadDestinations } from '#transformers/alert_deliveries'
 import {
   alertEventView,
-  alertTypeView,
   alertView,
+  catalogueTypeViews,
   loadUserRefs,
   muteView,
 } from '#transformers/alerts'
 import { alertListValidator, alertNoteValidator, alertReadValidator } from '#validators/alerts'
 import type { HttpContext } from '@adonisjs/core/http'
-import logger from '@adonisjs/core/services/logger'
 import db from '@adonisjs/lucid/services/db'
 import { DateTime } from 'luxon'
 
@@ -173,22 +172,9 @@ export default class AlertsController {
    * GET /api/v1/alerts/catalogue
    */
   async catalogue({ serialize }: HttpContext) {
-    const types = []
-    for (const def of listAlertTypes()) {
-      let reason: string | null = null
-      if (def.available) {
-        try {
-          reason = await def.available()
-        } catch (error) {
-          logger.debug({ err: error, type: def.type }, 'alerts: availability check failed')
-          reason = null
-        }
-      }
-      types.push(alertTypeView(def, reason))
-    }
     return serialize({
       categories: CATEGORIES.map((key) => ({ key, label: CATEGORY_LABELS[key] })),
-      types,
+      types: await catalogueTypeViews(listAlertTypes()),
     })
   }
 

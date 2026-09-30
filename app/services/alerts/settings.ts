@@ -353,3 +353,140 @@ export function heartbeatUrl(settings: AlertsSettings): string | null {
 export function severityAtLeast(value: Severity, min: Severity): boolean {
   return SEVERITIES.indexOf(value) >= SEVERITIES.indexOf(min)
 }
+
+/* ------------------------------------------------------------------ */
+/* PATCH /settings/alerts (WP-A2)                                       */
+/* ------------------------------------------------------------------ */
+
+export type AlertsSettingsPatch = {
+  dashboardUrl?: string | null
+  quietHours?: Partial<AlertsSettings['quietHours']>
+  bootGraceSeconds?: number
+  massOffline?: Partial<AlertsSettings['massOffline']>
+  destinationRateLimit?: Partial<AlertsSettings['destinationRateLimit']>
+  pushTtlMinutes?: Partial<AlertsSettings['pushTtlMinutes']>
+  webhookRetryHours?: number
+  retention?: Partial<AlertsSettings['retention']>
+  /** `url` is write-only: a string sets it (stored encrypted), null clears it. */
+  heartbeat?: { url?: string | null; intervalSeconds?: number }
+  vapidSubject?: string | null
+  allowAnyPushService?: boolean
+  /** Per type: a partial rule merged over the stored override; null = back to the catalogue default. */
+  rules?: Record<string, Record<string, unknown> | null>
+}
+
+/**
+ * Applies a (validated) PATCH over the stored settings: nested objects merge,
+ * rule overrides merge field by field (params too; a param set to null is
+ * reset), a rule set to null is removed. `origin` becomes `capturedOrigin`.
+ */
+export function applyAlertsSettingsPatch(
+  current: AlertsSettings,
+  patch: AlertsSettingsPatch,
+  options: { origin?: string | null; lookup?: (type: string) => AlertTypeDef | null } = {}
+): AlertsSettings {
+  const next: AlertsSettings = structuredClone(current)
+  if (patch.dashboardUrl !== undefined) {
+    next.dashboardUrl = patch.dashboardUrl ? patch.dashboardUrl.replace(/\/+$/, '') : null
+  }
+  if (patch.quietHours) next.quietHours = { ...next.quietHours, ...patch.quietHours }
+  if (patch.bootGraceSeconds !== undefined) next.bootGraceSeconds = patch.bootGraceSeconds
+  if (patch.massOffline) next.massOffline = { ...next.massOffline, ...patch.massOffline }
+  if (patch.destinationRateLimit) {
+    next.destinationRateLimit = { ...next.destinationRateLimit, ...patch.destinationRateLimit }
+  }
+  if (patch.pushTtlMinutes)
+    next.pushTtlMinutes = { ...next.pushTtlMinutes, ...patch.pushTtlMinutes }
+  if (patch.webhookRetryHours !== undefined) next.webhookRetryHours = patch.webhookRetryHours
+  if (patch.retention) next.retention = { ...next.retention, ...patch.retention }
+  if (patch.heartbeat) {
+    if (patch.heartbeat.intervalSeconds !== undefined) {
+      next.heartbeat.intervalSeconds = patch.heartbeat.intervalSeconds
+    }
+    if (patch.heartbeat.url !== undefined) {
+      const url = patch.heartbeat.url
+      next.heartbeat.urlEncrypted = url ? encryption.encrypt(url) : null
+      next.heartbeat.urlDisplay = url ? maskUrl(url) : null
+    }
+  }
+  if (patch.vapidSubject !== undefined) next.vapidSubject = patch.vapidSubject
+  if (patch.allowAnyPushService !== undefined) next.allowAnyPushService = patch.allowAnyPushService
+  for (const [type, value] of Object.entries(patch.rules ?? {})) {
+    if (value === null) {
+      delete next.rules[type]
+      continue
+    }
+    const stored = (next.rules[type] ?? {}) as Partial<Rule>
+    const { params: patchParams, ...fields } = value as Record<string, unknown>
+    const params: Record<string, unknown> = { ...(stored.params ?? {}) }
+    if (typeof patchParams === 'object' && patchParams !== null) {
+      for (const [key, v] of Object.entries(patchParams)) {
+        if (v === null) delete params[key]
+        else params[key] = v
+      }
+    }
+    const merged = normalizeRuleOverride(
+      { ...stored, ...fields, params },
+      options.lookup?.(type) ?? undefined
+    )
+    if (Object.keys(merged).length === 0) delete next.rules[type]
+    else next.rules[type] = merged
+  }
+  if (options.origin) next.capturedOrigin = options.origin.slice(0, 255)
+  return normalizeAlertsSettings(next)
+}
+
+/** The `settings` object of GET /settings/alerts (secrets never leave the server). */
+export function settingsView(settings: AlertsSettings) {
+  return {
+    dashboardUrl: settings.dashboardUrl,
+    capturedOrigin: settings.capturedOrigin,
+    quietHours: { ...settings.quietHours },
+    bootGraceSeconds: settings.bootGraceSeconds,
+    massOffline: { ...settings.massOffline },
+    destinationRateLimit: { ...settings.destinationRateLimit },
+    pushTtlMinutes: { ...settings.pushTtlMinutes },
+    webhookRetryHours: settings.webhookRetryHours,
+    retention: { ...settings.retention },
+    heartbeat: {
+      configured: settings.heartbeat.urlEncrypted !== null,
+      urlDisplay: settings.heartbeat.urlDisplay,
+      intervalSeconds: settings.heartbeat.intervalSeconds,
+    },
+    vapidSubject: settings.vapidSubject,
+    allowAnyPushService: settings.allowAnyPushService,
+  }
+}
+
+/** Limits for the validator and the dashboard (`limits` of GET /settings/alerts). */
+export function limitsView() {
+  return { ...ALERTS_LIMITS, rule: { ...RULE_LIMITS, repeatMinutesMinNonZero: REPEAT_MINUTES_MIN } }
+}
+
+/** The project page: the VAPID subject when no HTTPS dashboard origin is known. */
+export const VAPID_FALLBACK_SUBJECT = 'https://github.com/capthndsme/perch-controller'
+
+/**
+ * The VAPID `sub` (delivery.md §1.2): `vapidSubject` if set; else the
+ * dashboard's HTTPS origin (`dashboardUrl`, else `capturedOrigin`) when it is
+ * not localhost (Apple rejects localhost subjects); else the project page.
+ * The admin's e-mail is never used by default.
+ */
+export function vapidSubjectFor(
+  settings: Pick<AlertsSettings, 'vapidSubject' | 'dashboardUrl' | 'capturedOrigin'>
+): string {
+  if (settings.vapidSubject) return settings.vapidSubject
+  const origin = settings.dashboardUrl ?? settings.capturedOrigin
+  if (origin) {
+    try {
+      const url = new URL(origin)
+      const host = url.hostname.replace(/^\[|\]$/g, '').toLowerCase()
+      const local =
+        host === 'localhost' || host.endsWith('.localhost') || host === '::1' || /^127\./.test(host)
+      if (url.protocol === 'https:' && !local) return url.origin
+    } catch {
+      // Fall through to the project page.
+    }
+  }
+  return VAPID_FALLBACK_SUBJECT
+}

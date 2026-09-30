@@ -27,7 +27,8 @@ export default class AlertPushSubscription extends BaseModel {
   @column()
   declare pushService: PushService
 
-  @column({ serializeAs: null })
+  /** Named explicitly: the snake-case strategy would map it to `p_256_dh`. */
+  @column({ columnName: 'p256dh', serializeAs: null })
   declare p256dh: string
 
   @column({ serializeAs: null })

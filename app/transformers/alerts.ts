@@ -208,3 +208,20 @@ export function alertTypeView(def: AlertTypeDef, unavailableReason: string | nul
     unavailableReason,
   }
 }
+
+/** Every catalogue type as `AlertTypeView`, with its availability checked now. */
+export async function catalogueTypeViews(defs: AlertTypeDef[]): Promise<AlertTypeView[]> {
+  const views: AlertTypeView[] = []
+  for (const def of defs) {
+    let reason: string | null = null
+    if (def.available) {
+      try {
+        reason = await def.available()
+      } catch {
+        reason = null
+      }
+    }
+    views.push(alertTypeView(def, reason))
+  }
+  return views
+}

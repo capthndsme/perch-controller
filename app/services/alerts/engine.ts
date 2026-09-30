@@ -18,6 +18,7 @@ import type {
 } from '#services/alerts/model'
 import { SEVERITY_RANK } from '#services/alerts/model'
 import { findMatchingMute } from '#services/alerts/mutes'
+import { routingNotifier } from '#services/alerts/routing'
 import { renderAlert } from '#services/alerts/render'
 import { effectiveRule, getAlertsSettings } from '#services/alerts/settings'
 import {
@@ -86,15 +87,19 @@ export const inboxOnlyNotifier: AlertNotifier = {
   tick: async () => {},
 }
 
-let defaultNotifier: AlertNotifier = inboxOnlyNotifier
+let defaultNotifier: AlertNotifier | null = null
 let notifier: AlertNotifier | null = null
 
+/**
+ * Routing (`routing.ts`) unless replaced. Read at call time, never at module
+ * load: engine, routing and messages import each other.
+ */
 function activeNotifier(): AlertNotifier {
-  return notifier ?? defaultNotifier
+  return notifier ?? defaultNotifier ?? routingNotifier
 }
 
-/** Wires the production notifier (routing). */
-export function setDefaultAlertNotifier(next: AlertNotifier): void {
+/** Replaces the production notifier (`inboxOnlyNotifier` = record without sending). */
+export function setDefaultAlertNotifier(next: AlertNotifier | null): void {
   defaultNotifier = next
 }
 
