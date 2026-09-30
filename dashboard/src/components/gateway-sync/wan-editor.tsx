@@ -73,7 +73,8 @@ export function WanEditor({
   const [gateway, setGateway] = useState(wan.static?.gateway ?? '')
   const [username, setUsername] = useState(wan.pppoe?.username ?? '')
   const [password, setPassword] = useState('')
-  const [changePassword, setChangePassword] = useState(false)
+  // No stored password (a new PPPoE link): the field shows at once.
+  const [changePassword, setChangePassword] = useState(!wan.pppoe?.password.set)
   const [service, setService] = useState(wan.pppoe?.service ?? '')
   const [useProvider, setUseProvider] = useState(wan.dns.useProvider)
   const [servers, setServers] = useState(wan.dns.servers)
@@ -121,7 +122,7 @@ export function WanEditor({
       const pppoe: NonNullable<WanPatch['pppoe']> = {}
       if (username !== (wan.pppoe?.username ?? '') || proto !== startProto) pppoe.username = username.trim()
       if (service !== (wan.pppoe?.service ?? '')) pppoe.service = service.trim() || null
-      if (changePassword) pppoe.password = password
+      if (changePassword && password !== '') pppoe.password = password
       if (Object.keys(pppoe).length > 0) p.pppoe = pppoe
     }
     const macNow = wan.mac.source === 'device' ? (wan.mac.effective ?? '') : ''

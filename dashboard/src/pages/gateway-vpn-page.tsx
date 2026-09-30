@@ -326,7 +326,7 @@ function PeersTable({ ctx, iface, editable }: { ctx: NativeContext; iface: WgInt
                 {p.live?.latestHandshakeAt ? (
                   <span className="inline-flex items-center gap-1.5">
                     {formatRelative(p.live.latestHandshakeAt)}
-                    {p.live.online ? <ToneBadge tone="good">Online</ToneBadge> : null}
+                    {p.live.online ? <ToneBadge tone="good">Online</ToneBadge> : <ToneBadge tone="neutral">Offline</ToneBadge>}
                   </span>
                 ) : (
                   <span className="text-muted-foreground">{p.live ? 'never' : '—'}</span>
