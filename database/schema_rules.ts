@@ -153,5 +153,73 @@ export default {
     portal_gateway_states: {
       skipColumns: ['capabilities', 'router_status'],
     },
+    // Wi-Fi plane (docs/design/wifi controller.md section 2, migrations
+    // 125–136): JSON text columns parsed by app/models/ap_config*.ts and
+    // app/models/wifi_*.ts, the APP_KEY-encrypted pairing key and secret
+    // value, and the SSID bytes (varbinary, read as a string).
+    ap_configs: {
+      skipColumns: [
+        'capabilities',
+        'observed_hashes',
+        'observed_ledger',
+        'observed_state',
+        'pinned_hashes',
+        'management_path',
+        'rejoin_offer',
+        'pairing',
+        'pairing_key',
+        'health',
+      ],
+    },
+    ap_config_sections: {
+      skipColumns: [
+        'ownership',
+        'base_content',
+        'router_content',
+        'router_author',
+        'desired_content',
+        'conflict',
+      ],
+    },
+    ap_config_revisions: {
+      skipColumns: ['router_author', 'snapshot', 'diff', 'hashes'],
+    },
+    ap_config_applies: {
+      skipColumns: [
+        'ops',
+        'base_hashes',
+        'perch_ids',
+        'outcome',
+        'replaced_router_content',
+        'written',
+        'ledger',
+        'secret_refs',
+        'configs',
+        'changes',
+        'chain_perch_ids',
+        'health',
+      ],
+    },
+    ap_config_events: {
+      skipColumns: ['detail'],
+    },
+    wifi_secrets: {
+      skipColumns: ['value'],
+    },
+    wifi_networks: {
+      skipColumns: ['ssid', 'binding', 'bands', 'roaming', 'advanced'],
+    },
+    wifi_network_aps: {
+      skipColumns: ['bands', 'radios', 'overrides', 'radio_overrides'],
+    },
+    wifi_divergences: {
+      skipColumns: ['fleet_value', 'ap_value', 'router_author'],
+    },
+    wifi_rollouts: {
+      skipColumns: ['network_ids', 'ap_order', 'stop', 'impact'],
+    },
+    wifi_rollout_steps: {
+      skipColumns: ['perch_ids', 'outcome'],
+    },
   },
 } satisfies SchemaRules

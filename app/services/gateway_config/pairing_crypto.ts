@@ -25,10 +25,15 @@ import {
  * 2. reveal: the controller sends `controllerNonce`; the router answers
  *    `routerNonce`; the controller checks the commitment.
  * 3. Both derive `key = HKDF-SHA256(ikm = X25519(priv, peerPub), salt =
- *    controllerNonce ‖ routerNonce, info = "perch-config-sign-v1:<gatewayId>",
+ *    controllerNonce ‖ routerNonce, info = "perch-config-sign-v1:<subject>",
  *    32 bytes)` and the 6-digit SAS = big-endian uint32 of the first 4 bytes
  *    of SHA-256("perch-pair-sas-v1" ‖ controllerPub ‖ routerPub ‖
- *    controllerNonce ‖ routerNonce ‖ "<gatewayId>") mod 1 000 000.
+ *    controllerNonce ‖ routerNonce ‖ "<subject>") mod 1 000 000.
+ *
+ * The subject names the device the key is for: a gateway id in decimal (the
+ * original `gatewayId`, so the pinned gateway vector is unchanged), or a
+ * string such as `"ap:4"` for an access point's Wi-Fi plane (wifi design
+ * W0), so a key paired for AP 4 can never verify for gateway 4.
  *
  * Why the commitment (a refinement of the owner's sketch): without it, a
  * man in the middle runs one exchange with each side and grinds its own
@@ -136,12 +141,35 @@ export function commitmentMatches(
   return timingSafeEqual(expected, Buffer.from(commitmentHex, 'hex'))
 }
 
-export type PairingTranscript = {
-  gatewayId: number
+/**
+ * Who a pairing key is for: a gateway id (a number, formatted in decimal as
+ * it always was) or a string subject (`"ap:<apId>"` for an access point).
+ */
+export type PairingSubject = number | string
+
+type PairingTranscriptBase = {
   controllerPub: string
   routerPub: string
   controllerNonce: string
   routerNonce: string
+}
+
+/**
+ * The public values both sides feed into the key and the SAS. Exactly one
+ * of `gatewayId` (the gateway plane, unchanged) or `subject` names who the
+ * key is for.
+ */
+export type PairingTranscript = PairingTranscriptBase &
+  ({ gatewayId: number; subject?: undefined } | { subject: PairingSubject; gatewayId?: undefined })
+
+/** The subject text a transcript binds (`"7"` for gateway 7, `"ap:4"` for AP 4). */
+export function pairingSubject(t: PairingTranscript): string {
+  const subject = t.subject ?? t.gatewayId
+  if (typeof subject === 'number') return String(subject)
+  if (typeof subject !== 'string' || subject.length === 0) {
+    throw new Error('pairing transcript without a subject')
+  }
+  return subject
 }
 
 /** The signing key both sides derive (32 bytes). */
@@ -150,7 +178,7 @@ export function derivePairingKey(shared: Buffer, t: PairingTranscript): Buffer {
     Buffer.from(t.controllerNonce, 'hex'),
     Buffer.from(t.routerNonce, 'hex'),
   ])
-  const info = Buffer.from(`${INFO_PREFIX}${t.gatewayId}`, 'utf8')
+  const info = Buffer.from(`${INFO_PREFIX}${pairingSubject(t)}`, 'utf8')
   return Buffer.from(hkdfSync('sha256', shared, salt, info, PAIRING_KEY_BYTES))
 }
 
@@ -164,7 +192,7 @@ export function pairingSas(t: PairingTranscript): string {
         Buffer.from(t.routerPub, 'hex'),
         Buffer.from(t.controllerNonce, 'hex'),
         Buffer.from(t.routerNonce, 'hex'),
-        Buffer.from(String(t.gatewayId), 'utf8'),
+        Buffer.from(pairingSubject(t), 'utf8'),
       ])
     )
     .digest()

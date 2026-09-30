@@ -5,6 +5,7 @@ import hub, { type AgentConnection, AgentOfflineError } from '#services/ap_agent
 import { agentSecretMatches, parseAgentBearer } from '#services/ap_agent_credentials'
 import { agentConfigureParams, handleMetricsPush } from '#services/ap_agent_metrics'
 import { recordAgentAuthFailure } from '#services/ap_agent_rate_limit'
+import * as wifiPlane from '#services/wifi_config/plane'
 import {
   markAgentConnected,
   markAgentDisconnected,
@@ -48,6 +49,8 @@ export function apAgentEndpoint(): AgentEndpoint<WifiAccessPoint> {
       hub.onNotification('metrics.push', async (apId, params) => {
         await handleMetricsPush(apId, params)
       })
+      // The Wi-Fi plane's notifications (docs/design/wifi controller.md 4.1).
+      wifiPlane.attachWifiNotifications()
     },
 
     async authenticate(request, { address }) {
@@ -135,6 +138,7 @@ async function refreshSystemInfo(apId: number, agentId: string): Promise<void> {
     const info = await hub.request<SystemInfoResult>(apId, 'system.info')
     if (info && typeof info === 'object' && !Array.isArray(info)) {
       await recordSystemInfo(apId, info, agentId)
+      await wifiPlane.onSystemInfo(apId, info)
       // Device groups on the AP (docs/gateway/device-groups.md section 7).
       onApAgentReady(apId)
     }

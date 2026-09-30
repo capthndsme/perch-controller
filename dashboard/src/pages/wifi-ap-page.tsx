@@ -131,6 +131,11 @@ export function WifiApPage() {
             WiFi
           </Link>
         </Button>
+        {ap?.transport === 'agent' ? (
+          <Button asChild variant="ghost" size="sm" className="ml-auto">
+            <Link to={`/wifi/sync/${id}`}>WiFi config</Link>
+          </Button>
+        ) : null}
       </div>
 
       <div className="space-y-2">

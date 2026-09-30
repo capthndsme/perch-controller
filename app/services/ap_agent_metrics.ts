@@ -8,6 +8,8 @@ import { ingestWifiMetrics, type WifiPollOutcome } from '#services/wifi_metrics_
 // intervals, 30 s)) without an accepted push; the same bound decides when a
 // station its AP stopped listing is no longer a client.
 import { apStaleSeconds } from '#services/wifi_presence'
+import { configureBlockFor, type WifiConfigureBlock } from '#services/wifi_config/registry'
+import { onPushAccepted as wifiPlaneOnPush } from '#services/wifi_config/plane'
 import logger from '@adonisjs/core/services/logger'
 import { DateTime } from 'luxon'
 
@@ -69,13 +71,17 @@ export function _resetAgentMetricsState(): void {
 export type AgentConfigureParams = {
   metricsIntervalSeconds: number
   collectors: string[]
+  /** The Wi-Fi plane's block (docs/design/wifi protocol.md 2.2), for agents with the plane. */
+  wifiConfig?: WifiConfigureBlock
 }
 
 /** `metricsIntervalSeconds: 0` pauses pushing (the AP is disabled). */
 export function agentConfigureParams(ap: WifiAccessPoint): AgentConfigureParams {
+  const wifiConfig = configureBlockFor(ap.id)
   return {
     metricsIntervalSeconds: ap.enabled ? ap.pollIntervalSeconds : 0,
     collectors: [...AGENT_METRIC_COLLECTORS],
+    ...(wifiConfig ? { wifiConfig } : {}),
   }
 }
 
@@ -168,6 +174,8 @@ async function ingestPush(
   if (outcome.status === 'failed') {
     logger.warn({ apId, error: outcome.error }, 'ap_agent_metrics: push ingestion failed')
   }
+  // The agent half of a Wi-Fi plane confirm (docs/design/wifi controller.md 4.3).
+  await wifiPlaneOnPush(apId)
 
   // The device's ports, after the Wi-Fi data and never at its expense. A push
   // without `ports` (perch-apd ≤ 0.1.2) writes nothing.

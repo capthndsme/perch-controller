@@ -351,6 +351,211 @@ export class AlertWebhookSchema extends BaseModel {
   declare urlEncrypted: string
 }
 
+export class ApConfigSchema extends BaseModel {
+  static $columns = ['agentAccess', 'allowInsecure', 'apId', 'authoritative', 'authoritativeByUserId', 'authoritativeSince', 'capabilitiesAt', 'country', 'countryMode', 'createdAt', 'enforcement', 'enforcementChangedAt', 'fleetState', 'guard', 'headRevision', 'healthAt', 'mode', 'neighborsRevision', 'observedAt', 'renderFingerprint', 'syncState', 'transportOk', 'trunkOverride', 'updatedAt'] as const
+  $columns = ApConfigSchema.$columns
+  @column()
+  declare agentAccess: string | null
+  @column()
+  declare allowInsecure: boolean | null
+  @column({ isPrimary: true })
+  declare apId: number
+  @column()
+  declare authoritative: boolean
+  @column()
+  declare authoritativeByUserId: number | null
+  @column.dateTime()
+  declare authoritativeSince: DateTime | null
+  @column.dateTime()
+  declare capabilitiesAt: DateTime | null
+  @column()
+  declare country: string | null
+  @column()
+  declare countryMode: string
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare enforcement: string
+  @column.dateTime()
+  declare enforcementChangedAt: DateTime | null
+  @column()
+  declare fleetState: string
+  @column()
+  declare guard: string | null
+  @column()
+  declare headRevision: number
+  @column.dateTime()
+  declare healthAt: DateTime | null
+  @column()
+  declare mode: string
+  @column()
+  declare neighborsRevision: number | null
+  @column.dateTime()
+  declare observedAt: DateTime | null
+  @column()
+  declare renderFingerprint: string | null
+  @column()
+  declare syncState: string
+  @column()
+  declare transportOk: boolean | null
+  @column()
+  declare trunkOverride: string | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class ApConfigApplySchema extends BaseModel {
+  static $columns = ['adminConfirmedAt', 'adminConfirmedBy', 'agentConfirmedAt', 'agentReconnectedAt', 'apId', 'applyKey', 'cacAllowanceSeconds', 'chainStep', 'confirmMode', 'confirmTimeoutSeconds', 'deadlineAt', 'finishedAt', 'healthCheckedAt', 'id', 'kind', 'note', 'protected', 'queueExpiresAt', 'requestedAt', 'requestedByUserId', 'retried', 'revisionNumber', 'rolloutId', 'sealed', 'sentAt', 'signed', 'state', 'systemActor'] as const
+  $columns = ApConfigApplySchema.$columns
+  @column.dateTime()
+  declare adminConfirmedAt: DateTime | null
+  @column()
+  declare adminConfirmedBy: number | null
+  @column.dateTime()
+  declare agentConfirmedAt: DateTime | null
+  @column.dateTime()
+  declare agentReconnectedAt: DateTime | null
+  @column()
+  declare apId: number
+  @column()
+  declare applyKey: string
+  @column()
+  declare cacAllowanceSeconds: number
+  @column()
+  declare chainStep: number
+  @column()
+  declare confirmMode: string
+  @column()
+  declare confirmTimeoutSeconds: number
+  @column.dateTime()
+  declare deadlineAt: DateTime | null
+  @column.dateTime()
+  declare finishedAt: DateTime | null
+  @column.dateTime()
+  declare healthCheckedAt: DateTime | null
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare kind: string
+  @column()
+  declare note: string | null
+  @column()
+  declare protected: boolean
+  @column.dateTime()
+  declare queueExpiresAt: DateTime | null
+  @column.dateTime()
+  declare requestedAt: DateTime
+  @column()
+  declare requestedByUserId: number | null
+  @column()
+  declare retried: boolean
+  @column()
+  declare revisionNumber: number | null
+  @column()
+  declare rolloutId: bigint | number | null
+  @column()
+  declare sealed: boolean
+  @column.dateTime()
+  declare sentAt: DateTime | null
+  @column()
+  declare signed: boolean
+  @column()
+  declare state: string
+  @column()
+  declare systemActor: string | null
+}
+
+export class ApConfigEventSchema extends BaseModel {
+  static $columns = ['apId', 'applyId', 'createdAt', 'event', 'id', 'revisionNumber', 'systemActor', 'userId'] as const
+  $columns = ApConfigEventSchema.$columns
+  @column()
+  declare apId: number
+  @column()
+  declare applyId: bigint | number | null
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare event: string
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare revisionNumber: number | null
+  @column()
+  declare systemActor: string | null
+  @column()
+  declare userId: number | null
+}
+
+export class ApConfigRevisionSchema extends BaseModel {
+  static $columns = ['apId', 'applyId', 'authorUserId', 'confirmedAt', 'createdAt', 'id', 'note', 'number', 'rolloutId', 'source', 'summary', 'systemActor'] as const
+  $columns = ApConfigRevisionSchema.$columns
+  @column()
+  declare apId: number
+  @column()
+  declare applyId: bigint | number | null
+  @column()
+  declare authorUserId: number | null
+  @column.dateTime()
+  declare confirmedAt: DateTime | null
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare note: string | null
+  @column()
+  declare number: number
+  @column()
+  declare rolloutId: bigint | number | null
+  @column()
+  declare source: string
+  @column()
+  declare summary: string
+  @column()
+  declare systemActor: string | null
+}
+
+export class ApConfigSectionSchema extends BaseModel {
+  static $columns = ['anonymous', 'apId', 'baseRevision', 'config', 'createdAt', 'domain', 'driftSince', 'id', 'issue', 'perchId', 'position', 'routerChangedAt', 'scope', 'sectionName', 'sectionType', 'status', 'updatedAt', 'updatedByUserId'] as const
+  $columns = ApConfigSectionSchema.$columns
+  @column()
+  declare anonymous: boolean
+  @column()
+  declare apId: number
+  @column()
+  declare baseRevision: number | null
+  @column()
+  declare config: string
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare domain: string | null
+  @column.dateTime()
+  declare driftSince: DateTime | null
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare issue: string | null
+  @column()
+  declare perchId: string
+  @column()
+  declare position: number | null
+  @column.dateTime()
+  declare routerChangedAt: DateTime | null
+  @column()
+  declare scope: string
+  @column()
+  declare sectionName: string
+  @column()
+  declare sectionType: string
+  @column()
+  declare status: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+  @column()
+  declare updatedByUserId: number | null
+}
+
 export class ApGroupStateSchema extends BaseModel {
   static $columns = ['apId', 'appliedRevision', 'converted', 'error', 'fingerprint', 'reportedAt', 'revision', 'state', 'trunkOverride', 'trunkPort', 'updatedAt'] as const
   $columns = ApGroupStateSchema.$columns
@@ -609,7 +814,7 @@ export class DeviceDestinationBucketsHourlySchema extends BaseModel {
 }
 
 export class DeviceGroupSchema extends BaseModel {
-  static $columns = ['createdAt', 'gatewayId', 'id', 'internet', 'name', 'networkPerchId', 'notes', 'portalBypass', 'updatedAt'] as const
+  static $columns = ['createdAt', 'gatewayId', 'id', 'internet', 'name', 'networkPerchId', 'notes', 'portalBypass', 'updatedAt', 'wifiNetworkId'] as const
   $columns = DeviceGroupSchema.$columns
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
@@ -629,6 +834,8 @@ export class DeviceGroupSchema extends BaseModel {
   declare portalBypass: boolean
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime | null
+  @column()
+  declare wifiNetworkId: number | null
 }
 
 export class DeviceGroupKeySchema extends BaseModel {
@@ -2693,6 +2900,56 @@ export class WifiCommandAuditSchema extends BaseModel {
   declare stdout: string | null
 }
 
+export class WifiDivergenceSchema extends BaseModel {
+  static $columns = ['apId', 'detectedAt', 'id', 'kind', 'networkId', 'option', 'perchId', 'radio', 'resolution', 'resolvedAt', 'resolvedByUserId'] as const
+  $columns = WifiDivergenceSchema.$columns
+  @column()
+  declare apId: number
+  @column.dateTime()
+  declare detectedAt: DateTime
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare kind: string
+  @column()
+  declare networkId: number | null
+  @column()
+  declare option: string | null
+  @column()
+  declare perchId: string | null
+  @column()
+  declare radio: string | null
+  @column()
+  declare resolution: string | null
+  @column.dateTime()
+  declare resolvedAt: DateTime | null
+  @column()
+  declare resolvedByUserId: number | null
+}
+
+export class WifiIfaceLinkSchema extends BaseModel {
+  static $columns = ['apId', 'createdAt', 'dynamicVlanWas', 'id', 'networkId', 'origin', 'perchId', 'radio', 'updatedAt'] as const
+  $columns = WifiIfaceLinkSchema.$columns
+  @column()
+  declare apId: number
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare dynamicVlanWas: string | null
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare networkId: number | null
+  @column()
+  declare origin: string
+  @column()
+  declare perchId: string
+  @column()
+  declare radio: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
 export class WifiInterfaceBucketSchema extends BaseModel {
   static $columns = ['apId', 'band', 'bucketStart', 'bytesIn', 'bytesOut', 'createdAt', 'dropsIn', 'dropsOut', 'errsIn', 'errsOut', 'id', 'ifname', 'packetsIn', 'packetsOut', 'radio', 'ssid', 'updatedAt'] as const
   $columns = WifiInterfaceBucketSchema.$columns
@@ -2837,6 +3094,58 @@ export class WifiInterfaceBucketsHourlySchema extends BaseModel {
   declare updatedAt: DateTime
 }
 
+export class WifiNetworkSchema extends BaseModel {
+  static $columns = ['apScope', 'createdAt', 'createdByUserId', 'enabled', 'groups', 'hidden', 'id', 'isolate', 'name', 'origin', 'passphraseRef', 'revision', 'security', 'updatedAt', 'updatedByUserId'] as const
+  $columns = WifiNetworkSchema.$columns
+  @column()
+  declare apScope: string
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdByUserId: number | null
+  @column()
+  declare enabled: boolean
+  @column()
+  declare groups: boolean
+  @column()
+  declare hidden: boolean
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare isolate: boolean
+  @column()
+  declare name: string
+  @column()
+  declare origin: string
+  @column()
+  declare passphraseRef: string | null
+  @column()
+  declare revision: number
+  @column()
+  declare security: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+  @column()
+  declare updatedByUserId: number | null
+}
+
+export class WifiNetworkApSchema extends BaseModel {
+  static $columns = ['apId', 'createdAt', 'id', 'included', 'networkId', 'updatedAt'] as const
+  $columns = WifiNetworkApSchema.$columns
+  @column()
+  declare apId: number
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare included: boolean | null
+  @column()
+  declare networkId: number
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
 export class WifiNetworkBuckets5MSchema extends BaseModel {
   static $columns = ['apId', 'avgNoiseDbm', 'avgQuality', 'avgSignalDbm', 'band', 'ifname', 'maxBitrateKbps', 'samples', 'slotStart', 'ssid', 'updatedAt'] as const
   $columns = WifiNetworkBuckets5MSchema.$columns
@@ -2955,6 +3264,71 @@ export class WifiRoamingEventSchema extends BaseModel {
   declare toIfname: string | null
   @column()
   declare toSsid: string | null
+}
+
+export class WifiRolloutSchema extends BaseModel {
+  static $columns = ['confirmMode', 'createdAt', 'finishedAt', 'id', 'kind', 'note', 'offlinePolicy', 'requestedByUserId', 'state', 'systemActor'] as const
+  $columns = WifiRolloutSchema.$columns
+  @column()
+  declare confirmMode: string
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column.dateTime()
+  declare finishedAt: DateTime | null
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare kind: string
+  @column()
+  declare note: string | null
+  @column()
+  declare offlinePolicy: string
+  @column()
+  declare requestedByUserId: number | null
+  @column()
+  declare state: string
+  @column()
+  declare systemActor: string | null
+}
+
+export class WifiRolloutStepSchema extends BaseModel {
+  static $columns = ['apId', 'applyId', 'finishedAt', 'id', 'position', 'rolloutId', 'startedAt', 'state'] as const
+  $columns = WifiRolloutStepSchema.$columns
+  @column()
+  declare apId: number
+  @column()
+  declare applyId: bigint | number | null
+  @column.dateTime()
+  declare finishedAt: DateTime | null
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare position: number
+  @column()
+  declare rolloutId: bigint | number
+  @column.dateTime()
+  declare startedAt: DateTime | null
+  @column()
+  declare state: string
+}
+
+export class WifiSecretSchema extends BaseModel {
+  static $columns = ['createdAt', 'createdByUserId', 'digest', 'fingerprint', 'id', 'ref', 'updatedAt'] as const
+  $columns = WifiSecretSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdByUserId: number | null
+  @column()
+  declare digest: string
+  @column()
+  declare fingerprint: string
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare ref: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
 }
 
 export class WifiStationBuckets5MSchema extends BaseModel {
