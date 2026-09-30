@@ -1,6 +1,8 @@
 import {
+  ArrowsClockwise,
   ArrowsLeftRight,
   Broadcast,
+  CellTower,
   ChartBar,
   Clock,
   Signpost,
@@ -19,6 +21,7 @@ import {
   SquaresFour,
   TreeStructure,
   UsersThree,
+  WifiHigh,
 } from '@phosphor-icons/react'
 
 export type NavItem = {
@@ -59,6 +62,23 @@ export const GATEWAY_SECTION: NavItem[] = [
 /** Whether a path belongs to the Gateway section. */
 export function inGatewaySection(pathname: string): boolean {
   return GATEWAY_SECTION.some((item) => underPath(pathname, item.to))
+}
+
+/**
+ * The WiFi section: one sidebar entry (`/wifi` already matches its nested
+ * paths), and this sub-nav above each of its pages
+ * (components/wifi-config/section-nav.tsx). Overview is the monitoring page.
+ */
+export const WIFI_SECTION: NavItem[] = [
+  { to: '/wifi', label: 'Overview', icon: SquaresFour, end: true },
+  { to: '/wifi/networks', label: 'Networks', icon: WifiHigh },
+  { to: '/wifi/radios', label: 'Radios', icon: CellTower },
+  { to: '/wifi/sync', label: 'Sync', icon: ArrowsClockwise },
+]
+
+/** Whether a path belongs to the WiFi section. */
+export function inWifiSection(pathname: string): boolean {
+  return underPath(pathname, '/wifi')
 }
 
 /** Whether a section entry is the active one (`/gateway` is only the overview itself). */

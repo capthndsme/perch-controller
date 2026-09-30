@@ -5,8 +5,10 @@ import { BottomNav } from '@/components/layout/bottom-nav'
 import { GatewaySectionNav } from '@/components/layout/gateway-section-nav'
 import { Sidebar } from '@/components/layout/sidebar'
 import { DashboardPlainHttpNotice } from '@/components/security/plain-http'
+import { WifiRolloutBanner } from '@/components/wifi-config/rollout-banner'
+import { WifiSectionNav } from '@/components/wifi-config/section-nav'
 import { Topbar } from '@/components/layout/topbar'
-import { inGatewaySection } from '@/lib/nav'
+import { inGatewaySection, inWifiSection } from '@/lib/nav'
 import { cn } from '@/lib/utils'
 
 const COLLAPSED_KEY = 'metricsfe-sidebar-collapsed'
@@ -65,7 +67,9 @@ export function AppLayout() {
         <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col gap-5 px-4 pt-5 pb-[calc(1.25rem+var(--bottom-nav-height))]">
           {pathname.startsWith('/settings') ? <DashboardPlainHttpNotice /> : null}
           <GatewayApplyBanner />
+          <WifiRolloutBanner />
           {inGatewaySection(pathname) ? <GatewaySectionNav /> : null}
+          {inWifiSection(pathname) ? <WifiSectionNav /> : null}
           <Outlet />
         </main>
       </div>

@@ -127,6 +127,17 @@ export function SettingsPage() {
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
                 <div className="space-y-1">
+                  <p className="text-sm font-medium">WiFi management</p>
+                  <p className="text-xs text-muted-foreground">
+                    How WiFi changes are confirmed and rolled out to access points, and the fleet country.
+                  </p>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/settings/wifi-config">Open</Link>
+                </Button>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+                <div className="space-y-1">
                   <p className="text-sm font-medium">Presence</p>
                   <p className="text-xs text-muted-foreground">
                     When devices and WiFi clients count as connected, and how long an AP may stay
