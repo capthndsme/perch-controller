@@ -1,5 +1,6 @@
 import {
   ArrowsLeftRight,
+  Bell,
   Broadcast,
   ChartBar,
   Clock,
@@ -80,6 +81,7 @@ export const NAV_ITEMS: NavItem[] = [
     also: GATEWAY_SECTION.map((item) => item.to).filter((to) => to !== '/gateway'),
   },
   { to: '/infrastructure', label: 'Infrastructure', icon: TreeStructure },
+  { to: '/alerts', label: 'Alerts', icon: Bell },
   { to: '/settings', label: 'Settings', icon: GearSix },
 ]
 

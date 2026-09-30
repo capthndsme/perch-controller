@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { ApiError, apiFetch, fieldErrorsFromApi, setTokenReader } from '@/lib/api'
+import { unsubscribeThisBrowser } from '@/lib/push'
 import { useAuthStore } from '@/stores/auth-store'
 import type { AuthResponse, User } from '@/types/api'
 
@@ -46,10 +47,14 @@ export function useLogout() {
   const navigate = useNavigate()
 
   return useMutation({
-    mutationFn: () =>
-      apiFetch<{ message: string }>('/api/v1/account/logout', {
+    mutationFn: async () => {
+      // This browser stops receiving the user's pushes (a shared tablet), while the session still works;
+      // never longer than 3 s.
+      await Promise.race([unsubscribeThisBrowser(), new Promise((resolve) => setTimeout(resolve, 3000))])
+      return apiFetch<{ message: string }>('/api/v1/account/logout', {
         method: 'POST',
-      }),
+      })
+    },
     onSettled: () => {
       clearSession()
       queryClient.removeQueries({ queryKey: profileQueryKey })

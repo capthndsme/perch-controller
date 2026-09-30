@@ -40,6 +40,8 @@ different origin than the API; `.env.example` explains both.
 | `/portal/vouchers`, `/portal/vouchers/:id`, `/portal/vouchers/:id/print` | Voucher batches, code lookup, a batch's codes (shown on demand, copy buttons for handing one out from a phone), CSV, revoke / delete; the print sheet is outside the shell (A4 print styles, cut lines). |
 | `/portal/payments`, `/portal/terminals`, `/portal/price-tables` | Paid Hotspot (controller `docs/gateway/portal.md` §14): the payment ledger (filters in the URL, per-currency totals, detail drawer with the coins timeline and the locked price, void with refund + note, credit unclaimed coins as a code shown once, dismiss); coin terminals (busy / idle / offline from the router's reports, token shown once with the terminal protocol and its shell reference client, rotate, delete, MAC pin, own price table); price tables (rates editor with a draft preview, server quote "what does this buy", revision history). The portal dialog sets the payment and click-through methods. Reads for every user, writes admin-only. |
 | `/portal/users`, `/portal/api-clients`, `/portal/templates`, `/portal/templates/:id`, `/settings/portal` | Portal users; API clients (token shown once, rotate, revoke) with the Paid Hotspot API explainer; page templates (upload with per-file / per-line checks, duplicate, sandboxed preview); Settings → Guest portal. Writes and the admin catalogs are admin-only. |
+| `/alerts`, `/alerts/:id` | Alerts inbox, phone first: All / Active, severity, category and "short blips" chips (all in the URL), unread dots; opening it marks everything read. An alert: what happened with its facts, the timeline, who was notified (admins open a delivery's attempts), its rule; admins acknowledge, resolve, mute (this subject or the type, 1 h to until unmuted) and jump to the rule. The **bell** in the top bar (all sizes) shows active warning + critical alerts (red when one is critical, a dot for unread news) and opens the latest six in a popover, or a bottom sheet on a phone; it hides itself on a controller without alerts (404). |
+| `/settings/alerts`, `/settings/notifications` | Alerts (admin): a test alert through the whole pipeline, quiet hours, every type's rule grouped by category (on/off in the row; severity, channels, timing and the type's parameters in a drawer, checked against the controller's `limits`; `?type=` opens one), links and heartbeat, the rarely touched limits, the push keys. Notifications (everyone): **This device** (Web Push: "Notify this device", or why it cannot: plain HTTP, iOS outside the Home Screen, unsupported, blocked), the user's other devices (pause, rename, filter, test, remove; admins can list everyone's), and for admins the webhooks (presets for ntfy, Home Assistant, Gotify, Telegram, Discord, Slack and signed JSON; secret shown once; test with the answer inline; deliveries). The device page carries the "Alerts" watch switches. |
 | `/settings`, `/settings/users`, `/settings/wifi-sources`, `/settings/hostname-enrichment`, `/settings/presence`, `/settings/gateway-observation`, `/settings/charts`, `/settings/gateway-config`, `/settings/traffic-shaping` | Profile and password; users and roles; access points (probe, two-way commands); hostname sources; presence thresholds and the gateway-sightings switch; retention of gateway observations and backups; chart detail; how managed-gateway changes are confirmed; shaping defaults. |
 
 ## Conventions
@@ -86,6 +88,18 @@ different origin than the API; `.env.example` explains both.
   kbit/s (`src/lib/qos.ts`). Its live chart draws a short in-browser history
   (`src/lib/qos-live.ts`, bounded) because the controller keeps only the
   router's latest report.
+- The dashboard is an installable web app (`public/manifest.webmanifest`,
+  `public/icons/`) with a service worker, `public/sw.js`, registered by
+  `src/lib/push.ts` at scope `/` on secure origins only (https or localhost).
+  It shows Web Push notifications and opens the alert a tap is about, in an
+  open dashboard through the router (`perch:navigate` message) or in a new
+  window; a push also refreshes the bell at once (`perch:alert`). It has **no
+  fetch handler**: nothing is cached or answered by it, so API responses and
+  the stale-chunk recovery above behave exactly as without it. Subscribing
+  (`src/lib/push-subscribe.ts`) loads with the Notifications page, and once per
+  load from the bell when this browser already has a subscription (re-subscribes
+  after a key rotation, keeps the device's name and filter). Logout unsubscribes
+  this browser first. Alerts types are in `src/types/alerts.ts`.
 - UI patterns (loading states, panels, tables, empty states) are in
   [`STYLEGUIDE.md`](STYLEGUIDE.md).
 

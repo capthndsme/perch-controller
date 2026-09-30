@@ -126,3 +126,14 @@ if (query.isPending) return <PageSpinner label="Loading presence settings" />
 - With `prefers-reduced-motion`, keep fades and drop movement. `index.css`
   turns every tw-animate enter/exit into a fade; new motion ships its own
   `motion-reduce:` variant.
+
+## Filter chips
+
+- `FilterChip` and `ChipRow` (`src/components/alerts/alert-filters.tsx`):
+  toggle pills for list filters (the alerts inbox, a destination's categories).
+  On a phone the row scrolls sideways under the page's gutters instead of
+  wrapping into a wall of pills; from `sm` it wraps. A chip is filled while on
+  and tints the moment it is pressed.
+- A row of chips inside a `<fieldset>` needs `min-w-0` on the fieldset: a
+  fieldset is at least as wide as its content, so the row would push the page
+  sideways instead of scrolling.
