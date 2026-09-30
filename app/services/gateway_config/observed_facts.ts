@@ -1,4 +1,6 @@
-import type { FeatureObservation } from '#services/gateway_config/domain'
+import Collector from '#models/collector'
+import type { FeatureObservation, ObservedInterfaceFact } from '#services/gateway_config/domain'
+import type { SideFacts } from '#services/gateway_config/domains/side'
 import { parseJsonObject, rawRows } from '#services/gateway_observation_common'
 import {
   normalizeInterfaces,
@@ -87,7 +89,13 @@ export function featureObservation(facts: ObservedFacts): FeatureObservation {
         }
       : null,
     interfaces: facts.interfaces
-      ? facts.interfaces.map((i) => ({ network: i.network, up: i.up }))
+      ? facts.interfaces.map((i) => ({
+          network: i.network,
+          up: i.up,
+          proto: i.proto,
+          defaultRoute: i.defaultRoute,
+          metric: i.metric,
+        }))
       : null,
     offloading: facts.system
       ? {
@@ -104,4 +112,58 @@ function parseJson(raw: string): unknown {
   } catch {
     return null
   }
+}
+
+/**
+ * What the side rule reads beside UCI (`side.ts`, gateway sync domains.md 2):
+ * the networks holding a default route and their L3 devices (the
+ * `interfaces` observation, when fresh), and the collector's configured
+ * `wan_interfaces` (its gateway report says `wanSource: configured`). Null
+ * when nothing is known: the rule then works from UCI alone.
+ */
+export function sideFactsFrom(
+  facts: ObservedFacts,
+  gatewayStatus: { wanInterfaces?: unknown; wanSource?: unknown } | null | undefined
+): SideFacts | null {
+  const out: SideFacts = {}
+  if (facts.interfaces) {
+    out.defaultRoute = facts.interfaces.filter((i) => i.defaultRoute === true).map((i) => i.network)
+    const l3: Record<string, string> = {}
+    for (const i of facts.interfaces) if (i.device) l3[i.network] = i.device
+    out.l3Devices = l3
+  }
+  if (gatewayStatus?.wanSource === 'configured' && Array.isArray(gatewayStatus.wanInterfaces)) {
+    out.configuredWan = gatewayStatus.wanInterfaces.filter(
+      (w): w is string => typeof w === 'string' && w.length > 0
+    )
+  }
+  return Object.keys(out).length > 0 ? out : null
+}
+
+/** The side facts of a gateway's collector (DB). */
+export async function readSideFacts(
+  collectorId: number | null,
+  facts?: ObservedFacts
+): Promise<SideFacts | null> {
+  if (collectorId === null) return null
+  const observed = facts ?? (await readObservedFacts(collectorId))
+  const collector = await Collector.find(collectorId)
+  return sideFactsFrom(observed, collector?.lastStatus?.gateway ?? null)
+}
+
+/** The interfaces as the apply checks read them (`ChecksCtx.observed`). */
+export function interfaceFacts(facts: ObservedFacts): ObservedInterfaceFact[] | null {
+  return facts.interfaces
+    ? facts.interfaces.map((i) => ({
+        network: i.network,
+        up: i.up,
+        device: i.device,
+        proto: i.proto,
+        defaultRoute: i.defaultRoute,
+        metric: i.metric,
+        ipv4: i.ipv4,
+        ipv6: i.ipv6,
+        gateway4: i.gateway4,
+      }))
+    : null
 }

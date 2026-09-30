@@ -37,3 +37,15 @@ export const firewallDefaultsPatchValidator = vine.compile(
     confirm: vine.string().trim().maxLength(128).optional(),
   })
 )
+
+/**
+ * `POST /gateways/:id/applies/:applyId/confirm` (rest.md 2): "Keep changes",
+ * or with `overrideChecks` "Keep anyway" while the router's checks run
+ * (`confirm` = the gateway's name). An empty body is the plain confirm.
+ */
+export const applyConfirmValidator = vine.compile(
+  vine.object({
+    overrideChecks: vine.boolean().optional(),
+    confirm: vine.string().trim().maxLength(128).optional(),
+  })
+)

@@ -25,6 +25,8 @@ import {
   type FeatureSection,
   type FeatureSyncIssue,
 } from '#services/gateway_config/domain'
+import type { GatewaySyncSettings } from '#services/gateway_config/gateway_sync_settings'
+import { attachSideFacts, type SideFacts } from '#services/gateway_config/domains/side'
 import { routerSecretSlots } from '#services/gateway_config/secrets'
 import {
   orderMembers,
@@ -642,6 +644,17 @@ export interface ReconcileReadInput {
    * they merge. Absent or null: nothing is gated.
    */
   capabilities?: GatewayCapabilities | null
+  /**
+   * Gateway sync settings (domains.md 1.7): a domain's `authoritative`
+   * policy reads them (`authoritativeWan`). Absent: the domain's default.
+   */
+  gatewaySync?: GatewaySyncSettings | null
+  /**
+   * What the agent reports that the side rule reads (`side.ts`: default
+   * routes, L3 devices, configured WANs), attached to the read's config set
+   * so every domain's `claims` classifies with it. Absent: UCI alone.
+   */
+  sideFacts?: SideFacts | null
 }
 
 export interface ReconcileReadResult {
@@ -672,6 +685,7 @@ export function reconcileRead(input: ReconcileReadInput): ReconcileReadResult {
     (c) => c.name !== LEDGER_CONFIG && !EXCLUDED_CONFIGS.includes(c.name)
   )
   const all: UciConfigSet = Object.fromEntries(readConfigs.map((c) => [c.name, c]))
+  attachSideFacts(all, input.sideFacts ?? null)
   const firstRead = input.rows.length === 0
   const ledgerByPerch = new Map(input.read.ledger.map((e) => [e.perchId, e]))
   let merges = 0
@@ -805,7 +819,17 @@ export function reconcileRead(input: ReconcileReadInput): ReconcileReadResult {
           }
         }
       }
-      const change = reconcileRow(row, found, config.name, all, rowInput(input, row.domain), events)
+      const change = reconcileRow(
+        row,
+        found,
+        config.name,
+        all,
+        rowInput(input, row.domain, {
+          base: row.base,
+          router: found ? contentFromRouter(found.section) : null,
+        }),
+        events
+      )
       if (!change) continue
       if (relinked.has(row.perchId)) {
         change.kind = 'relinked'
@@ -831,7 +855,12 @@ export function reconcileRead(input: ReconcileReadInput): ReconcileReadResult {
         config.name,
         claim,
         ambiguous.has(left.section.name),
-        claim?.domain.oneWay && firstOfConfig ? input : rowInput(input, claim?.domain.key ?? null),
+        claim?.domain.oneWay && firstOfConfig
+          ? input
+          : rowInput(input, claim?.domain.key ?? null, {
+              base: null,
+              router: contentFromRouter(left.section),
+            }),
         events
       )
       changes.push(change)
@@ -886,9 +915,23 @@ function contentFromRouter(section: UciSection): SectionContent {
  * The read input as one row sees it: a one-way domain's rows are
  * authoritative in managed mode, whatever the gateway's flag.
  */
-function rowInput(input: ReconcileReadInput, domain: string | null): ReconcileReadInput {
-  if (input.authoritative || input.mode !== 'managed') return input
-  return input.registry.get(domain)?.oneWay ? { ...input, authoritative: true } : input
+function rowInput(
+  input: ReconcileReadInput,
+  domain: string | null,
+  row?: { base: SectionContent | null; router: SectionContent | null }
+): ReconcileReadInput {
+  if (input.mode !== 'managed') return input
+  const d = input.registry.get(domain)
+  if (input.authoritative) {
+    // Gateway sync domains.md 1.7: a domain may import router edits of its
+    // sections even under Authoritative Mode (the WAN: owner decision D2).
+    if (d?.authoritative && !d.oneWay) {
+      const policy = d.authoritative(input.gatewaySync ?? null, row ?? { base: null, router: null })
+      if (policy === 'import') return { ...input, authoritative: false }
+    }
+    return input
+  }
+  return d?.oneWay ? { ...input, authoritative: true } : input
 }
 
 /**
@@ -898,10 +941,19 @@ function rowInput(input: ReconcileReadInput, domain: string | null): ReconcileRe
 export function authoritativeFor(
   gateway: { mode: GatewayMode; authoritative: boolean },
   registry: DomainRegistry | null,
-  domain: string | null
+  domain: string | null,
+  gatewaySync?: GatewaySyncSettings | null
 ): boolean {
   if (gateway.mode !== 'managed') return false
-  return gateway.authoritative || registry?.get(domain)?.oneWay === true
+  const d = registry?.get(domain)
+  if (d?.oneWay === true) return true
+  if (!gateway.authoritative) return false
+  // A domain that imports router edits is never enforced (domains.md 1.7).
+  // Without a row, its policy is asked for a router edit of any kind.
+  if (d?.authoritative && gatewaySync !== undefined) {
+    return d.authoritative(gatewaySync, { base: null, router: null }) !== 'import'
+  }
+  return true
 }
 
 /** A decision-15 pause change of one synced row (`routerPause`). */

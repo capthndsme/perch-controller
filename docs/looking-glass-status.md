@@ -2866,3 +2866,34 @@ Dry run on the live rows (offline, read-only dump): the first read promotes `dhc
 firewall `defaults` with B = R = C, nothing written, unmodeled 19 → 17; `globe_force` stays in `networks` (the
 side rule is B1). Resolving the four redirects with the suggested names plans one firewall job: four adopts renamed
 `perch_<id>` + four puts, no order op, not protected.
+
+## 2026-09-30 — Gateway sync Phase B, controller (G-B, branch `gwsync/build`)
+
+Design: workspace `docs/design/gateway-sync/` (domains.md 1.5, 1.7, 2, 3; rest.md 2, 3, 11), build plan wave 2
+batch A. Migrations 140–142.
+
+- **B0 checks.** Domains return checks (`checksFor`); the planner puts those sections into a checked job (WAN
+  window 300 s, mode `admin_and_agent` by default, the router's checks gate the confirm and roll back early). The
+  lifecycle records the reply's baseline, `gateway.config.checks`, the hello's `apply.checks` and a `checks_failed`
+  result; "Keep anyway" is `POST …/confirm {overrideChecks, confirm: <gateway name>}`, only while checks run.
+  Per-domain Authoritative policy (`import`).
+- **B1 WAN.** `domains/side.ts` in the collector's order (fixes `globe_force`: a static alias on the WAN 3 modem
+  port was a LAN network); `wan` domain (uplinks, IPv6 companions, aliases, NAT links, the port's device section,
+  the WAN pool; verbatim, exact round trip; validation codes of domains.md 3.4; imports router edits by default,
+  D2); checks derivation (`wan_checks.ts`: `interface_up` per touched uplink/companion, `mustPass` when it is
+  enabled or its connection changes while up, then `default_route`, `reach` via the primary's `$gateway`,
+  `resolve`); REST `GET/PATCH/POST/DELETE /gateways/:id/wan…`, order, aliases, history; guards `wan_last_uplink`
+  (with the gateway's name: sent with `{v:1, items:[]}`) and `wan_management_path`; Settings → Gateway sync
+  (`gateway_sync`, `authoritativeWan: import`); WAN transitions from the `interfaces` observation, pruned daily
+  at 03:55.
+- **Collector (C1 follow-up).** The `resolve` check asks a fresh label `perch-<12 hex>.<name>.` on every probe: a
+  cached `example.com` in dnsmasq cannot pass it while the WAN is down; NXDOMAIN counts as the upstream answering.
+- **Live dry run** (read-only: `uci` over `lxc exec`, secrets redacted; nothing written): the side rule classifies
+  the gateway as README section 2 with or without the agent's facts. Once the collector announces
+  `config.checks.v1`, the first read promotes `wan`, `wan6`, `ADDR`, `globe`, `globev6`, `LANX`, `lan2`, the `wan0`
+  device section and `dhcp.wan` to `wan` (B = R = C, nothing written) and re-homes `globe_force` from `networks`;
+  uplinks rank `wan` 1 (companion `wan6`, alias `ADDR`), `lan2` 2, `globe` 3 (companion `globev6`, alias
+  `globe_force`); `LANX` is a NAT link. One warning: `wan_mac_override_ignored` (the interface-level `macaddr` of
+  `wan` is not the one in effect). The live collector (1.1.0-pre.3) announces no features yet, so until it is
+  updated `wan` claims nothing and the WAN page is read-only (`capability_missing`).
+

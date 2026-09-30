@@ -650,7 +650,42 @@ imported from the router never blocks other applies.
   delete in the same job: the agent deletes owned sections only.
 - `GatewayApply` carries `origin: { domains }` (the domains its changes touch).
 
+### 7.2 Gateway sync additions to the core (Phase B, 2026-09-30)
+
+- **Apply checks** (gateway-sync domains.md 1.5, perch-collector `ARCHITECTURE.md` "Apply checks"). A domain may
+  return `checksFor(ctx): { timeoutSeconds, items } | null` (items as the wire's `CheckItem`: `interface_up`,
+  `default_route`, `reach`, `resolve`, `wg_handshake`). With `checks` in the planner's input (Settings → Gateway
+  sync, the `interfaces` observation, each WAN's targets) and an agent that announces `config.checks.v1`, sections
+  a domain returns checks for go into a **checked** job after the ordinary one (adopt, ordinary, checked,
+  protected); a protected section carries its checks into the protected job. The checked job gets
+  `wanConfirmTimeoutSeconds` (the management window when also protected) and `wanConfirmMode` (queued jobs and
+  reverts keep `agent`); its `checks` param is `{v:1, timeoutSeconds (window − 20 s, 10–900), items}`, or
+  `{v:1, items:[]}` when the request says "no checks" (`skipChecks`, the WAN's `wan_last_uplink` confirm).
+- **Lifecycle.** `gateway_applies` (migration 140) keeps `checks`, `check_results`, `checks_state`
+  (`pending running passed failed overridden`; NULL = nothing gates the confirm) and the override's user and time.
+  The apply reply's `checks` (baseline; `agentAdded` for the agent's own default-route net), the notification
+  `gateway.config.checks`, the hello's `apply.checks` and a `checks_failed` result update them (events
+  `checks_passed`, `checks_failed`); a finished state never goes back to running. The confirm waits for `passed`
+  (or `overridden`). `POST …/applies/:applyId/confirm` takes `{ overrideChecks?, confirm? }`: without the override
+  409 `checks_pending` / `checks_failed` {checks}; with it (only while the checks are pending or running), `confirm`
+  must be the gateway's name (422 `confirm_mismatch`), event `checks_overridden`, and the confirm RPC carries
+  `overrideChecks: true`. A `checks_failed` rollback settles like any rollback; `outcome.checks` lists the failed
+  items. `GatewayApply.checks` serves `{state, timeoutSeconds, startedAt, allSkipped, agentAdded, items[],
+  overriddenBy, overriddenAt}`; the draft's jobs gain `checked`, `checks`, `confirmTimeoutSeconds`, `confirmMode`.
+- **Per-domain Authoritative policy.** `authoritative?(settings, {base, router})` → `'import'` merges a router edit
+  two-way under Authoritative Mode (never drift, never reverted); `reconcileRead` takes `gatewaySync` settings.
+- **The side rule** (`domains/side.ts`, the collector's order): loopback → tunnel proto = `vpn` → WAN (a WAN proto,
+  a default route, a masquerading zone, a UCI `gateway`, a configured WAN) → static/none on an uplink's device or
+  `@uplink` = a WAN alias → `lan`. `networks`, `dhcp_pools` and `network_model` use it; the agent's facts (default
+  routes and L3 devices from the `interfaces` observation, the collector's configured `wan_interfaces`) ride with a
+  read (`reconcileRead` `sideFacts`); without them the rule works from UCI (a UCI `route` to `0.0.0.0/0` counts).
+- The planner marks the management path `wanSide` (the controller is reached over a WAN) for domains'
+  `touchesManagement`.
+
 ## 9. Storage
+
+Gateway sync: `140` (the apply checks on `gateway_applies`), `141` `gateway_wans` (Perch-only WAN metadata),
+`142` `gateway_wan_transitions` (pruned daily after `transitionRetentionDays`).
 
 Migrations `1779000000048`–`051`; the firewall's `090`–`092` (firewall.md section 8:
 `gateway_section_orders`, `gateway_applies.post_actions`, `gateway_wan_blocks`); `110` (`system_actor` on

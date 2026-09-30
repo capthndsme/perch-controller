@@ -7,13 +7,13 @@ import {
   interfaceSide,
   ipv4ToInt,
   listItems,
-  masqNetworks,
   parseCidr,
   parsePortSpec,
   portSpecText,
   scalarOf,
   type PortSpec,
 } from '#services/gateway_config/domains/networks'
+import { sidesOf } from '#services/gateway_config/domains/side'
 import { planeError } from '#services/gateway_config/errors'
 import type { SectionState } from '#services/gateway_config/sync_engine'
 import type {
@@ -170,7 +170,9 @@ function index(states: SectionState[]): Index {
   const all = modelSections(states)
   const network = all.filter((s) => s.config === 'network')
   const zones = all.filter((s) => s.config === 'firewall' && s.type === 'zone')
-  const wan = masqNetworks(zones)
+  // The side rule (side.ts): WANs, aliases on an uplink's device and tunnels
+  // are not LAN networks; LAN networks are static or unaddressed.
+  const sides = sidesOf(network, zones)
   const interfaces = network.filter((s) => s.type === 'interface')
   const devicesByName = new Map<string, ModelSection>()
   for (const s of network) {
@@ -181,7 +183,9 @@ function index(states: SectionState[]): Index {
   return {
     all,
     interfaces,
-    lan: interfaces.filter((s) => interfaceSide(s.name, s.options, wan) === 'lan'),
+    lan: interfaces.filter(
+      (s) => sides.get(s.name) === 'lan' && interfaceSide(s.name, s.options, new Set()) === 'lan'
+    ),
     devicesByName,
     bridgeVlans: network.filter((s) => s.type === 'bridge-vlan'),
     pools: all.filter((s) => s.config === 'dhcp' && s.type === 'dhcp'),

@@ -78,7 +78,17 @@ export default {
         'changes',
         'chain_perch_ids',
         'packages',
+        // Gateway sync (migration 140): the checks sent and the agent's report.
+        'checks',
+        'check_results',
       ],
+    },
+    // Gateway sync (migrations 141–142): JSON text columns parsed by the models.
+    gateway_wans: {
+      skipColumns: ['check_targets'],
+    },
+    gateway_wan_transitions: {
+      skipColumns: ['detail'],
     },
     gateway_revisions: {
       skipColumns: ['router_author', 'snapshot', 'diff', 'hashes'],

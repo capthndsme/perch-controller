@@ -9,11 +9,12 @@ import { readFileSync } from 'node:fs'
  * Anonymous sections get the names `uci` gives them (`cfg<hex index>3837`), as
  * the agent reads them, so renames to `perch_<id>` show up in the ops.
  */
-export type GatewaySyncFixture = 'firewall' | 'dhcp' | 'mwan3'
+export type GatewaySyncFixture = 'firewall' | 'dhcp' | 'mwan3' | 'network' | 'firewall_zones'
 
 export function gatewaySyncConfig(name: GatewaySyncFixture): UciConfig {
   const text = readFileSync(new URL(`./gateway_sync/${name}`, import.meta.url), 'utf8')
-  const config = parseUci(text, name)
+  // `firewall_zones` is a second firewall fixture (the live zones).
+  const config = parseUci(text, name === 'firewall_zones' ? 'firewall' : name)
   for (const section of config.sections) {
     if (section.anonymous) section.name = `cfg${section.index.toString(16).padStart(2, '0')}3837`
   }
@@ -21,7 +22,9 @@ export function gatewaySyncConfig(name: GatewaySyncFixture): UciConfig {
 }
 
 export function gatewaySyncSet(...names: GatewaySyncFixture[]): UciConfigSet {
-  return Object.fromEntries(names.map((n) => [n, gatewaySyncConfig(n)]))
+  return Object.fromEntries(
+    names.map((n) => gatewaySyncConfig(n)).map((config) => [config.name, config])
+  )
 }
 
 /** A section of a fixture by its name. */

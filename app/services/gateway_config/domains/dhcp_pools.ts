@@ -8,9 +8,8 @@ import type {
 } from '#services/gateway_config/domain'
 import { leaseSeconds } from '#services/gateway_config/domains/dhcp_hosts'
 import {
-  interfaceSide,
   ipv4ToInt,
-  masqNetworks,
+  nonLanNetworks,
   parseCidr,
   scalarOf,
 } from '#services/gateway_config/domains/networks'
@@ -26,8 +25,9 @@ import type { Issue, UciConfigSet, UciOptions } from '#services/gateway_config/t
  * Perch owns `interface ignore dhcpv4 start limit leasetime dhcp_option
  * domain force` (plan 2 P3). The IPv6 side (`ra dhcpv6 ndp ra_flags
  * ra_slaac dns`), `master` and anything newer are the router's: carried
- * verbatim, never a conflict, never drift. A pool of a WAN-side interface
- * (`ignore '1'` on `wan`) is not claimed: it stays unmodeled.
+ * verbatim, never a conflict, never drift. A pool of an interface off the
+ * LAN side by the side rule (`side.ts`; `ignore '1'` on `wan`) is the `wan`
+ * domain's (a WAN-side pool), not this one's.
  *
  * Equality is normalised (`12h` = `43200`; `ignore 'true'` = `'1'`); the
  * `dhcp_option` list merges per option code, so a new DNS server on one side
@@ -69,12 +69,9 @@ function truthy(value: string): string {
   return text
 }
 
+/** Networks off the LAN side by the side rule (`side.ts`): their pools are not this domain's. */
 function wanNetworksOf(all: UciConfigSet): Set<string> {
-  const out = masqNetworks(all.firewall?.sections ?? [])
-  for (const s of all.network?.sections ?? []) {
-    if (s.type === 'interface' && interfaceSide(s.name, s.options, out) !== 'lan') out.add(s.name)
-  }
-  return out
+  return nonLanNetworks(all)
 }
 
 /** Enabled = served: not `ignore '1'` and not `dhcpv4 'disabled'`. */

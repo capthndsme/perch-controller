@@ -285,6 +285,12 @@ export interface ManagementPath {
   /** Controller address the route was resolved for (text only). */
   controllerAddress?: string
   reportedAt?: string
+  /**
+   * Gateway sync (domains.md 3.6): the path's network is WAN-side (a remote
+   * controller). Computed by the planner from the router's config, never
+   * stored or sent.
+   */
+  wanSide?: boolean
 }
 
 /** One option change of a diff entry (section 10 `ConfigDiffEntry`). */

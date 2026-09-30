@@ -12,16 +12,6 @@ import { test } from '@japa/runner'
 const NOT_BUILT: Array<
   [method: 'get' | 'post' | 'put' | 'patch' | 'delete', path: string, wp: string]
 > = [
-  ['get', '/api/v1/gateways/1/wan', 'B1'],
-  ['get', '/api/v1/gateways/1/wan/history', 'B1'],
-  ['put', '/api/v1/gateways/1/wan/order', 'B1'],
-  ['post', '/api/v1/gateways/1/wan', 'B1'],
-  ['get', '/api/v1/gateways/1/wan/abc123', 'B1'],
-  ['patch', '/api/v1/gateways/1/wan/abc123', 'B1'],
-  ['delete', '/api/v1/gateways/1/wan/abc123', 'B1'],
-  ['post', '/api/v1/gateways/1/wan/abc123/aliases', 'B1'],
-  ['patch', '/api/v1/gateways/1/wan/aliases/abc123', 'B1'],
-  ['delete', '/api/v1/gateways/1/wan/aliases/abc123', 'B1'],
   ['get', '/api/v1/gateways/1/wireguard/config', 'B2'],
   ['post', '/api/v1/gateways/1/wireguard/interfaces', 'B2'],
   ['patch', '/api/v1/gateways/1/wireguard/interfaces/abc123', 'B2'],
@@ -46,13 +36,24 @@ const NOT_BUILT: Array<
   ['patch', '/api/v1/gateways/1/ddns/services/abc123', 'B6'],
   ['delete', '/api/v1/gateways/1/ddns/services/abc123', 'B6'],
   ['post', '/api/v1/gateways/1/ddns/services/abc123/update-now', 'B6'],
-  ['get', '/api/v1/settings/gateway-sync', 'B1'],
-  ['patch', '/api/v1/settings/gateway-sync', 'B1'],
 ]
 
-/** Every route of rest.md 12 that exists in Phase A (mwan3 writes are not built: decision 12). */
+/** Every route of rest.md 12 built so far (mwan3 writes are not built: decision 12). */
 const ALL_ADMIN: Array<[method: 'get' | 'post' | 'put' | 'patch' | 'delete', path: string]> = [
   ...NOT_BUILT.map(([m, p]) => [m, p] as [typeof m, string]),
+  // B1 (Phase B): WAN and Settings → Gateway sync.
+  ['get', '/api/v1/gateways/1/wan'],
+  ['get', '/api/v1/gateways/1/wan/history'],
+  ['put', '/api/v1/gateways/1/wan/order'],
+  ['post', '/api/v1/gateways/1/wan'],
+  ['get', '/api/v1/gateways/1/wan/abc123'],
+  ['patch', '/api/v1/gateways/1/wan/abc123'],
+  ['delete', '/api/v1/gateways/1/wan/abc123'],
+  ['post', '/api/v1/gateways/1/wan/abc123/aliases'],
+  ['patch', '/api/v1/gateways/1/wan/aliases/abc123'],
+  ['delete', '/api/v1/gateways/1/wan/aliases/abc123'],
+  ['get', '/api/v1/settings/gateway-sync'],
+  ['patch', '/api/v1/settings/gateway-sync'],
   ['get', '/api/v1/gateways/1/ambiguities'],
   ['post', '/api/v1/gateways/1/ambiguities/resolve'],
   ['get', '/api/v1/gateways/1/firewall/defaults'],

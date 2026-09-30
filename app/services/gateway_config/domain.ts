@@ -4,6 +4,7 @@ import {
   type ListSemantics,
   type MergeRules,
 } from '#services/gateway_config/canonical'
+import type { GatewaySyncSettings } from '#services/gateway_config/gateway_sync_settings'
 import { isSecretOption, routerSecretSlots } from '#services/gateway_config/secrets'
 import {
   WHOLE_SECTION,
@@ -157,11 +158,96 @@ export interface FeatureObservation {
     dnsmasqPort: number | null
     controllerHost: { name: string | null; addresses: string[]; error: string | null } | null
   } | null
-  /** `interfaces` part: the networks netifd knows. */
-  interfaces?: Array<{ network: string; up: boolean | null }> | null
+  /**
+   * `interfaces` part: the networks netifd knows (gateway sync adds its
+   * proto, default route and metric for the WAN's "in sync" check).
+   */
+  interfaces?: Array<{
+    network: string
+    up: boolean | null
+    proto?: string | null
+    defaultRoute?: boolean | null
+    metric?: number | null
+  }> | null
   /** `system` part: flow offloading as the router runs it (`firewall_defaults`' check). */
   offloading?: { flowOffloading: boolean | null; flowOffloadingHw: boolean | null } | null
 }
+
+// ── apply checks (gateway sync domains.md 1.5, protocol.md 1) ────────────
+
+/** What the router can verify after a job. */
+export type CheckKind = 'interface_up' | 'default_route' | 'reach' | 'resolve' | 'wg_handshake'
+
+export const CHECK_KINDS: readonly CheckKind[] = Object.freeze([
+  'interface_up',
+  'default_route',
+  'reach',
+  'resolve',
+  'wg_handshake',
+])
+
+/** One check item as `gateway.config.apply` carries it (protocol.md 1.1). */
+export interface CheckItem {
+  /** `^[a-z0-9:_.-]{1,32}$`, unique in a job. */
+  id: string
+  kind: CheckKind
+  network?: string
+  family?: 4 | 6
+  /** Never skipped by the router's baseline (a WAN the job brings up or changes while it was up). */
+  mustPass?: boolean
+  /** `reach`: IP literals or `$gateway:<network>`. */
+  targets?: string[]
+  tcpPort?: number
+  via?: string
+  /** `resolve`: the router asks a fresh label under it (the collector's cache-proof probe). */
+  name?: string
+  publicKey?: string
+  withinSeconds?: number
+}
+
+/** A domain's checks for a job: the items and the budget they need. */
+export interface ChecksPlan {
+  /** Seconds the checks may take after the commit (the largest per-proto budget). */
+  timeoutSeconds: number
+  items: CheckItem[]
+}
+
+/** An interface as the `interfaces` observation reported it (checks read these). */
+export interface ObservedInterfaceFact {
+  network: string
+  up: boolean | null
+  device?: string | null
+  proto?: string | null
+  defaultRoute?: boolean | null
+  metric?: number | null
+  ipv4?: string[]
+  ipv6?: string[]
+  gateway4?: string | null
+}
+
+/** What `checksFor` gets (domains.md 1.5). */
+export interface ChecksCtx {
+  /** The job's sections of this domain: before = the router's now (B), after = what the job writes (null = deleted). */
+  sections: Array<{
+    perchId: string
+    config: string
+    name: string
+    before: SectionContent | null
+    after: SectionContent | null
+  }>
+  /** The router's configs as they are now, and as they will be once the job is live. */
+  before: UciConfigSet
+  after: UciConfigSet
+  /** The last `interfaces` observation (null when not reported or stale). */
+  observed: { interfaces: ObservedInterfaceFact[] | null }
+  settings: GatewaySyncSettings
+  managementPath: ManagementPath | null
+  /** Per-network check targets (Perch-only `gateway_wans.check_targets`). */
+  targets?: Readonly<Record<string, string[]>>
+}
+
+/** Per-domain Authoritative Mode policy (domains.md 1.7). */
+export type AuthoritativePolicy = 'follow' | 'import'
 
 /** A section as a feature check sees it: its desired content (the router's when not synced). */
 export interface FeatureSection {
@@ -253,6 +339,26 @@ export interface ConfigDomain<Obj = unknown> {
    * handled by the engine). An issue blocks enabling Authoritative Mode.
    */
   inSync?(sections: FeatureSection[], observed: FeatureObservation): FeatureSyncIssue[]
+  /**
+   * Gateway sync (domains.md 1.5): what the router must verify after a job
+   * that carries this domain's sections. A section for which it returns
+   * items goes into a **checked** job (after the ordinary one; the WAN
+   * confirm window and mode); a protected section carries its checks into
+   * the protected job. Sent only to an agent that announces
+   * `config.checks.v1`, so a domain returning checks `requires` it.
+   */
+  checksFor?(ctx: ChecksCtx): ChecksPlan | null
+  /**
+   * Gateway sync (domains.md 1.7): how Authoritative Mode treats router
+   * edits of this domain's sections. `import` merges them two-way even with
+   * the gateway's flag on (never drift, never reverted); `follow` (default)
+   * is the gateway's flag. `row` is the section's base and the router's
+   * content of this read, for a per-edit decision.
+   */
+  authoritative?(
+    settings: GatewaySyncSettings | null,
+    row: { base: SectionContent | null; router: SectionContent | null }
+  ): AuthoritativePolicy
 }
 
 /** A domain's decision-15 pause option (`ConfigDomain.routerPause`). */

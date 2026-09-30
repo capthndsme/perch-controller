@@ -37,6 +37,49 @@ export type GatewayApplyPostActions = {
   }
 }
 
+/** One check item as sent (gateway sync protocol.md 1.1). */
+export type GatewayApplyCheckItem = {
+  id: string
+  kind: string
+  network?: string
+  family?: 4 | 6
+  mustPass?: boolean
+  targets?: string[]
+  tcpPort?: number
+  via?: string
+  name?: string
+  publicKey?: string
+  withinSeconds?: number
+}
+
+/** The checks an apply carries (`gateway_applies.checks`, migration 140). */
+export type GatewayApplyChecks = {
+  v: 1
+  timeoutSeconds: number
+  items: GatewayApplyCheckItem[]
+  /** The agent added its own default-route check (the job carried none). */
+  agentAdded?: boolean
+}
+
+/** One item's state as the agent last reported it. */
+export type CheckItemResult = {
+  id: string
+  state: string
+  detail: string | null
+  at: string | null
+}
+
+/** The agent's last report on an apply's checks (`check_results`). */
+export type GatewayApplyCheckResults = {
+  state: string
+  startedAt: string | null
+  timeoutSeconds: number | null
+  allSkipped: boolean
+  items: CheckItemResult[]
+  /** The reply's baseline (each item once, before the job). */
+  baseline?: CheckItemResult[]
+}
+
 /**
  * One apply job (docs/gateway/config-plane.md sections 3.4, 5.6 and 9). The
  * wire `applyId` is `applyKey`. `protected` marks the management-path job
@@ -87,6 +130,14 @@ export default class GatewayApply extends GatewayApplySchema {
   /** Runs once the job is live (`post_actions`); carried along a chain until done. */
   @jsonColumn('post_actions')
   declare postActions: GatewayApplyPostActions | null
+
+  /** Gateway sync: the checks sent (`items: []` = explicitly none). */
+  @jsonColumn('checks')
+  declare checks: GatewayApplyChecks | null
+
+  /** Gateway sync: the agent's last report on them. */
+  @jsonColumn('check_results')
+  declare checkResults: GatewayApplyCheckResults | null
 
   /** Features follow their applies (`onApplySaved`, section 6.8). */
   @afterSave()

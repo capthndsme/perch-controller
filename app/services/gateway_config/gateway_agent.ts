@@ -22,6 +22,8 @@ import { signParams } from '#services/gateway_config/rpc_signing'
 import { rejoinOffer } from '#services/gateway_config/revisions'
 import { refreshOrders } from '#services/gateway_config/order_store'
 import { gatewayQueue } from '#services/gateway_config/serial_queue'
+import { getGatewaySyncSettings } from '#services/gateway_config/gateway_sync_settings'
+import { readSideFacts } from '#services/gateway_config/observed_facts'
 import {
   reconcileRead,
   type EngineEvent,
@@ -338,6 +340,10 @@ export async function mergeRead(
     inFlight,
     // Gateway sync domains.md 1.2: domains the agent cannot serve claim nothing.
     capabilities: gateway.capabilities,
+    // Gateway sync: the WAN's Authoritative policy (1.7) and the side rule's
+    // agent facts (domains.md 2).
+    gatewaySync: await getGatewaySyncSettings(),
+    sideFacts: await readSideFacts(gateway.collectorId),
   })
   const events = await withoutRepeatedDeferrals(gateway.id, result.events)
 
