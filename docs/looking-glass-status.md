@@ -2983,3 +2983,51 @@ changes). Built by per-area agents on `<area>/build`, merged by the coordinator 
 Next (wave 3, one area at a time, rollbacks first): lab end to end on plab-*, then live. Owner actions: generate the
 release key (`scripts/release-keygen.sh --cold …` in the kit), `sudo modprobe mac80211_hwsim radios=6` for the Wi-Fi
 lab, test push on a phone, the collector's cron line on the hand-installed gateway.
+
+## 2026-09-30 — Wave 3 lab: gateway sync end to end on plab-* (six fixes)
+
+The lab controller runs `four/integration` (`lab/ctl-deploy.sh` from a `git archive`; lab DB dumped first to
+`/root/perch_lab-before-four-2026-09-30.sql.gz` in plab-ctl), plab-gw (OpenWrt 24.10.8) the integration collector as a
+static build swapped over its 1.1.0~pre1 package (old binary, init and guard kept as `/root/*-1.1.0-pre.1.bak`, config
+tarball `/root/perch-config-before-four-2026-09-30.tgz`), plus the `config-guard --overdue` cron line.
+
+Passed, all through the API the dashboard uses:
+- **Hello**: the six gateway-sync features; `wan` and `wan2` promoted to the `wan` domain, in sync.
+- **WAN with checks**: `wan2` metric 20 → 25 staged, dry-run diff and planned checks read from the draft, applied; the
+  router ran interface up, default route, reach (tcp 443 to the WAN's gateway) and the fresh-name resolve, all passed;
+  Keep changes → confirmed, the route has metric 25. A breaking change (`wan` disabled + `wan2` to a dead gateway):
+  reach and resolve failed, the router rolled back by itself (`checks_failed`), the draft stayed for the admin to
+  discard; transitions `wan down`, `wan2 failover`, `wan up` recorded; alerts `wan.down`/`wan.failover` raised and resolved.
+- **WireGuard**: packages installed from the controller; a server with the key made on the router (only the public
+  half came back, recorded as `generated`); a peer with a one-time client config (no PSK on the plain-HTTP lab) brought
+  up on plab-isp across `wan2`: handshake, pings to 10.7.0.1 and the LAN, and the VPN view shows endpoint, handshake,
+  online, bytes; `gateway.wireguard.peer_added` posted.
+- **UPnP**: miniupnpd installed, enabled with secure mode; plab-c1 opened TCP/UDP ports with `upnpc` (the lab's WAN is
+  behind the home router, so miniupnpd needs `use_stun`, set by hand in the lab); Perch lists them with the device,
+  deletes one, and "Block UPnP" puts a deny rule on top and closes the device's open port.
+- **DDNS**: ddns-scripts installed; a custom-URL service (plain-URL warning) failing on the lab's private address
+  raised `gateway.ddns.update_failed`; with `ip_source web` and a fake provider on plab-ctl, "Update now" reached it and
+  the alert resolved.
+- **Webhooks**: a Standard Webhooks destination on plab-ctl got the test delivery with a valid signature.
+
+Fixed on the way (each with tests):
+1. **netifd never loaded WireGuard** installed by Perch (`proto none, NO_DEVICE`): netifd reads protocol handlers only
+   at start. A package job that adds one now restarts netifd after its reply, inside the confirm window
+   (`restartsNetwork`). Collector 6ebb905.
+2. **A new peer never reached the kernel**: peers are `wireguard_<iface>` sections, which netifd's reload does not
+   compare. The plane now runs `ifup` on such interfaces after the commit and after a rollback. Collector bad5896.
+3. **"Block UPnP" left the port open and invisible**: the block's own config change restarts miniupnpd, whose lease
+   reload the new deny refuses, so the lease line goes but the nftables rules stay; Perch read only the lease file. The
+   observation now reports DNAT rules without a lease line (marked "open without a lease"), and the delete removes such
+   rules and restarts miniupnpd once. Collector e201993, a270210.
+4. **Installs failed when one feed mirror did not answer** (two of the package CDN's four addresses were unreachable
+   from here; `opkg update` exits non-zero on one failed feed): the job goes on with the lists at hand and the
+   simulation decides. Collector e4e0089.
+5. **"Installed" trusted leftover config**: OpenWrt keeps a package's conffile after removal, so WireGuard, DDNS and UPnP
+   pages offered writes the router could not run. The agent's package report wins when it watches the package.
+   Controller 04e8b4a.
+6. **A protected job with no visible change**: newly claimed anonymous sections (the firewall `defaults`) are adopted
+   under `perch_<id>`; the plan now lists the rename (`renamedFrom`, "renamed from …" in the diff). Controller aceded1.
+
+Not covered in the lab yet (owner actions): the Wi-Fi plane (needs `mac80211_hwsim`), agent updates (needs the release
+key), Web Push (a phone). Open: DDNS shows the last error line of a run, not its cause.
