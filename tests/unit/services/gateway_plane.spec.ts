@@ -459,7 +459,16 @@ test.group('gateway plane | DNS records domain', () => {
     assert.isTrue(claim(sections[0]))
     assert.isTrue(claim(sections[1]))
     assert.isFalse(claim({ ...sections[0], options: { name: 'x' } }))
-    assert.isFalse(claim({ ...sections[0], type: 'host' }))
+    // Gateway sync (domains.md 6): a MAC-less host is a DNS name (record type `host`);
+    // a host with a MAC stays a reservation (`dhcp_hosts`).
+    assert.isTrue(claim({ ...sections[0], type: 'host' }))
+    assert.isFalse(
+      claim({
+        ...sections[0],
+        type: 'host',
+        options: { ...sections[0].options, mac: '02:00:00:00:00:09' },
+      })
+    )
     assert.isTrue(checkRoundTrip(dnsRecordsDomain, sections).ok)
     const [a] = dnsRecordsDomain.parse(sections)
     assert.deepEqual(a.extra, { comment: 'kept' })
