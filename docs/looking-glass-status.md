@@ -2931,3 +2931,55 @@ batch A. Migrations 140–142.
   `wan` is not the one in effect). The live collector (1.1.0-pre.3) announces no features yet, so until it is
   updated `wan` claims nothing and the WAN page is read-only (`capability_missing`).
 
+
+## 2026-09-30 — Four-area build: Wi-Fi plane, gateway sync, agent updates, alerts (branch `four/integration`, not live)
+
+Owner: "Yes, let's work on WiFi settings managed by controller… Also 3, and 4… webhooks + push notifications".
+Designs in the workspace's `docs/design/{wifi,gateway-sync,agent-updates,alerts}/`; the coordinator's reconciliation
+and every agent's report are in `docs/design/BUILD-PLAN-2026-09-30.md` (it wins over the designs). Owner decisions:
+the owner holds the Ed25519 release key (never on CI or the controller); self-update on, notify only, allowed over plain
+HTTP (the signature is the trust); GitHub Releases + the owner's signature are the distribution; mwan3/pbr stay
+read-only (decision 12); Wi-Fi applies confirm by the AP's own health check (no "Keep changes" click, except uplink
+changes). Built by per-area agents on `<area>/build`, merged by the coordinator into `four/integration` in every repo
+(local only, nothing pushed). Migrations 125–179.
+
+- **Wi-Fi config plane.** Kit `openwrt/plane` (+ `redact.go`: `public_key` is not a secret); perch-apd applies Wi-Fi
+  under one write lock per AP (`applylock`, shared with device groups and updates), reports radio facts and
+  capabilities, confirms with its own health check. Controller: AP links and fleet fingerprint, networks with
+  passphrases and memberships, radios, divergences, adoption, rollouts one AP at a time (stop at the first failure;
+  retry, skip, roll back; an offline AP is skipped and caught up), drift and Authoritative Mode, `/settings/wifi-config`.
+  Per-AP routes live under `/wifi/config/aps/…`. Not built: pairing for signed plain-HTTP writes (phase 3; the live APs
+  use verified TLS) and VLAN bindings.
+- **Gateway sync.** Phase A (claims, re-homing, the ambiguity flow, firewall defaults, DNS host records, the multi-WAN
+  read view) and B (router-side apply checks with "Keep anyway", the `wan` domain, WAN REST, transitions) are in the
+  sections above. Phase C (coordinator): WireGuard (servers, client links, peers; keys made on the router through the
+  core's generated secrets, a `gen:` placeholder that is imported and never generated twice; one-time client configs
+  that are never stored), IPv6 (ULA, per-LAN assignment and RA/DHCPv6/NDP), UPnP (settings, ACL with order, delete
+  mappings, block a device) and DDNS (services, update now). No `wg_handshake` checks yet. Collector C2/C4/C5: key
+  generation, WireGuard/DDNS/IPv6-prefix observation, UPnP delete and DDNS update behind the write gate,
+  `config-guard --overdue` from cron.
+- **Agent updates.** Kit `update/` (signature, versions, preflight, download, watchdog and boot guard) in both daemons;
+  controller releases (GitHub mirror + uploaded local builds), devices, jobs, rollouts (canary → batches, maintenance
+  window, pause on failure). Release tooling: `perch-release`, `sign-release.sh` rebuilds in a clean clone and refuses
+  anything not byte-identical (OpenWrt packages compared by content). Verified end to end in throwaway containers
+  (package update, never-confirming build rolled back, reboot mid-check restored).
+- **Alerts.** Event core, inbox and bell, rules, routing, quiet hours, detectors (agents, devices, system, WAN, gateway,
+  ports, portal, scans, gateway sync), Web Push (VAPID, allowlisted push services, renew from the service worker) and
+  webhooks (standard/ntfy/gotify/discord/slack/telegram, Standard Webhooks signing, write-only encrypted URL and secret).
+- **Seams.** The Wi-Fi plane and the gateway apply queue wait while a device updates (`deviceUpdateInFlight`); an
+  update mutes the device's offline alerts for its window; Wi-Fi and update events become alerts; gateway sync posts
+  notices (new WireGuard peer, rotated key, checks kept anyway, multi-WAN writes on, new IPv6 prefix, UPnP ports opened
+  when `upnpOpenedEvents` is on) and its detector raises DDNS failures, DDNS names pointing elsewhere and silent peers.
+- **Dashboard.** Wi-Fi pages, updates pages, alerts inbox and settings, and the gateway pages Internet (WAN editor,
+  every write staged then reviewed with its diff and the router's checks), VPN (QR code from a lazy `qrcode` chunk),
+  IPv6 and Settings → Gateway sync. Checked in a mock harness at 1440 and 390 px.
+- **Tests.** `tests/bootstrap.ts` replaces `testUtils.db()`'s truncate: Lucid's migration lock is MariaDB's
+  server-wide `GET_LOCK`, so parallel suites (and a deploy's migrations) collided; now suites run side by side.
+  Controller full suite on `four/integration`: 1780/1780 (31 min); Go vet and tests green (also on go1.22.12).
+- **Sizes.** perch-apd mipsle 8,847,553 B, 3,102,658 B gzip (budget 3,153,920). The AX23 (jffs2 overlay, 4.1 MiB free)
+  takes a manual swap with ~3.9 MiB left; a self-update keeps its rollback copy in RAM, which needs the running version
+  as a re-fetchable release first.
+
+Next (wave 3, one area at a time, rollbacks first): lab end to end on plab-*, then live. Owner actions: generate the
+release key (`scripts/release-keygen.sh --cold …` in the kit), `sudo modprobe mac80211_hwsim radios=6` for the Wi-Fi
+lab, test push on a phone, the collector's cron line on the hand-installed gateway.
