@@ -332,6 +332,8 @@ function iface(network: string, overrides: Partial<ObservedInterface> = {}): Obs
     gateway6: null,
     dnsServers: [],
     error: null,
+    ipv6Prefixes: [],
+    ipv6Assigned: [],
     ...overrides,
   }
 }

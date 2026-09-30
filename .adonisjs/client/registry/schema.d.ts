@@ -143,72 +143,72 @@ export interface Registry {
     methods: ["POST"]
     pattern: '/api/v1/gateways/:id/wireguard/interfaces'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_sync_services').wgInterfaceCreateValidator)>>
       paramsTuple: [ParamValue]
       params: { id: ParamValue }
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_sync_services').wgInterfaceCreateValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['createInterface']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['createInterface']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['createInterface']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'gatewaySync.wireguardInterfaceUpdate': {
     methods: ["PATCH"]
     pattern: '/api/v1/gateways/:id/wireguard/interfaces/:perchId'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_sync_services').wgInterfacePatchValidator)>>
       paramsTuple: [ParamValue, ParamValue]
       params: { id: ParamValue; perchId: ParamValue }
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_sync_services').wgInterfacePatchValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['updateInterface']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['updateInterface']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['updateInterface']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'gatewaySync.wireguardInterfaceDelete': {
     methods: ["DELETE"]
     pattern: '/api/v1/gateways/:id/wireguard/interfaces/:perchId'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_sync_services').wgConfirmValidator)>>
       paramsTuple: [ParamValue, ParamValue]
       params: { id: ParamValue; perchId: ParamValue }
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_sync_services').wgConfirmValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['deleteInterface']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['deleteInterface']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['deleteInterface']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'gatewaySync.wireguardRotateKey': {
     methods: ["POST"]
     pattern: '/api/v1/gateways/:id/wireguard/interfaces/:perchId/rotate-key'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_sync_services').wgRotateValidator)>>
       paramsTuple: [ParamValue, ParamValue]
       params: { id: ParamValue; perchId: ParamValue }
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_sync_services').wgRotateValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['rotateKey']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['rotateKey']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['rotateKey']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'gatewaySync.wireguardPeerCreate': {
     methods: ["POST"]
     pattern: '/api/v1/gateways/:id/wireguard/interfaces/:perchId/peers'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_sync_services').wgPeerCreateValidator)>>
       paramsTuple: [ParamValue, ParamValue]
       params: { id: ParamValue; perchId: ParamValue }
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_sync_services').wgPeerCreateValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['createPeer']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['createPeer']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['createPeer']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'gatewaySync.wireguardPeerUpdate': {
     methods: ["PATCH"]
     pattern: '/api/v1/gateways/:id/wireguard/peers/:perchId'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_sync_services').wgPeerPatchValidator)>>
       paramsTuple: [ParamValue, ParamValue]
       params: { id: ParamValue; perchId: ParamValue }
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_sync_services').wgPeerPatchValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['updatePeer']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['updatePeer']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['updatePeer']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'gatewaySync.wireguardPeerDelete': {
@@ -239,24 +239,24 @@ export interface Registry {
     methods: ["PATCH"]
     pattern: '/api/v1/gateways/:id/ipv6'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_sync_services').ipv6PatchValidator)>>
       paramsTuple: [ParamValue]
       params: { id: ParamValue }
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_sync_services').ipv6PatchValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_ipv6_controller').default['update']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_ipv6_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_ipv6_controller').default['update']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'gatewaySync.ipv6LanUpdate': {
     methods: ["PATCH"]
     pattern: '/api/v1/gateways/:id/ipv6/lans/:network'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_sync_services').ipv6LanPatchValidator)>>
       paramsTuple: [ParamValue, ParamValue]
       params: { id: ParamValue; network: ParamValue }
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_sync_services').ipv6LanPatchValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_ipv6_controller').default['updateLan']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_ipv6_controller').default['updateLan']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_ipv6_controller').default['updateLan']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'gatewaySync.ambiguities': {
@@ -323,48 +323,48 @@ export interface Registry {
     methods: ["PATCH"]
     pattern: '/api/v1/gateways/:id/upnp/config'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_sync_services').upnpConfigPatchValidator)>>
       paramsTuple: [ParamValue]
       params: { id: ParamValue }
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_sync_services').upnpConfigPatchValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['update']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['update']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'gatewaySync.upnpAclOrder': {
     methods: ["PUT"]
     pattern: '/api/v1/gateways/:id/upnp/acl/order'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_sync_services').upnpAclOrderValidator)>>
       paramsTuple: [ParamValue]
       params: { id: ParamValue }
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_sync_services').upnpAclOrderValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['orderAcl']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['orderAcl']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['orderAcl']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'gatewaySync.upnpAclCreate': {
     methods: ["POST"]
     pattern: '/api/v1/gateways/:id/upnp/acl'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_sync_services').upnpAclCreateValidator)>>
       paramsTuple: [ParamValue]
       params: { id: ParamValue }
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_sync_services').upnpAclCreateValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['createAcl']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['createAcl']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['createAcl']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'gatewaySync.upnpAclUpdate': {
     methods: ["PATCH"]
     pattern: '/api/v1/gateways/:id/upnp/acl/:perchId'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_sync_services').upnpAclPatchValidator)>>
       paramsTuple: [ParamValue, ParamValue]
       params: { id: ParamValue; perchId: ParamValue }
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_sync_services').upnpAclPatchValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['updateAcl']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['updateAcl']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['updateAcl']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'gatewaySync.upnpAclDelete': {
@@ -383,24 +383,24 @@ export interface Registry {
     methods: ["POST"]
     pattern: '/api/v1/gateways/:id/upnp/mappings/delete'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_sync_services').upnpMappingsDeleteValidator)>>
       paramsTuple: [ParamValue]
       params: { id: ParamValue }
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_sync_services').upnpMappingsDeleteValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['deleteMappings']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['deleteMappings']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['deleteMappings']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'gatewaySync.upnpDeviceBlock': {
     methods: ["PUT"]
     pattern: '/api/v1/gateways/:id/upnp/devices/:mac'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_sync_services').upnpDeviceBlockValidator)>>
       paramsTuple: [ParamValue, ParamValue]
       params: { id: ParamValue; mac: ParamValue }
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_sync_services').upnpDeviceBlockValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['blockDevice']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['blockDevice']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['blockDevice']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'gatewaySync.ddns': {
@@ -419,24 +419,24 @@ export interface Registry {
     methods: ["POST"]
     pattern: '/api/v1/gateways/:id/ddns/services'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_sync_services').ddnsServiceCreateValidator)>>
       paramsTuple: [ParamValue]
       params: { id: ParamValue }
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_sync_services').ddnsServiceCreateValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_ddns_controller').default['createService']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_ddns_controller').default['createService']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_ddns_controller').default['createService']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'gatewaySync.ddnsServiceUpdate': {
     methods: ["PATCH"]
     pattern: '/api/v1/gateways/:id/ddns/services/:perchId'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_sync_services').ddnsServicePatchValidator)>>
       paramsTuple: [ParamValue, ParamValue]
       params: { id: ParamValue; perchId: ParamValue }
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_sync_services').ddnsServicePatchValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_ddns_controller').default['updateService']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_ddns_controller').default['updateService']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_ddns_controller').default['updateService']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'gatewaySync.ddnsServiceDelete': {
