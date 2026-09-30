@@ -157,3 +157,36 @@ export const agentUpdateSettingsValidator = vine.compile(
       .optional(),
   })
 )
+
+/** GET /api/v1/agent-updates/rollouts */
+export const rolloutsQueryValidator = vine.compile(
+  vine.object({
+    state: vine.enum(['open', 'all'] as const).optional(),
+    product: vine.enum(PRODUCTS).optional(),
+  })
+)
+
+/** POST /api/v1/agent-updates/rollouts: omitted tunables come from the settings. */
+export const rolloutCreateValidator = vine.compile(
+  vine.object({
+    product: vine.enum(PRODUCTS),
+    version: vine.string().trim().regex(VERSION),
+    deviceKeys: vine.array(vine.string().regex(DEVICE_KEY)).minLength(1).maxLength(500).optional(),
+    canaryKey: vine.string().regex(DEVICE_KEY).optional(),
+    method: vine.enum(['auto', ...UPDATE_METHODS] as const).optional(),
+    batchSize: setting('batchSize'),
+    batchGapSeconds: setting('batchGapSeconds'),
+    canaryObserveMinutes: setting('canaryObserveMinutes'),
+    offlineWaitMinutes: setting('offlineWaitMinutes'),
+    stopOnFailure: vine.boolean().optional(),
+    respectWindow: vine.boolean().optional(),
+    acceptUnrecoverable: vine.boolean().optional(),
+  })
+)
+
+/** POST /api/v1/agent-updates/rollouts/:id/resume */
+export const rolloutResumeValidator = vine.compile(
+  vine.object({
+    skipFailed: vine.boolean().optional(),
+  })
+)

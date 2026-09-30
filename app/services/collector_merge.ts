@@ -147,6 +147,7 @@ export const NON_HISTORY_TABLES = new Set([
   'agent_update_devices',
   'agent_update_jobs',
   'agent_update_events',
+  'agent_update_rollout_devices',
 ])
 const IDENTITY_COLUMNS = ['primary_ip', 'ips', 'first_seen_at', 'last_seen_at']
 const SERVICE_SUMS = ['bytes_served', 'bytes_received', 'packets_served', 'packets_received']

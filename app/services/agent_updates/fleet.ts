@@ -1,6 +1,11 @@
 import AgentArtefact from '#models/agent_artefact'
 import AgentRelease from '#models/agent_release'
 import AgentUpdateJob from '#models/agent_update_job'
+import AgentUpdateRollout, {
+  OPEN_ROLLOUT_STATES,
+  type RolloutState,
+} from '#models/agent_update_rollout'
+import AgentUpdateRolloutDevice from '#models/agent_update_rollout_device'
 import { loadAllDevices, reportOf, type DeviceHandle } from '#services/agent_updates/devices'
 import { artefactPath, downloadKey, wireDeviceKey } from '#services/agent_updates/download_tokens'
 import { githubState } from '#services/agent_updates/github'
@@ -81,6 +86,19 @@ export type AgentUpdateDeviceView = {
   activeJob: AgentUpdateJobSummary | null
   lastJob: AgentUpdateJobSummary | null
   manualCommand: ManualCommand | null
+  /**
+   * The open rollout that still has to update this device (pending or running
+   * there): `state` is the rollout's, `deviceState` the device's in it. Manual
+   * updates are refused meanwhile (`rollout_owns_device`).
+   */
+  rollout: RolloutMembership | null
+}
+
+export type RolloutMembership = {
+  id: number
+  state: RolloutState
+  deviceState: 'pending' | 'running'
+  isCanary: boolean
 }
 
 export type FleetContext = {
@@ -257,7 +275,8 @@ function installKindView(value: string | null): InstallKindView | null {
 export async function deviceView(
   device: DeviceHandle,
   context: FleetContext,
-  jobs: { active: AgentUpdateJob | null; last: AgentUpdateJob | null }
+  jobs: { active: AgentUpdateJob | null; last: AgentUpdateJob | null },
+  rollout: RolloutMembership | null = null
 ): Promise<AgentUpdateDeviceView> {
   const support = selfUpdateSupport(device)
   const report = support.report
@@ -323,7 +342,44 @@ export async function deviceView(
     activeJob: jobs.active ? jobSummary(jobs.active) : null,
     lastJob: jobs.last ? jobSummary(jobs.last) : null,
     manualCommand: support.supported ? null : await manualCommandFor(device, context),
+    rollout,
   }
+}
+
+/** Device key → the open rollout that still has to update it. */
+export async function rolloutMemberships(): Promise<Map<string, RolloutMembership>> {
+  const open = await AgentUpdateRollout.query().whereIn('state', [...OPEN_ROLLOUT_STATES])
+  const out = new Map<string, RolloutMembership>()
+  if (open.length === 0) return out
+  const byId = new Map(open.map((rollout) => [rollout.id, rollout]))
+  const rows = await AgentUpdateRolloutDevice.query()
+    .whereIn('rollout_id', [...byId.keys()])
+    .whereIn('state', ['pending', 'running'])
+  for (const row of rows) {
+    const key = row.apId !== null ? `ap:${row.apId}` : `collector:${row.collectorId}`
+    out.set(key, {
+      id: row.rolloutId,
+      state: byId.get(row.rolloutId)!.state,
+      deviceState: row.state as 'pending' | 'running',
+      isCanary: row.isCanary,
+    })
+  }
+  return out
+}
+
+/** `AgentFleet.openRollouts`. */
+export async function openRolloutSummaries(product?: AgentProduct) {
+  const query = AgentUpdateRollout.query()
+    .whereIn('state', [...OPEN_ROLLOUT_STATES])
+    .orderBy('id')
+  if (product) query.where('product', product)
+  const rows = await query
+  return rows.map((rollout) => ({
+    id: rollout.id,
+    product: rollout.product,
+    version: rollout.version,
+    state: rollout.state,
+  }))
 }
 
 export async function fleetContext(
@@ -395,10 +451,16 @@ export async function buildFleet(
   const all = await loadAllDevices()
   const devices = all.filter((device) => !options.product || device.product === options.product)
   const jobs = await jobsByDevice(devices)
+  const memberships = await rolloutMemberships()
   const views: AgentUpdateDeviceView[] = []
   for (const device of devices) {
     views.push(
-      await deviceView(device, context, jobs.get(device.key) ?? { active: null, last: null })
+      await deviceView(
+        device,
+        context,
+        jobs.get(device.key) ?? { active: null, last: null },
+        memberships.get(device.key) ?? null
+      )
     )
   }
   const github = await githubState()
@@ -421,8 +483,7 @@ export async function buildFleet(
     lastGithubCheckAt: github.lastCheckAt,
     githubCheck: settings.githubCheck,
     window: windowView(settings, timezone, now),
-    // Rollouts are work package S3.
-    openRollouts: [] as { id: number; product: AgentProduct; version: string; state: string }[],
+    openRollouts: await openRolloutSummaries(options.product),
   }
 }
 

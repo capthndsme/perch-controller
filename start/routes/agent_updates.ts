@@ -19,6 +19,7 @@ import { middleware } from '#start/kernel'
 const AgentUpdatesController = () => import('#controllers/agent_updates_controller')
 const AgentReleasesController = () => import('#controllers/agent_releases_controller')
 const AgentArtefactsController = () => import('#controllers/agent_artefacts_controller')
+const AgentRolloutsController = () => import('#controllers/agent_rollouts_controller')
 
 router
   .group(() => {
@@ -36,6 +37,8 @@ router
         router.get('events', [AgentUpdatesController, 'events']).as('events')
         router.get('releases', [AgentReleasesController, 'index']).as('releases')
         router.get('releases/:id', [AgentReleasesController, 'show']).as('release')
+        router.get('rollouts', [AgentRolloutsController, 'index']).as('rollouts')
+        router.get('rollouts/:id', [AgentRolloutsController, 'show']).as('rollout')
         router
           .group(() => {
             router
@@ -61,6 +64,14 @@ router
               .as('uploadReleaseFile')
             router.patch('releases/:id', [AgentReleasesController, 'update']).as('updateRelease')
             router.delete('releases/:id', [AgentReleasesController, 'destroy']).as('destroyRelease')
+            router.post('rollouts', [AgentRolloutsController, 'store']).as('storeRollout')
+            router.post('rollouts/:id/pause', [AgentRolloutsController, 'pause']).as('pauseRollout')
+            router
+              .post('rollouts/:id/resume', [AgentRolloutsController, 'resume'])
+              .as('resumeRollout')
+            router
+              .post('rollouts/:id/cancel', [AgentRolloutsController, 'cancel'])
+              .as('cancelRollout')
           })
           .use(middleware.requireAdmin())
       })

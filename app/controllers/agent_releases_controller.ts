@@ -1,3 +1,5 @@
+import AgentUpdateRollout, { OPEN_ROLLOUT_STATES } from '#models/agent_update_rollout'
+import { pauseRolloutsOfRelease } from '#services/agent_updates/rollouts'
 import AgentArtefact from '#models/agent_artefact'
 import AgentRelease from '#models/agent_release'
 import AgentUpdateJob from '#models/agent_update_job'
@@ -220,6 +222,8 @@ export default class AgentReleasesController {
         userId: auth.user?.id ?? null,
         detail: { product: release.product, version: release.version },
       })
+      // A withdrawn release stops its rollouts (resume once it is restored).
+      if (payload.withdrawn) await pauseRolloutsOfRelease(release.id, auth.user?.id ?? null)
     }
     const settings = await getAgentUpdateSettings()
     const artefacts = await AgentArtefact.query().where('release_id', release.id).orderBy('id')
@@ -235,9 +239,12 @@ export default class AgentReleasesController {
     const openJobs = await AgentUpdateJob.query()
       .where('release_id', release.id)
       .whereNotNull('active_key')
+    const openRollouts = await AgentUpdateRollout.query()
+      .where('release_id', release.id)
+      .whereIn('state', [...OPEN_ROLLOUT_STATES])
     const usage = {
       jobs: openJobs.length,
-      rollouts: 0,
+      rollouts: openRollouts.length,
       devices: running[release.product].filter((version) => version === release.version).length,
     }
     if (usage.jobs > 0 || usage.rollouts > 0 || usage.devices > 0) {

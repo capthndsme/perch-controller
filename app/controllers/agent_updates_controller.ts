@@ -5,7 +5,13 @@ import { AgentOfflineError } from '#services/agent_hub'
 import { recordUpdateReport } from '#services/agent_updates/bridge'
 import { ensureDeviceRow, loadDevice, type DeviceHandle } from '#services/agent_updates/devices'
 import { recordUpdateEvent } from '#services/agent_updates/events'
-import { buildFleet, deviceView, fleetContext, jobsByDevice } from '#services/agent_updates/fleet'
+import {
+  buildFleet,
+  deviceView,
+  fleetContext,
+  jobsByDevice,
+  rolloutMemberships,
+} from '#services/agent_updates/fleet'
 import {
   JobError,
   abortJob,
@@ -19,6 +25,7 @@ import {
   selfUpdateSupport,
 } from '#services/agent_updates/jobs'
 import { parseExtraKey } from '#services/agent_updates/keys'
+import { rolloutOwning } from '#services/agent_updates/rollouts'
 import { hubFor, sessionState } from '#services/agent_updates/sessions'
 import {
   agentUpdateSettingsView,
@@ -241,6 +248,17 @@ export default class AgentUpdatesController {
       const support = selfUpdateSupport(device)
       if (!support.supported) throw unsupported(support.reason)
       const plan = await planUpdate(device, support.report, payload.version, payload.method)
+      const owner = await rolloutOwning(device.kind, device.id)
+      if (owner) {
+        throw new JobError(
+          409,
+          'rollout_owns_device',
+          `Rollout #${owner.id} still has to update this device.`,
+          {
+            rolloutId: owner.id,
+          }
+        )
+      }
       const open = await openJobFor(device.kind, device.id)
       if (open) {
         throw new JobError(409, 'update_in_progress', 'This device already has an open update.', {
@@ -405,7 +423,13 @@ async function freshDeviceView(kind: DeviceKind, id: number, request: HttpContex
   const settings = await getAgentUpdateSettings()
   const context = await fleetContext(settings, controllerUrl(request))
   const jobs = await jobsByDevice([device])
-  return deviceView(device, context, jobs.get(device.key) ?? { active: null, last: null })
+  const memberships = await rolloutMemberships()
+  return deviceView(
+    device,
+    context,
+    jobs.get(device.key) ?? { active: null, last: null },
+    memberships.get(device.key) ?? null
+  )
 }
 
 async function userNames(ids: Array<number | null>): Promise<Map<number, string>> {

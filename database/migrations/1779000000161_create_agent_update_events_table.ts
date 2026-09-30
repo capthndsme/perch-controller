@@ -7,8 +7,8 @@ import { BaseSchema } from '@adonisjs/lucid/schema'
  * 16's `agent_update.*` plus the audit-only ones (`job_created`,
  * `release_imported`, …). Pruned after the `historyDays` setting.
  *
- * `rollout_id` has no foreign key yet: `agent_update_rollouts` is migration
- * 159 (work package S3), which adds the constraint.
+ * `rollout_id` gets its foreign key in migration 162 (`agent_update_rollouts`
+ * is 159).
  */
 export default class extends BaseSchema {
   async up() {

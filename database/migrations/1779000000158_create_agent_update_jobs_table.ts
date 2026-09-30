@@ -12,8 +12,8 @@ import { BaseSchema } from '@adonisjs/lucid/schema'
  *   (`device_name` is a snapshot).
  * - `release_id` is SET NULL rather than the design's RESTRICT: a release may
  *   be deleted once nothing open uses it; a final job keeps `to_version`.
- * - `rollout_id` has no foreign key yet: `agent_update_rollouts` is migration
- *   159 (work package S3), which adds the constraint.
+ * - `rollout_id` gets its foreign key in migration 162, after
+ *   `agent_update_rollouts` (159) exists.
  */
 export default class extends BaseSchema {
   async up() {

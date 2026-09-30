@@ -78,12 +78,21 @@ export function windowNotBefore(
   return nextWindowStart(settings, timezone, now) ?? now
 }
 
-/** `AgentFleet.window`. */
+/**
+ * `AgentFleet.window`: whether it is open, when it opens next (or, while
+ * open, closes), and its days and hours, so a viewer who cannot read the
+ * admin-only settings still sees the schedule.
+ */
 export function windowView(settings: WindowSettings, timezone: string, now = DateTime.utc()) {
+  const current = currentWindow(settings, timezone, now)
   return {
     enabled: settings.windowEnabled,
     open: isWindowOpen(settings, timezone, now),
     nextStart: nextWindowStart(settings, timezone, now)?.toISO() ?? null,
+    closesAt: current?.end.toISO() ?? null,
+    days: [...settings.windowDays],
+    start: settings.windowStart,
+    end: settings.windowEnd,
     timezone,
   }
 }

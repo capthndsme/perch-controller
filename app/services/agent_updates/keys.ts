@@ -45,7 +45,9 @@ export function trustedKeys(settings: Pick<AgentUpdateSettings, 'extraTrustedKey
   for (const line of settings.extraTrustedKeys) {
     const parsed = parseExtraKey(line)
     if (!parsed || keys.some((key) => key.keyId === parsed.keyId)) continue
-    keys.push({ ...parsed, label: parsed.comment ?? `Extra key ${parsed.keyId}`, builtIn: false })
+    // signify-openbsd writes "<comment> public key" into a .pub file's comment.
+    const label = parsed.comment?.replace(/ public key$/, '') || `Extra key ${parsed.keyId}`
+    keys.push({ ...parsed, label, builtIn: false })
   }
   return keys
 }

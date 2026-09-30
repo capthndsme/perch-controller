@@ -12,7 +12,9 @@ type Client = QueryClientContract | TransactionClientContract
  *   without one the removed side's row moves over;
  * - `agent_update_jobs`: every job moves (history); when both sides have an
  *   open job, the removed side's is cancelled first (one open job per device);
- * - `agent_update_events`: every row moves.
+ * - `agent_update_events`: every row moves;
+ * - `agent_update_rollout_devices`: every row moves, except where the
+ *   survivor is in the same rollout already (the survivor's row stays).
  */
 export async function repointAgentUpdates(
   trx: Client,
@@ -62,6 +64,23 @@ export async function repointAgentUpdates(
     .update({ collector_id: survivorId })
   await trx
     .from('agent_update_events')
+    .where('collector_id', removedId)
+    .update({ collector_id: survivorId })
+
+  const shared = (await trx
+    .from('agent_update_rollout_devices')
+    .where('collector_id', survivorId)
+    .select('rollout_id')) as Array<{ rollout_id: number }>
+  const rollouts = shared.map((row) => row.rollout_id)
+  if (rollouts.length > 0) {
+    await trx
+      .from('agent_update_rollout_devices')
+      .where('collector_id', removedId)
+      .whereIn('rollout_id', rollouts)
+      .delete()
+  }
+  await trx
+    .from('agent_update_rollout_devices')
     .where('collector_id', removedId)
     .update({ collector_id: survivorId })
 }

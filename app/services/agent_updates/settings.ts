@@ -192,9 +192,16 @@ export function agentUpdateSettingsView(settings: AgentUpdateSettings) {
   return {
     settings,
     defaults: AGENT_UPDATE_DEFAULTS,
+    // Numbers: { min, max }; choices: { options }; times: { pattern } (HH:MM
+    // in the instance time zone); lists: their item range and length.
     limits: {
       ...AGENT_UPDATE_LIMITS,
-      windowDays: { min: 0, max: 6 },
+      defaultChannel: { options: [...CHANNELS] },
+      autoUpdateAp: { options: [...AUTO_UPDATE_MODES] },
+      autoUpdateCollector: { options: [...AUTO_UPDATE_MODES] },
+      windowStart: { pattern: 'HH:MM' },
+      windowEnd: { pattern: 'HH:MM' },
+      windowDays: { min: 0, max: 6, maxItems: 7 },
       extraTrustedKeys: { max: MAX_EXTRA_TRUSTED_KEYS },
     },
   }

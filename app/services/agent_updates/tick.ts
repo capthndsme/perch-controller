@@ -22,6 +22,7 @@ import {
   startQueuedJob,
 } from '#services/agent_updates/jobs'
 import { runningVersions } from '#services/agent_updates/releases'
+import { advanceRollouts, autoUpdate } from '#services/agent_updates/rollouts'
 import { getAgentUpdateSettings, type AgentUpdateSettings } from '#services/agent_updates/settings'
 import { refreshInFlight } from '#services/agent_updates/state'
 import { deleteStoredArtefact } from '#services/agent_updates/store'
@@ -35,19 +36,22 @@ import { DateTime } from 'luxon'
  * One pass of agent updates (controller.md section 5.2), every 5 s from
  * `app/tasks/agent_updates_tick.task.ts`: rebuild the in-flight set, stage
  * queued jobs whose time has come, install staged ones, run the confirm
- * checks, mark overdue jobs `unknown`, expire old queued jobs; then, when
- * due, the GitHub check (in the background), the `agent_update.available`
- * notices and the daily retention. Rollouts and auto-update join in S3.
+ * checks, mark overdue jobs `unknown`, expire old queued jobs, one step of
+ * every open rollout; then, when due, auto-update (inside the maintenance
+ * window only), the GitHub check (in the background), the
+ * `agent_update.available` notices and the daily retention.
  */
 
 const ANNOUNCED_KEY = 'agent_updates_announced'
 const MAX_ANNOUNCED = 200
 const AVAILABILITY_EVERY_MS = 10 * 60_000
 const RETENTION_EVERY_MS = 24 * 3600_000
+const AUTO_UPDATE_EVERY_MS = 60_000
 
 let githubRunning = false
 let lastAvailabilityAt = 0
 let lastRetentionAt = 0
+let lastAutoUpdateAt = 0
 
 export async function agentUpdatesTick(now: DateTime = DateTime.utc()): Promise<void> {
   await refreshInFlight()
@@ -89,6 +93,13 @@ export async function agentUpdatesTick(now: DateTime = DateTime.utc()): Promise<
 
   await markOverdue(settings, now)
   await expireQueued(settings, now)
+  await advanceRollouts(settings, now)
+  if (Date.now() - lastAutoUpdateAt >= AUTO_UPDATE_EVERY_MS) {
+    lastAutoUpdateAt = Date.now()
+    await autoUpdate(settings, now).catch((error) =>
+      logger.error({ err: error }, 'agent_updates: auto-update failed')
+    )
+  }
 
   await maybeCheckGithub(settings, now)
   if (Date.now() - lastAvailabilityAt >= AVAILABILITY_EVERY_MS) {
@@ -279,5 +290,6 @@ export async function runRetention(settings: AgentUpdateSettings, now = DateTime
 export function _resetTickSchedule(): void {
   lastAvailabilityAt = 0
   lastRetentionAt = 0
+  lastAutoUpdateAt = 0
   githubRunning = false
 }
