@@ -98,10 +98,72 @@ test.group('alerts catalogue', () => {
     for (const type of EXPECTED) assert.equal(getAlertType(type)!.owner, 'alerts')
   })
 
-  test('the other areas start with empty catalogue files', ({ assert }) => {
-    assert.deepEqual(wifi, [])
-    assert.deepEqual(gatewaySync, [])
-    assert.deepEqual(agentUpdates, [])
+  test('each area file holds only its own types, in its namespace', ({ assert }) => {
+    const areas: Array<[AlertTypeDef[], AlertTypeDef['owner'], RegExp]> = [
+      [wifi, 'wifi', /^wifi\./],
+      [gatewaySync, 'gateway-sync', /^(gateway|wan)\./],
+      [agentUpdates, 'agent-updates', /^agent_update\./],
+    ]
+    for (const [defs, owner, namespace] of areas) {
+      for (const def of defs) {
+        assert.equal(def.owner, owner, def.type)
+        assert.match(def.type, namespace)
+      }
+    }
+  })
+
+  test('agent-update types: one per alert event of the updates area, rendered from its payload', ({
+    assert,
+  }) => {
+    assert.sameMembers(
+      agentUpdates.map((d) => d.type),
+      [
+        'agent_update.available',
+        'agent_update.started',
+        'agent_update.confirmed',
+        'agent_update.failed',
+        'agent_update.rolled_back',
+        'agent_update.unknown',
+        'agent_update.rollback_failed',
+        'agent_update.rollback_unavailable',
+        'agent_update.rollout_paused',
+        'agent_update.rollout_completed',
+        'agent_update.release_rejected',
+        'agent_update.version_changed',
+      ]
+    )
+    const device = { kind: 'ap', id: 4, name: 'Garage AP' }
+    const payload = {
+      device,
+      devices: [device, { kind: 'ap', id: 3, name: 'RAX 1F' }],
+      product: 'perch-apd',
+      version: '1.2.0',
+      fromVersion: '1.1.0',
+      toVersion: '1.2.0',
+      rolloutId: 7,
+      seconds: 44,
+      reason: 'health_check',
+      detail: 'no WebSocket within 60 s',
+      confirmed: 3,
+      skipped: 0,
+      source: 'github',
+      runningVersion: '1.2.0',
+    }
+    for (const def of agentUpdates) {
+      const text = renderAlert(def, input(def, { payload }), ctx('opened'))
+      assert.isAbove(text.title.length, 5, def.type)
+      assert.notInclude(`${text.title} ${text.body}`, 'undefined', def.type)
+      assert.notInclude(`${text.title} ${text.body}`, '[object', def.type)
+    }
+    const started = getAlertType('agent_update.started')!
+    assert.isFalse(catalogueRule(started).notify)
+    const confirmed = renderAlert(
+      getAlertType('agent_update.confirmed')!,
+      input(getAlertType('agent_update.confirmed')!, { payload }),
+      ctx('opened')
+    )
+    assert.equal(confirmed.title, 'Garage AP updated to 1.2.0')
+    assert.equal(confirmed.path, '/settings/updates/rollouts/7')
   })
 
   test('a duplicate type name throws when the catalogue is built', ({ assert }) => {
