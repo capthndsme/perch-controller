@@ -505,11 +505,13 @@ test.group('gateway sync | WAN and apply checks', (group) => {
     assert,
   }) => {
     const { adminToken } = await seedSetupComplete()
+    // The route registry types this controller's answer as `void | …`: read bodies untyped.
+    const body = (res: { body(): unknown }) => res.body() as any
     const r = await client.get('/api/v1/settings/gateway-sync').bearerToken(adminToken)
     r.assertStatus(200)
-    assert.equal(r.body().data.settings.authoritativeWan, 'import')
-    assert.equal(r.body().data.defaults.wanConfirmTimeoutSeconds, 300)
-    assert.deepEqual(r.body().data.limits.wanConfirmTimeoutSeconds, { min: 120, max: 1800 })
+    assert.equal(body(r).data.settings.authoritativeWan, 'import')
+    assert.equal(body(r).data.defaults.wanConfirmTimeoutSeconds, 300)
+    assert.deepEqual(body(r).data.limits.wanConfirmTimeoutSeconds, { min: 120, max: 1800 })
     const bad = await client
       .patch('/api/v1/settings/gateway-sync')
       .bearerToken(adminToken)
@@ -525,7 +527,7 @@ test.group('gateway sync | WAN and apply checks', (group) => {
       .bearerToken(adminToken)
       .json({ checkTargets: ['$gateway', '9.9.9.9'], authoritativeWan: 'enforce' })
     ok.assertStatus(200)
-    assert.deepEqual(ok.body().data.settings.checkTargets, ['$gateway', '9.9.9.9'])
+    assert.deepEqual(body(ok).data.settings.checkTargets, ['$gateway', '9.9.9.9'])
     const noPassword = await client
       .patch('/api/v1/settings/gateway-sync')
       .bearerToken(adminToken)
@@ -536,7 +538,7 @@ test.group('gateway sync | WAN and apply checks', (group) => {
       .bearerToken(adminToken)
       .json({ multiWanWrites: true, currentPassword: PASSWORD })
     on.assertStatus(200)
-    assert.isTrue(on.body().data.settings.multiWanWrites)
+    assert.isTrue(body(on).data.settings.multiWanWrites)
   })
 
   test('WAN transitions from the interfaces observation', async ({ client, assert }) => {
