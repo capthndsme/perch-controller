@@ -192,7 +192,9 @@ export type ApConfig = {
   observedAt: string | null
   luciPending: boolean
   uncommitted: string[]
-  // GET /wifi/aps/:apId only:
+  /** The hostapd build's features (every row, so editors check each AP); null until read. */
+  features: Partial<Record<HostapdFeature, boolean>> | null
+  // GET /wifi/config/aps/:apId only:
   capabilities?: WifiCapabilities | null
   managementPath?: (ManagementPath & { radios?: string[] }) | null
 }
@@ -297,6 +299,8 @@ export type WifiRadio = {
   status: SectionStatus
   protected: boolean
   networks: Array<{ id: number; name: string; ssid: string }>
+  /** Connected clients on this radio now. */
+  clients: number | null
 }
 
 export type DivergenceKind = 'option' | 'removed' | 'added' | 'unassigned' | 'country'
@@ -316,6 +320,9 @@ export type WifiDivergence = {
   apValue: unknown
   routerAuthor: GatewaySection['routerAuthor']
   detectedAt: string
+  /** Set on resolved ones (`?open=0`). */
+  resolvedAt?: string | null
+  resolution?: DivergenceResolution | 'auto' | null
   resolutions: DivergenceResolution[]
 }
 
@@ -416,7 +423,8 @@ export type NetworkCreate = {
   groups?: boolean
 }
 
-export type NetworkPatch = Partial<NetworkCreate>
+/** Weakening a network (security down, isolation off) needs the admin's password. */
+export type NetworkPatch = Partial<NetworkCreate> & { currentPassword?: string }
 
 export type NetworkApPut = {
   included?: boolean | null
@@ -447,7 +455,13 @@ export type ApPatch = {
 }
 
 export type PassphraseMatch = { apId: number; radio: string; match: boolean }
-export type PassphraseResult = { network: WifiNetwork; matches: PassphraseMatch[] }
+/** With `force`, mismatching APs get the passphrase by a rollout. */
+export type PassphraseResult = {
+  network: WifiNetwork
+  matches: PassphraseMatch[]
+  rollout: WifiRollout | null
+  rolloutError: { error: string; message: string } | null
+}
 
 export type ResolveDivergenceItem = { id: number; resolution: DivergenceResolution; passphrase?: string }
 export type ResolveDivergencesResult = {
@@ -456,10 +470,23 @@ export type ResolveDivergencesResult = {
   rolloutError: { error: string; message: string } | null
 }
 
-export type RolloutPreviewRequest = { networkIds?: number[]; apIds?: number[]; perchIds?: string[] }
+/**
+ * `draft`: a network edit not saved yet (and its per-AP changes); the
+ * controller renders it in memory and stores nothing.
+ */
+export type RolloutPreviewRequest = {
+  networkIds?: number[]
+  apIds?: number[]
+  perchIds?: string[]
+  draft?: {
+    network: Partial<NetworkCreate> & { id?: number | null }
+    aps?: Array<NetworkApPut & { apId: number }>
+  }
+}
 export type RolloutRequest = {
   networkIds?: number[]
   apIds?: number[]
+  perchIds?: string[]
   order?: number[]
   confirmMode?: ConfirmMode
   offlinePolicy?: 'skip' | 'wait'
@@ -527,12 +554,27 @@ export type AdoptionAccept = {
     merge?: string[]
     choices?: Record<string, unknown>
     exclude?: boolean
+    /** Verified against every member's fingerprint; stored when all match. */
+    passphrase?: string
   }>
   countryDefault?: string | null
   countries?: Record<number, CountryPolicy>
 }
 
-export type AdoptionResult = { networks: WifiNetwork[]; divergences: number }
+export type AdoptionResult = {
+  networks: WifiNetwork[]
+  divergences: number
+  /** One entry per proposal that came with a passphrase. */
+  passphrases?: Array<{ key: string; networkId: number; stored: boolean; matches: PassphraseMatch[] }>
+}
+
+/** `POST …/revisions/:number/restore[?apply=0]`. */
+export type RestoreResult = {
+  perchIds: string[]
+  changes: ConfigDiffEntry[]
+  rollout: WifiRollout | null
+  rolloutError: { error: string; message: string } | null
+}
 
 // ── Settings → Wi-Fi management (controller.md 8) ───────────────────────────
 

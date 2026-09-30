@@ -35,6 +35,7 @@ import type {
   Paged,
   PassphraseResult,
   RadioPatch,
+  RestoreResult,
   ResolveDivergenceItem,
   ResolveDivergencesResult,
   RolloutAction,
@@ -64,7 +65,8 @@ const apKey = (apId: number) => [...wifiConfigKey, 'ap', apId] as const
 const monitoringKey = ['wifi'] as const
 
 const V1 = '/api/v1'
-const apBase = (apId: number) => `${V1}/wifi/aps/${apId}`
+/** The per-AP plane lives under `/wifi/config/aps` (`/wifi/aps` is the monitoring pages'). */
+const apBase = (apId: number) => `${V1}/wifi/config/aps/${apId}`
 
 function json(method: string, body?: unknown): RequestInit {
   return { method, body: body === undefined ? undefined : JSON.stringify(body) }
@@ -104,12 +106,12 @@ export function useWifiConfig(options: { enabled?: boolean } = {}) {
   })
 }
 
-/** `GET /wifi/aps`: agent APs with their plane state (scraped rows omitted). */
+/** `GET /wifi/config/aps`: agent APs with their plane state (scraped rows omitted). */
 export function useApConfigs(options: { enabled?: boolean } = {}) {
   const signedIn = useSignedIn()
   return useQuery({
     queryKey: [...wifiConfigKey, 'aps'] as const,
-    queryFn: () => apiFetch<ApConfig[]>(`${V1}/wifi/aps`),
+    queryFn: () => apiFetch<ApConfig[]>(`${V1}/wifi/config/aps`),
     enabled: signedIn && options.enabled !== false,
     refetchInterval: (query) => ((query.state.data ?? []).some((ap) => ap.pendingApply) ? 2_000 : 15_000),
     retry: false,
@@ -125,7 +127,7 @@ function apConfigQuery(apId: number, enabled: boolean) {
   } as const
 }
 
-/** `GET /wifi/aps/:apId`, with capabilities and the management path. */
+/** `GET /wifi/config/aps/:apId`, with capabilities and the management path. */
 export function useApConfig(apId: number | null) {
   return useQuery(apConfigQuery(apId ?? 0, apId !== null))
 }
@@ -137,10 +139,15 @@ export function useApConfigDetails(apIds: number[]) {
   })
 }
 
+/**
+ * `PATCH /wifi/config/aps/:apId[?apply=0]` → `WriteResult<ApConfig>`: a
+ * country change goes out by a one-AP rollout unless `apply: false`.
+ */
 export function useUpdateApConfig(apId: number) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (patch: ApPatch) => apiFetch<ApConfig>(apBase(apId), json('PATCH', patch)),
+    mutationFn: ({ apply, ...patch }: ApPatch & { apply?: boolean }) =>
+      apiFetch<WriteResult<ApConfig>>(`${apBase(apId)}${applyParam(apply)}`, json('PATCH', patch)),
     onSettled: () => invalidateWifiConfig(queryClient),
   })
 }
@@ -161,7 +168,7 @@ export function useRefreshApConfig(apId: number) {
 export function useApHealth(apId: number, options: { fresh: boolean; enabled?: boolean }) {
   return useQuery({
     queryKey: [...apKey(apId), 'health', options.fresh ? 'fresh' : 'stored'] as const,
-    queryFn: () => apiFetch<WifiHealth>(`${apBase(apId)}/health${options.fresh ? '?fresh=1' : ''}`),
+    queryFn: () => apiFetch<WifiHealth | null>(`${apBase(apId)}/health${options.fresh ? '?fresh=1' : ''}`),
     enabled: options.enabled !== false,
     refetchInterval: options.fresh ? false : 15_000,
     retry: false,
@@ -314,7 +321,7 @@ export function useRestoreApRevision(apId: number) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (input: { number: number; apply?: boolean }) =>
-      apiFetch<{ perchIds: string[]; changes: unknown[]; rollout?: WifiRollout | null }>(
+      apiFetch<RestoreResult>(
         `${apBase(apId)}/revisions/${input.number}/restore${applyParam(input.apply)}`,
         json('POST'),
       ),
@@ -527,10 +534,13 @@ export function useDivergences(filter: DivergenceFilter = { open: true }, option
 export function useResolveDivergences() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (input: { items: ResolveDivergenceItem[]; apply?: boolean }) =>
+    mutationFn: (input: { items: ResolveDivergenceItem[]; apply?: boolean; currentPassword?: string }) =>
       apiFetch<ResolveDivergencesResult>(
         `${V1}/wifi/divergences/resolve${applyParam(input.apply)}`,
-        json('POST', { items: input.items }),
+        json('POST', {
+          items: input.items,
+          ...(input.currentPassword ? { currentPassword: input.currentPassword } : {}),
+        }),
       ),
     onSettled: () => invalidateWifiConfig(queryClient),
   })
@@ -584,6 +594,22 @@ export function useRollouts(options: { limit?: number } = {}) {
     getNextPageParam: (last) => last.nextBefore,
     refetchInterval: (query) =>
       query.state.data?.pages[0]?.items.some((r) => r.state === 'running') ? 3_000 : 15_000,
+  })
+}
+
+/**
+ * `GET /wifi/rollouts/current`: the active rollout (running, paused, or
+ * stopped and waiting for Retry/Skip/Roll back/Cancel), or null. Only one
+ * is active fleet-wide; `/wifi/config`'s `rollout` is the same one.
+ */
+export function useCurrentRollout(options: { enabled?: boolean } = {}) {
+  const signedIn = useSignedIn()
+  return useQuery({
+    queryKey: [...wifiConfigKey, 'rollouts', 'current'] as const,
+    queryFn: () => apiFetch<WifiRollout | null>(`${V1}/wifi/rollouts/current`),
+    enabled: signedIn && options.enabled !== false,
+    refetchInterval: (query) => (query.state.data?.state === 'running' ? 3_000 : 15_000),
+    retry: false,
   })
 }
 
