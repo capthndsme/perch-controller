@@ -10,6 +10,8 @@ import type {
   FirewallDefaultsPatch,
   FirewallDefaultsView,
   GatewayApplyWithChecks,
+  GatewaySyncSettingsPatch,
+  GatewaySyncSettingsView,
   UpnpAclInput,
   UpnpAclPatch,
   UpnpAclRule,
@@ -176,4 +178,29 @@ export function useBlockUpnpDevice(id: number) {
       json('PUT', { blocked: vars.blocked }),
     ),
   )
+}
+
+// ── Settings → Gateway sync (rest.md 11) ────────────────────────────────────
+
+export const gatewaySyncSettingsKey = ['settings', 'gateway-sync'] as const
+
+export function useGatewaySyncSettings() {
+  return useQuery({
+    queryKey: gatewaySyncSettingsKey,
+    queryFn: () => apiFetch<GatewaySyncSettingsView>('/api/v1/settings/gateway-sync'),
+    retry,
+  })
+}
+
+/** Partial: fields left out keep their value. Turning multi-WAN writes on needs `currentPassword`. */
+export function useUpdateGatewaySyncSettings() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (patch: GatewaySyncSettingsPatch) =>
+      apiFetch<GatewaySyncSettingsView>('/api/v1/settings/gateway-sync', json('PATCH', patch)),
+    onSuccess: (data) => {
+      queryClient.setQueryData(gatewaySyncSettingsKey, data)
+      void invalidate(queryClient)
+    },
+  })
 }
