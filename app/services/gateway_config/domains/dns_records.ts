@@ -4,6 +4,7 @@ import type {
   SyncedSection,
   ValidationCtx,
 } from '#services/gateway_config/domain'
+import { flagValue } from '#services/gateway_config/domains/verbatim'
 import type { Issue, UciOptions } from '#services/gateway_config/types'
 
 /**
@@ -17,9 +18,16 @@ import type { Issue, UciOptions } from '#services/gateway_config/types'
  * Reserved names (`wpad`, `localhost`, the router's own name, …) are refused
  * by the REST layer before an edit reaches the draft; this domain's
  * validation covers syntax and collisions.
+ *
+ * Gateway sync (docs/design/gateway-sync/domains.md 6): a `host` with no
+ * `mac`, no `duid`, and a plain `name` and `ip` is a local DNS name, not a
+ * reservation (`dhcp_hosts` claims hosts with a MAC and comes first in the
+ * registry). Record type `host`: Perch owns `name`, `ip` and `dns`;
+ * `hostid`, `leasetime`, `tag` and the rest stay the router's. Identity
+ * `host:<name>`.
  */
 
-export type DnsRecordType = 'a' | 'cname'
+export type DnsRecordType = 'a' | 'cname' | 'host'
 
 export interface DnsRecord {
   perchId: string | null
@@ -78,11 +86,33 @@ export function slugifyLabel(label: string): string {
 const OWNED: Record<DnsRecordType, [string, string]> = {
   a: ['name', 'ip'],
   cname: ['cname', 'target'],
+  host: ['name', 'ip'],
 }
 
-function typeOf(sectionType: string): DnsRecordType | null {
+/** The UCI section type of a record type. */
+export const SECTION_TYPE: Record<DnsRecordType, string> = {
+  a: 'domain',
+  cname: 'cname',
+  host: 'host',
+}
+
+/**
+ * A `dhcp` `host` that is only a DNS name (domains.md 6): no `mac`, no
+ * `duid`, and a plain `name` and `ip`.
+ */
+export function isDnsHost(options: UciOptions): boolean {
+  return (
+    options.mac === undefined &&
+    options.duid === undefined &&
+    scalar(options, 'name') !== null &&
+    scalar(options, 'ip') !== null
+  )
+}
+
+function typeOf(sectionType: string, options?: UciOptions): DnsRecordType | null {
   if (sectionType === 'domain') return 'a'
   if (sectionType === 'cname') return 'cname'
+  if (sectionType === 'host' && (!options || isDnsHost(options))) return 'host'
   return null
 }
 
@@ -94,11 +124,11 @@ function scalar(options: UciOptions, key: string): string | null {
 export const dnsRecordsDomain: ConfigDomain<DnsRecord> = {
   key: 'dns_records',
   configs: ['dhcp'],
-  types: ['domain', 'cname'],
+  types: ['domain', 'cname', 'host'],
 
   claims(section) {
     if (section.config !== 'dhcp') return false
-    const type = typeOf(section.type)
+    const type = typeOf(section.type, section.options)
     if (!type) return false
     const [nameKey, valueKey] = OWNED[type]
     return scalar(section.options, nameKey) !== null && scalar(section.options, valueKey) !== null
@@ -106,7 +136,10 @@ export const dnsRecordsDomain: ConfigDomain<DnsRecord> = {
 
   ownership(section) {
     const type = typeOf(section.type) ?? 'a'
-    return { kind: 'options', options: [...OWNED[type]] }
+    return {
+      kind: 'options',
+      options: type === 'host' ? [...OWNED.host, 'dns'] : [...OWNED[type]],
+    }
   },
 
   normalize(type, option, value) {
@@ -114,22 +147,26 @@ export const dnsRecordsDomain: ConfigDomain<DnsRecord> = {
     if (['name', 'ip', 'cname', 'target'].includes(option) && typeOf(type)) {
       return value.trim().toLowerCase()
     }
+    if (type === 'host' && option === 'dns') return flagValue(value)
     return value
   },
 
   identityKeys(section) {
-    const type = typeOf(section.type)
+    const type = typeOf(section.type, section.options)
     if (!type) return []
     const name = scalar(section.options, OWNED[type][0])
     if (!name) return []
-    // A name may carry several A records (round robin); only a CNAME is unique.
-    return type === 'cname' ? [`cname:${name.toLowerCase()}`] : []
+    // A name may carry several A records (round robin); a CNAME and a host
+    // name are unique.
+    if (type === 'cname') return [`cname:${name.toLowerCase()}`]
+    if (type === 'host') return [`host:${name.toLowerCase()}`]
+    return []
   },
 
   parse(sections) {
     const out: DnsRecord[] = []
     for (const s of sections) {
-      const type = typeOf(s.type)
+      const type = typeOf(s.type, s.options)
       if (s.config !== 'dhcp' || !type) continue
       const [nameKey, valueKey] = OWNED[type]
       const extra: UciOptions = {}
@@ -154,7 +191,7 @@ export const dnsRecordsDomain: ConfigDomain<DnsRecord> = {
       op: 'put',
       perchId: obj.perchId,
       config: 'dhcp',
-      type: obj.type === 'a' ? 'domain' : 'cname',
+      type: SECTION_TYPE[obj.type],
       options: { ...obj.extra, [nameKey]: obj.name, [valueKey]: obj.value },
     }
     return [edit]
@@ -186,8 +223,9 @@ function validateRecords(desired: SyncedSection[], ctx: ValidationCtx): Issue[] 
   const cnames = new Map<string, DnsRecord>()
   const aNames = new Set<string>()
   for (const r of [...others, ...records]) {
-    if (r.type === 'a') aNames.add(r.name.toLowerCase())
+    if (r.type === 'a' || r.type === 'host') aNames.add(r.name.toLowerCase())
   }
+  const controllerAddress = ctx.managementPath?.controllerAddress ?? null
   for (const r of others) if (r.type === 'cname') cnames.set(r.name.toLowerCase(), r)
   for (const r of records) {
     const [nameKey, valueKey] = OWNED[r.type]
@@ -195,8 +233,20 @@ function validateRecords(desired: SyncedSection[], ctx: ValidationCtx): Issue[] 
       issue(r, 'dns_name_invalid', `"${r.name}" is not a valid DNS name`, nameKey)
       continue
     }
-    if (r.type === 'a' && !isValidIp(r.value)) {
+    if ((r.type === 'a' || r.type === 'host') && !isValidIp(r.value)) {
       issue(r, 'dns_value_invalid', `"${r.value}" is not an IP address`, valueKey)
+    }
+    if (r.type === 'host' && controllerAddress !== null && r.value === controllerAddress) {
+      // domains.md 6: the name the agents may dial; editing it can cut them off.
+      issues.push({
+        severity: 'warning',
+        code: 'dns_controller_address',
+        message: `${r.name} points at the controller's address; the gateway agent may dial it.`,
+        perchId: r.perchId,
+        config: 'dhcp',
+        section: r.section,
+        option: valueKey,
+      })
     }
     if (r.type === 'cname') {
       if (!HOSTNAME.test(r.value)) {

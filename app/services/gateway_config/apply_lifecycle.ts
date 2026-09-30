@@ -1010,6 +1010,14 @@ async function finishConfirmed(
       domain: row?.domain ?? '',
     })
   }
+  // A deleted section's entries go with it (the agent drops them by section),
+  // including one this job adopted just to delete it.
+  for (const op of apply.ops) {
+    if (op.op !== 'delete') continue
+    for (const [id, entry] of ledger) {
+      if (entry.config === op.config && entry.section === op.section) ledger.delete(id)
+    }
+  }
   gateway.observedLedger = [...ledger.values()]
   gateway.observedHashes = { ...(gateway.observedHashes ?? {}), ...hashes }
   if (apply.kind === 'revert') gateway.pinnedHashes = gateway.observedHashes

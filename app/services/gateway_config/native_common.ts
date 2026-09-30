@@ -1,3 +1,4 @@
+import Collector from '#models/collector'
 import type Gateway from '#models/gateway'
 import GatewaySection from '#models/gateway_section'
 import { requestApply } from '#services/gateway_config/apply_lifecycle'
@@ -207,4 +208,14 @@ export function localDnsNames(states: SectionState[], localDomain: string | null
     if (c.type === 'host') add(c.options.name)
   }
   return [...out]
+}
+
+/**
+ * The gateway's name as the dashboard shows it (its collector's, else
+ * `Gateway <id>`): what an admin types to confirm a risky edit.
+ */
+export async function gatewayDisplayName(gateway: Gateway): Promise<string> {
+  if (gateway.collectorId === null) return `Gateway ${gateway.id}`
+  const collector = await Collector.find(gateway.collectorId)
+  return collector?.name ?? `Gateway ${gateway.id}`
 }

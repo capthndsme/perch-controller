@@ -1,0 +1,42 @@
+# A dhcp config shaped like the live gateway's, placeholders only: a WAN-side pool that
+# is ignored, odhcpd's globals, a reservation, and a MAC-less host that only publishes a
+# DNS name for the controller box (README 2 #12: a `dns_records` host record).
+config dnsmasq
+	option domainneeded '1'
+	option localise_queries '1'
+	option rebind_protection '1'
+	option local '/lan/'
+	option domain 'lan'
+	option expandhosts '1'
+	option authoritative '1'
+	option readethers '1'
+	option leasefile '/tmp/dhcp.leases'
+	option localservice '1'
+	option port '54'
+
+config dhcp 'lan'
+	option interface 'lan'
+	option start '100'
+	option limit '150'
+	option leasetime '1200d'
+
+config dhcp 'wan'
+	option interface 'wan'
+	option ignore '1'
+
+config odhcpd 'odhcpd'
+	option maindhcp '0'
+	option leasefile '/tmp/hosts/odhcpd'
+	option leasetrigger '/usr/sbin/odhcpd-update'
+	option loglevel '4'
+
+config host
+	option name 'nas'
+	option mac '02:00:00:00:00:20'
+	option ip '192.168.1.20'
+
+config host
+	option dns '1'
+	option hostid '10'
+	option ip '192.168.1.5'
+	option name 'controller-box'

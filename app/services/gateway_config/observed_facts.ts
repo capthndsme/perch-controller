@@ -89,6 +89,12 @@ export function featureObservation(facts: ObservedFacts): FeatureObservation {
     interfaces: facts.interfaces
       ? facts.interfaces.map((i) => ({ network: i.network, up: i.up }))
       : null,
+    offloading: facts.system
+      ? {
+          flowOffloading: facts.system.flowOffloading,
+          flowOffloadingHw: facts.system.flowOffloadingHw,
+        }
+      : null,
   }
 }
 

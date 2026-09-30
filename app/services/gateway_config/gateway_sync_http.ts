@@ -1,15 +1,12 @@
 import { planeRefusal } from '#controllers/gateways_controller'
-import Collector from '#models/collector'
-import type Gateway from '#models/gateway'
 import GatewayApply from '#models/gateway_apply'
 import { applyViewOf } from '#transformers/gateway_transformer'
 import type { HttpContext } from '@adonisjs/core/http'
 
 /**
  * HTTP helpers shared by the gateway-sync controllers (docs/design/gateway-sync/rest.md):
- * the write answer's apply view, `?apply=0`, the 501 of work packages not
- * built yet, and the gateway's display name (the typed confirm of risky
- * edits). Refusals map through the config plane's `planeRefusal`.
+ * the write answer's apply view, `?apply=0` and the 501 of work packages
+ * not built yet. Refusals map through the config plane's `planeRefusal`.
  */
 
 /** `?apply=0` stages a write in the draft only; anything else applies it. */
@@ -54,11 +51,4 @@ export function notBuilt({ response }: HttpContext, workPackage: string) {
     message: `Not built yet (gateway sync work package ${workPackage}).`,
     workPackage,
   })
-}
-
-/** The gateway's name as the dashboard shows it: its collector's, else `Gateway <id>`. */
-export async function gatewayDisplayName(gateway: Gateway): Promise<string> {
-  if (gateway.collectorId === null) return `Gateway ${gateway.id}`
-  const collector = await Collector.find(gateway.collectorId)
-  return collector?.name ?? `Gateway ${gateway.id}`
 }
