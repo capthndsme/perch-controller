@@ -7,8 +7,8 @@ import db from '@adonisjs/lucid/services/db'
  * (the agent's own busy hooks refuse the install too, `busy_pending_apply`).
  *
  * - AP: a device-groups apply in `sending` / `pending_confirm`
- *   (`ap_group_states`, `ap_groups.ts`). The Wi-Fi plane's pending check is
- *   added in wave 2 by the wifi area.
+ *   (`ap_group_states`, `ap_groups.ts`), or a Wi-Fi config plane apply in the
+ *   same states (`ap_config_applies`).
  * - Collector: a managed gateway's config apply in `sending` /
  *   `pending_confirm` (`gateway_applies`; BUILD-PLAN agreement 3).
  *
@@ -21,7 +21,13 @@ export async function applyPending(kind: DeviceKind, id: number): Promise<string
       .where('ap_id', id)
       .whereIn('state', ['sending', 'pending_confirm'])
       .first()
-    return row ? 'device_groups' : null
+    if (row) return 'device_groups'
+    const wifi = await db
+      .from('ap_config_applies')
+      .where('ap_id', id)
+      .whereIn('state', ['sending', 'pending_confirm'])
+      .first()
+    return wifi ? 'wifi_config' : null
   }
   const row = await db
     .from('gateway_applies')

@@ -1,3 +1,4 @@
+import { closeUpdateWindow, openUpdateWindow } from '#services/agent_updates/alert_window'
 import AgentArtefact from '#models/agent_artefact'
 import AgentRelease from '#models/agent_release'
 import AgentUpdateJob, { type JobState, OPEN_JOB_STATES } from '#models/agent_update_job'
@@ -119,13 +120,15 @@ export async function transition(
   await job.save()
 
   const device = deviceOf(job)
+  const inFlight = (IN_FLIGHT_STATES as readonly string[]).includes(state)
   if (device) {
-    markDeviceInFlight(
-      device.kind,
-      device.id,
-      (IN_FLIGHT_STATES as readonly string[]).includes(state)
-    )
+    markDeviceInFlight(device.kind, device.id, inFlight)
+    // Alerts: the device's offline alerts wait while the install may restart it.
+    if (inFlight && !(IN_FLIGHT_STATES as readonly string[]).includes(from)) {
+      await openUpdateWindow(job, device)
+    }
   }
+  if (!open) await closeUpdateWindow(Number(job.id))
   if (from === state) return job
 
   const common = {

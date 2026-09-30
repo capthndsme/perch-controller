@@ -638,7 +638,27 @@ function transition(apply: GatewayApply, event: ApplyEvent): ApplyState {
  * waited for the agent may be stale): a job that lost its work finishes as
  * cancelled, one whose sections are in conflict now fails.
  */
+/**
+ * BUILD-PLAN agreement 4: while agent-updates updates the gateway's collector
+ * (its daemon may restart), jobs stay queued; the tick sends them after.
+ * Installed by the cross-area wiring at boot; always false until then.
+ */
+let collectorUpdateHold: (collectorId: number) => boolean = () => false
+
+export function setCollectorUpdateHold(check: ((collectorId: number) => boolean) | null): void {
+  collectorUpdateHold = check ?? (() => false)
+}
+
+function heldForUpdate(gateway: Gateway): boolean {
+  try {
+    return gateway.collectorId !== null && collectorUpdateHold(gateway.collectorId)
+  } catch {
+    return false
+  }
+}
+
 export async function sendApply(gateway: Gateway, apply: GatewayApply): Promise<void> {
+  if (heldForUpdate(gateway)) return
   if (apply.kind === 'package') return sendPackageJob(gateway, apply)
   const settings = await getGatewayConfigSettings()
   const access = writeAccess(gateway, settings)

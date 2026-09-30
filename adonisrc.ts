@@ -76,6 +76,10 @@ export default defineConfig({
       file: () => import('#providers/alerts_provider'),
       environment: ['web'],
     },
+    {
+      file: () => import('#providers/cross_area_provider'),
+      environment: ['web'],
+    },
     () => import('@adonisjs/static/static_provider'),
   ],
 

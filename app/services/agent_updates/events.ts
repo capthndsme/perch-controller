@@ -1,3 +1,4 @@
+import { emitAlertEvent } from '#services/alerts/emit'
 import AgentUpdateEvent from '#models/agent_update_event'
 import type { DeviceKind } from '#services/agent_updates/state'
 import logger from '@adonisjs/core/services/logger'
@@ -98,8 +99,42 @@ export async function recordUpdateEvent(
   }
 }
 
+/** Events about one device (the others are the fleet's: the controller is their subject). */
+const DEVICE_EVENTS = new Set<string>([
+  'agent_update.started',
+  'agent_update.confirmed',
+  'agent_update.failed',
+  'agent_update.rolled_back',
+  'agent_update.unknown',
+  'agent_update.rollback_failed',
+  'agent_update.rollback_unavailable',
+  'agent_update.version_changed',
+])
+
 /**
- * Wave 2: `emitAlertEvent(name, severity, payload, dedupeKey)` from
- * `app/services/alerts/emit.ts`, dedupe key per job (README section 16).
+ * Hands a README section 16 event to the alerts area (catalogue
+ * `app/services/alerts/catalogue/agent_updates.ts`, same names). Dedupe key
+ * per job (else per rollout, release or event row); the payload is the row's
+ * detail with the device and ids. Never throws.
  */
-function forwardToAlerts(_row: AgentUpdateEvent): void {}
+function forwardToAlerts(row: AgentUpdateEvent): void {
+  const kind = row.apId !== null ? 'ap' : row.collectorId !== null ? 'collector' : null
+  const id = row.apId ?? row.collectorId
+  const onDevice = kind !== null && id !== null && DEVICE_EVENTS.has(row.event)
+  const scope = row.jobId ?? row.rolloutId ?? row.releaseId ?? row.id
+  emitAlertEvent({
+    type: row.event,
+    subject: onDevice ? { kind: kind!, id: Number(id) } : { kind: 'controller' },
+    severity: row.severity as 'info' | 'warning' | 'critical',
+    dedupeKey: `${row.event}:${scope}`,
+    payload: {
+      ...(row.detail ?? {}),
+      ...(kind !== null && id !== null
+        ? { device: { kind, id: Number(id), name: row.deviceName } }
+        : {}),
+      ...(row.jobId !== null ? { jobId: Number(row.jobId) } : {}),
+      ...(row.rolloutId !== null ? { rolloutId: Number(row.rolloutId) } : {}),
+    },
+    source: 'agent_updates',
+  })
+}
