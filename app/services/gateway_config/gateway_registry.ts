@@ -75,6 +75,8 @@ export type HelloApplyState = {
   kind?: string
   deadline?: string
   protected?: boolean
+  /** Gateway sync protocol.md 1.5: the pending apply's checks, raw (`apply_checks.ts` parses). */
+  checks?: unknown
 }
 
 /** One outcome the agent reports (`gateway.config.result`, or the hello's `results`). */
@@ -89,6 +91,8 @@ export type AgentApplyResult = {
   discarded?: Record<string, DiscardedSection[]>
   packages?: string[]
   detail?: string
+  /** Gateway sync protocol.md 1.5: the checks of a `checks_failed` rollback, raw. */
+  checks?: unknown
 }
 
 export type DiscardedSection = {
@@ -162,6 +166,7 @@ export function parseApplyResult(value: unknown): AgentApplyResult | null {
       ? value.packages.filter((p): p is string => typeof p === 'string').slice(0, 64)
       : undefined,
     detail: typeof value.detail === 'string' ? value.detail.slice(0, 1000) : undefined,
+    ...(isObject(value.checks) ? { checks: value.checks } : {}),
   }
 }
 
@@ -194,6 +199,7 @@ export function parseHelloGatewayConfig(value: unknown): HelloGatewayConfig | nu
     if (typeof value.apply.kind === 'string') apply.kind = value.apply.kind
     if (typeof value.apply.deadline === 'string') apply.deadline = value.apply.deadline
     if (typeof value.apply.protected === 'boolean') apply.protected = value.apply.protected
+    if (isObject(value.apply.checks)) apply.checks = value.apply.checks
   }
   return {
     protocol: typeof value.protocol === 'number' ? value.protocol : null,

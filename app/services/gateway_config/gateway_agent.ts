@@ -1,4 +1,5 @@
 import Gateway from '#models/gateway'
+import GatewayConfigEvent from '#models/gateway_config_event'
 import collectorHub, { AgentRpcError, RPC_ERRORS } from '#services/collector_agent_hub'
 import { domainRegistry } from '#services/gateway_config/domains/index'
 import { emitRouterRead } from '#services/gateway_config/hooks'
@@ -21,7 +22,13 @@ import { signParams } from '#services/gateway_config/rpc_signing'
 import { rejoinOffer } from '#services/gateway_config/revisions'
 import { refreshOrders } from '#services/gateway_config/order_store'
 import { gatewayQueue } from '#services/gateway_config/serial_queue'
-import { reconcileRead, type InFlight } from '#services/gateway_config/sync_engine'
+import { getGatewaySyncSettings } from '#services/gateway_config/gateway_sync_settings'
+import { readSideFacts } from '#services/gateway_config/observed_facts'
+import {
+  reconcileRead,
+  type EngineEvent,
+  type InFlight,
+} from '#services/gateway_config/sync_engine'
 import type {
   GatewayCapabilities,
   LedgerEntry,
@@ -331,7 +338,14 @@ export async function mergeRead(
     now: now.toISO()!,
     newPerchId: perchIdFactory(loaded.states.map((s) => s.perchId)),
     inFlight,
+    // Gateway sync domains.md 1.2: domains the agent cannot serve claim nothing.
+    capabilities: gateway.capabilities,
+    // Gateway sync: the WAN's Authoritative policy (1.7) and the side rule's
+    // agent facts (domains.md 2).
+    gatewaySync: await getGatewaySyncSettings(),
+    sideFacts: await readSideFacts(gateway.collectorId),
   })
+  const events = await withoutRepeatedDeferrals(gateway.id, result.events)
 
   const before = loaded.states
   const afterById = new Map(before.map((s) => [s.perchId, s]))
@@ -378,7 +392,7 @@ export async function mergeRead(
         trx,
       })
     }
-    for (const event of result.events) {
+    for (const event of events) {
       await recordGatewayEvent(gateway.id, event.event, {
         revision,
         detail: {
@@ -424,6 +438,34 @@ export async function mergeRead(
     observedAt: now.toISO()!,
     read,
   }
+}
+
+/**
+ * `rehome_deferred` (gateway sync domains.md 1.3) is logged once per wait: a
+ * row still waiting for the same re-home is not logged again on every read.
+ * Looked up only when the read produced one.
+ */
+async function withoutRepeatedDeferrals(
+  gatewayId: number,
+  events: EngineEvent[]
+): Promise<EngineEvent[]> {
+  if (!events.some((e) => e.event === 'rehome_deferred')) return events
+  const recent = await GatewayConfigEvent.query()
+    .where('gateway_id', gatewayId)
+    .whereIn('event', ['rehome_deferred', 'section_rehomed'])
+    .orderBy('id', 'desc')
+    .limit(500)
+  const last = new Map<string, { event: string; to: unknown }>()
+  for (const row of recent) {
+    const perchId = row.detail?.perchId
+    if (typeof perchId !== 'string' || last.has(perchId)) continue
+    last.set(perchId, { event: row.event, to: row.detail?.to ?? null })
+  }
+  return events.filter((e) => {
+    if (e.event !== 'rehome_deferred' || e.perchId === null) return true
+    const previous = last.get(e.perchId)
+    return !(previous?.event === 'rehome_deferred' && previous.to === (e.detail?.to ?? null))
+  })
 }
 
 /** The newest confirmed revision of a gateway (README 3.7), or null. */

@@ -8,9 +8,11 @@ import {
   WarningCircle,
   X,
 } from '@phosphor-icons/react'
+import { ApplyChecksList, FailedChecksList, KeepAnywayDialog } from '@/components/gateway-sync/apply-checks'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { useProfile } from '@/hooks/use-auth'
+import { useDialog } from '@/hooks/use-dialog'
 import { fetchApply, useConfirmApply, useGateways, useRevertApply } from '@/hooks/use-gateways'
 import { useNow } from '@/hooks/use-now'
 import {
@@ -19,9 +21,16 @@ import {
   formatCountdown,
   isOpenApply,
   OUTCOME_REASON,
-  refusalMessage,
   secondsUntil,
 } from '@/lib/gateway-config'
+import {
+  checksOf,
+  checksOpen,
+  draftPathForChecks,
+  failedChecksOf,
+  SYNC_OUTCOME_REASON,
+  syncRefusalMessage,
+} from '@/lib/gateway-sync'
 import { MOTION_MS } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { Gateway, GatewayApply } from '@/types/gateway-config'
@@ -290,12 +299,18 @@ function OpenApplyBanner({ gateway, apply, isAdmin }: { gateway: Gateway; apply:
   const confirm = useConfirmApply()
   const revert = useRevertApply()
   const [confirmRevert, setConfirmRevert] = useState(false)
+  const keepAnyway = useDialog()
   const left = secondsUntil(apply.deadlineAt, now)
   const needsAdmin = apply.confirmMode === 'admin_and_agent' && apply.state === 'pending_confirm'
   const adminDone = apply.confirmations.admin !== null
   const error = confirm.error ?? revert.error
   const configs = apply.configs.length > 0 ? apply.configs.join(', ') : null
   const where = `/gateway/config/${gateway.id}`
+  // Router-side checks (gateway sync): "Keep changes" waits for them; a failure
+  // means the router is already undoing the change.
+  const checks = apply.state === 'pending_confirm' ? checksOf(apply) : null
+  const checking = checks !== null && checksOpen(checks.state)
+  const checksFailed = checks?.state === 'failed'
 
   let title: string
   let body: string
@@ -310,6 +325,13 @@ function OpenApplyBanner({ gateway, apply, isAdmin }: { gateway: Gateway; apply:
   } else if (apply.kind === 'revert') {
     title = `Authoritative Mode is reverting router edits on ${gateway.name}`
     body = 'Confirms on its own once the agent reconnects.'
+  } else if (checksFailed) {
+    title = `The router is undoing the change on ${gateway.name}`
+    body = 'Its checks failed after the change, so it restores the previous configuration by itself. Your draft is kept.'
+  } else if (checking) {
+    title = `The router is checking the change on ${gateway.name}`
+    body =
+      'It verifies that the internet still works. Keeping the change unlocks once the checks pass; if they cannot pass, the router undoes the change by itself.'
   } else {
     title = needsAdmin && !adminDone ? `Keep the changes on ${gateway.name}?` : `Confirming the change on ${gateway.name}`
     body =
@@ -328,7 +350,7 @@ function OpenApplyBanner({ gateway, apply, isAdmin }: { gateway: Gateway; apply:
     >
       <div className="flex flex-col gap-x-4 gap-y-2 md:flex-row md:items-start">
         <div className="flex min-w-0 flex-1 items-start gap-2.5">
-          {apply.state === 'pending_confirm' ? (
+          {apply.state === 'pending_confirm' && !checksFailed ? (
             <Clock className="mt-0.5 size-4 shrink-0 text-status-warning" weight="bold" />
           ) : (
             <Spinner className="mt-0.5 size-4 shrink-0" />
@@ -354,15 +376,17 @@ function OpenApplyBanner({ gateway, apply, isAdmin }: { gateway: Gateway; apply:
                 <Step done label="Applied on the router" />
                 <Step done={apply.agentReconnectedAt !== null} label="Agent reconnected" />
                 <Step done={apply.confirmations.agent !== null} label="Agent checked in" />
+                {checks ? <Step done={checks.state === 'passed' || checks.state === 'overridden'} label="Router checks passed" /> : null}
                 {apply.confirmMode === 'admin_and_agent' ? <Step done={adminDone} label="You kept it" /> : null}
               </ul>
             ) : null}
-            {error ? <p className="text-destructive">{refusalMessage(error)}</p> : null}
+            {checks ? <ApplyChecksList checks={checks} now={now} /> : null}
+            {error ? <p className="text-destructive">{syncRefusalMessage(error)}</p> : null}
           </div>
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          {apply.state === 'pending_confirm' && left !== null ? (
+          {apply.state === 'pending_confirm' && left !== null && !checksFailed ? (
             <span
               className={cn(
                 'rounded-md border border-border bg-background px-2 py-1 font-mono text-sm font-semibold tabular-nums',
@@ -374,17 +398,33 @@ function OpenApplyBanner({ gateway, apply, isAdmin }: { gateway: Gateway; apply:
               {formatCountdown(left)}
             </span>
           ) : null}
-          {isAdmin && needsAdmin && !adminDone ? (
+          {isAdmin && needsAdmin && !adminDone && !checksFailed ? (
             <Button
               size="sm"
               onClick={() => confirm.mutate({ gatewayId: gateway.id, applyId: apply.id })}
-              disabled={confirm.isPending}
+              disabled={confirm.isPending || checking}
+              title={checking ? 'Waits for the router’s checks' : undefined}
             >
               {confirm.isPending ? <Spinner className="size-3.5 text-current" /> : <CheckCircle weight="bold" />}
               Keep changes
             </Button>
           ) : null}
-          {isAdmin && (apply.state === 'pending_confirm' || apply.state === 'queued') ? (
+          {isAdmin && needsAdmin && !adminDone && checking ? (
+            <Button size="sm" variant="ghost" onClick={keepAnyway.show}>
+              Keep anyway…
+            </Button>
+          ) : null}
+          {isAdmin && checks && needsAdmin && !adminDone ? (
+            <KeepAnywayDialog
+              key={keepAnyway.key}
+              open={keepAnyway.open}
+              onOpenChange={keepAnyway.setOpen}
+              gatewayId={gateway.id}
+              gatewayName={gateway.name}
+              applyId={apply.id}
+            />
+          ) : null}
+          {isAdmin && !checksFailed && (apply.state === 'pending_confirm' || apply.state === 'queued') ? (
             confirmRevert ? (
               <>
                 <Button
@@ -420,8 +460,11 @@ function FinishedBanner({ item, onDismiss }: { item: Finished; onDismiss: () => 
   const { apply, gatewayName, gatewayId } = item
   const ok = apply.state === 'confirmed'
   const neutral = apply.state === 'cancelled' || apply.state === 'expired'
-  const reason = apply.outcome?.reason ? (OUTCOME_REASON[apply.outcome.reason] ?? apply.outcome.reason) : null
+  const reason = apply.outcome?.reason
+    ? (OUTCOME_REASON[apply.outcome.reason] ?? SYNC_OUTCOME_REASON[apply.outcome.reason] ?? apply.outcome.reason)
+    : null
   const discarded = apply.outcome?.discardedConfigs ?? []
+  const failedChecks = apply.outcome?.reason === 'checks_failed' ? failedChecksOf(apply) : []
 
   let title: string
   if (ok) title = apply.kind === 'revert' ? `Router edits reverted on ${gatewayName}` : `Changes kept on ${gatewayName}`
@@ -466,8 +509,19 @@ function FinishedBanner({ item, onDismiss }: { item: Finished; onDismiss: () => 
             </Link>
           </p>
         ) : null}
+        <FailedChecksList items={failedChecks} />
         {!ok && !neutral ? (
-          <p className="text-muted-foreground">Your draft is kept: fix it and apply again.</p>
+          <p className="text-muted-foreground">
+            Your draft is kept: fix it and apply again.
+            {apply.outcome?.reason === 'checks_failed' ? (
+              <>
+                {' '}
+                <Link className="font-medium text-foreground underline underline-offset-2" to={draftPathForChecks(gatewayId, failedChecks)}>
+                  Back to the draft
+                </Link>
+              </>
+            ) : null}
+          </p>
         ) : null}
       </div>
       <Button size="icon-xs" variant="ghost" aria-label="Dismiss" onClick={onDismiss}>

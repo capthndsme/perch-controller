@@ -1158,7 +1158,7 @@ export class GatewaySchema extends BaseModel {
 }
 
 export class GatewayApplySchema extends BaseModel {
-  static $columns = ['adminConfirmedAt', 'adminConfirmedBy', 'agentConfirmedAt', 'agentReconnectedAt', 'applyKey', 'chainStep', 'confirmMode', 'confirmTimeoutSeconds', 'deadlineAt', 'finishedAt', 'gatewayId', 'id', 'kind', 'note', 'protected', 'queueExpiresAt', 'requestedAt', 'requestedByUserId', 'retried', 'revisionNumber', 'sentAt', 'signed', 'state', 'systemActor'] as const
+  static $columns = ['adminConfirmedAt', 'adminConfirmedBy', 'agentConfirmedAt', 'agentReconnectedAt', 'applyKey', 'chainStep', 'checksOverriddenAt', 'checksOverriddenByUserId', 'checksState', 'confirmMode', 'confirmTimeoutSeconds', 'deadlineAt', 'finishedAt', 'gatewayId', 'id', 'kind', 'note', 'protected', 'queueExpiresAt', 'requestedAt', 'requestedByUserId', 'retried', 'revisionNumber', 'sentAt', 'signed', 'state', 'systemActor'] as const
   $columns = GatewayApplySchema.$columns
   @column.dateTime()
   declare adminConfirmedAt: DateTime | null
@@ -1172,6 +1172,12 @@ export class GatewayApplySchema extends BaseModel {
   declare applyKey: string
   @column()
   declare chainStep: number
+  @column.dateTime()
+  declare checksOverriddenAt: DateTime | null
+  @column()
+  declare checksOverriddenByUserId: number | null
+  @column()
+  declare checksState: string | null
   @column()
   declare confirmMode: string
   @column()
@@ -1541,6 +1547,29 @@ export class GatewayUpnpMappingSchema extends BaseModel {
   declare proto: string
 }
 
+export class GatewayWanSchema extends BaseModel {
+  static $columns = ['createdAt', 'gatewayId', 'id', 'interfacePerchId', 'label', 'network', 'note', 'roleOverride', 'updatedAt'] as const
+  $columns = GatewayWanSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare interfacePerchId: string | null
+  @column()
+  declare label: string
+  @column()
+  declare network: string
+  @column()
+  declare note: string | null
+  @column()
+  declare roleOverride: string | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
 export class GatewayWanBlockSchema extends BaseModel {
   static $columns = ['blockedAt', 'blockedByUserId', 'createdAt', 'gatewayId', 'id', 'mac', 'note', 'updatedAt'] as const
   $columns = GatewayWanBlockSchema.$columns
@@ -1560,6 +1589,23 @@ export class GatewayWanBlockSchema extends BaseModel {
   declare note: string | null
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime | null
+}
+
+export class GatewayWanTransitionSchema extends BaseModel {
+  static $columns = ['at', 'device', 'event', 'gatewayId', 'id', 'network'] as const
+  $columns = GatewayWanTransitionSchema.$columns
+  @column.dateTime()
+  declare at: DateTime
+  @column()
+  declare device: string | null
+  @column()
+  declare event: string
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare network: string
 }
 
 export class HotspotCheckoutSchema extends BaseModel {

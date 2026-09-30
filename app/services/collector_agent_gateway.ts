@@ -28,6 +28,7 @@ import {
   afterGatewayHello,
   onCollectorPushAccepted,
   onConfigChanged,
+  onConfigChecks,
   onConfigResult,
   onGatewaySessionClosed,
   prepareGatewayHello,
@@ -127,6 +128,8 @@ export function collectorAgentEndpoint(): AgentEndpoint<CollectorPrincipal> {
       // The config plane (docs/gateway/config-plane.md section 4).
       collectorHub.onNotification('gateway.config.changed', onConfigChanged)
       collectorHub.onNotification('gateway.config.result', onConfigResult)
+      // Gateway sync: the router's apply checks (protocol.md 1.5).
+      collectorHub.onNotification('gateway.config.checks', onConfigChecks)
       // Plain-HTTP signing pairing (owner decision 29).
       collectorHub.onNotification('gateway.pair.state', onPairState)
       // The guest portal (docs/gateway/portal.md section 13).

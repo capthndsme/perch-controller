@@ -41,6 +41,9 @@ export type Section = {
 
 type Ledger = { perchId: string; config: string; section: string; domain: string }
 
+type CheckItemParam = { id: string; kind: string; mustPass?: boolean; [key: string]: unknown }
+type CheckState = { id: string; state: string; detail: string | null; at: string | null }
+
 type Pending = {
   applyId: string
   kind: string
@@ -49,6 +52,13 @@ type Pending = {
   snapshot: { configs: Record<string, Section[]>; ledger: Ledger[] }
   committed: Record<string, Section[]>
   timer: NodeJS.Timeout
+  /** Gateway sync: the apply's checks (protocol.md 1) and where they stand. */
+  checks?: {
+    items: CheckItemParam[]
+    state: string
+    results: CheckState[]
+    startedAt: string | null
+  }
 }
 
 type Result = {
@@ -59,6 +69,8 @@ type Result = {
   at: string
   hashes: Record<string, string>
   discarded?: Record<string, Array<Section & { change: string }>>
+  detail?: string
+  checks?: Record<string, unknown>
 }
 
 function clone<T>(value: T): T {
@@ -91,6 +103,8 @@ export type FakeGatewayOptions = {
   qos?: boolean
   /** WAN interfaces the pushes' gateway report names (none = no gateway report). */
   wan?: string[]
+  /** Gateway sync (protocol.md 4): `gateway.capabilities` `features` (e.g. `config.checks.v1`). */
+  features?: string[]
 }
 
 export class FakeGateway {
@@ -139,6 +153,14 @@ export class FakeGateway {
   flushAnswer: Record<string, unknown> | null = null
   /** The paired signing key, once the router's admin confirmed the code. */
   pairedKey: { key: Buffer; keyId: string } | null = null
+  /**
+   * Gateway sync: how the router's apply checks end once the fresh session is
+   * up: `pass`, `fail` (then it rolls back at once, reason `checks_failed`)
+   * or `hold` (they keep running).
+   */
+  checksOutcome: 'pass' | 'fail' | 'hold' = 'pass'
+  /** Every `gateway.config.checks` notification sent. */
+  checkNotes: Array<Record<string, unknown>> = []
 
   constructor(readonly options: FakeGatewayOptions = {}) {
     this.configs = clone(options.configs ?? { dhcp: [] })
@@ -163,11 +185,71 @@ export class FakeGateway {
 
   applyState() {
     if (!this.pending) return { state: 'idle' }
+    const checks = this.pending.checks
     return {
       state: 'pending_confirm',
       applyId: this.pending.applyId,
       kind: this.pending.kind,
       deadline: this.pending.deadline.toISOString(),
+      ...(checks
+        ? {
+            checks: {
+              state: checks.state,
+              startedAt: checks.startedAt,
+              timeoutSeconds: 60,
+              items: checks.results,
+            },
+          }
+        : {}),
+    }
+  }
+
+  /** The router's checks run on the fresh session (protocol.md 1.2). */
+  #runChecks() {
+    const p = this.pending
+    const checks = p?.checks
+    if (!p || !checks || checks.state !== 'pending' || this.closed) return
+    const at = new Date().toISOString()
+    checks.startedAt = at
+    checks.state = 'running'
+    checks.results = checks.items.map((i) => ({
+      id: i.id,
+      state: 'running',
+      detail: null,
+      at: null,
+    }))
+    this.#noteChecks()
+    if (this.checksOutcome === 'hold') return
+    setTimeout(() => {
+      if (this.pending !== p || checks.state !== 'running') return
+      const ok = this.checksOutcome === 'pass'
+      checks.state = ok ? 'passed' : 'failed'
+      checks.results = checks.items.map((i, n) => ({
+        id: i.id,
+        state: ok || n > 0 ? 'passed' : 'failed',
+        detail: ok || n > 0 ? 'ok' : 'no answer from 3 targets',
+        at: new Date().toISOString(),
+      }))
+      this.#noteChecks()
+      if (!ok) this.#rollback('checks_failed')
+    }, 40)
+  }
+
+  #noteChecks() {
+    const checks = this.pending?.checks
+    if (!checks || !this.collector) return
+    const note = {
+      applyId: this.pending!.applyId,
+      state: checks.state,
+      startedAt: checks.startedAt,
+      elapsedSeconds: 0.1,
+      items: checks.results,
+    }
+    this.checkNotes.push(note)
+    try {
+      this.collector.notifyServer('gateway.config.checks', note)
+    } catch {
+      // closed
     }
   }
 
@@ -214,6 +296,7 @@ export class FakeGateway {
       // Give the controller a moment for its after-hello work.
       setTimeout(() => this.push(), 50)
     }
+    if (this.pending?.checks?.state === 'pending') setTimeout(() => this.#runChecks(), 80)
     return collector
   }
 
@@ -420,7 +503,7 @@ export class FakeGateway {
         const { params, signed } = this.#unwrap('gateway.config.confirm', raw)
         this.calls.push({ method: 'gateway.config.confirm', params, signed })
         this.#writeGate(signed)
-        return this.#confirm(String(params.applyId), gen)
+        return this.#confirm(String(params.applyId), gen, params.overrideChecks === true)
       },
       'gateway.config.rollback': (raw: Record<string, unknown>) => {
         const { params, signed } = this.#unwrap('gateway.config.rollback', raw)
@@ -564,6 +647,8 @@ export class FakeGateway {
       luciPending: false,
       apply: this.applyState(),
       capture: { networks: [] },
+      ...(this.options.features ? { features: this.options.features } : {}),
+      writableConfigs: this.options.allowedConfigs ?? Object.keys(this.configs),
     }
   }
 
@@ -649,7 +734,18 @@ export class FakeGateway {
         owned.add(`${op.config}/${s.name}`)
       } else if (op.op === 'delete') {
         const i = sections.findIndex((x) => x.name === op.section)
-        if (i >= 0) sections.splice(i, 1)
+        if (i >= 0) {
+          // perch-collector deletes owned sections only (simulate.go `not_owned`).
+          if (!owned.has(`${op.config}/${op.section}`)) {
+            undo()
+            fail('not_owned', `${op.config}.${op.section} is not in the ledger`)
+          }
+          sections.splice(i, 1)
+        }
+        // Its ledger entries go with it (simulate.go removes them by section).
+        this.ledger = this.ledger.filter(
+          (e) => !(e.config === op.config && e.section === op.section)
+        )
         functional = true
       } else if (op.op === 'put') {
         const existing = sections.find((x) => x.name === op.section)
@@ -731,6 +827,11 @@ export class FakeGateway {
 
     const confirmMs = this.options.confirmMs ?? 3000
     const deadline = new Date(Date.now() + confirmMs)
+    const wanted = params.checks as { v?: number; items?: CheckItemParam[] } | undefined
+    const runsChecks =
+      (this.options.features ?? []).includes('config.checks.v1') &&
+      Array.isArray(wanted?.items) &&
+      wanted.items.length > 0
     this.pending = {
       applyId,
       kind: String(params.kind ?? 'apply'),
@@ -739,6 +840,21 @@ export class FakeGateway {
       snapshot,
       committed: clone(this.configs),
       timer: setTimeout(() => this.#rollback('confirm_timeout'), confirmMs),
+      ...(runsChecks
+        ? {
+            checks: {
+              items: wanted!.items!,
+              state: 'pending',
+              startedAt: null,
+              results: wanted!.items!.map((i) => ({
+                id: i.id,
+                state: 'pending',
+                detail: null,
+                at: null,
+              })),
+            },
+          }
+        : {}),
     }
     if (this.options.redial !== false) {
       setTimeout(() => {
@@ -753,16 +869,39 @@ export class FakeGateway {
       deadline: deadline.toISOString(),
       confirmTimeoutSeconds: Math.round(confirmMs / 1000),
       hashes: this.hashes(),
+      ...(this.pending.checks
+        ? {
+            checks: {
+              state: 'pending',
+              timeoutSeconds: 60,
+              baseline: this.pending.checks.items.map((i) => ({
+                id: i.id,
+                state: 'passed',
+                detail: 'ok',
+                at: new Date().toISOString(),
+              })),
+            },
+          }
+        : {}),
     }
   }
 
-  #confirm(applyId: string, gen: number) {
+  #confirm(applyId: string, gen: number, overrideChecks = false) {
     if (!this.pending || this.pending.applyId !== applyId) {
       const r = this.results.find((x) => x.applyId === applyId)
       if (r) fail('deadline_passed', `apply ${applyId} was ${r.outcome}`, { result: r })
       fail('unknown_apply', `no pending apply ${applyId}`)
     }
     if (gen <= this.pending.gen) fail('not_reconnected', 'confirm on the fresh session')
+    const checks = this.pending.checks
+    if (checks && checks.state !== 'passed' && checks.state !== 'overridden') {
+      if (!overrideChecks) {
+        fail(checks.state === 'failed' ? 'checks_failed' : 'checks_pending', 'checks not passed', {
+          checks: { state: checks.state, items: checks.results },
+        })
+      }
+      checks.state = 'overridden'
+    }
     clearTimeout(this.pending.timer)
     this.pending = null
     return { state: 'confirmed', applyId, hashes: this.hashes() }
@@ -800,6 +939,12 @@ export class FakeGateway {
       at: new Date().toISOString(),
       hashes: this.hashes(),
       ...(Object.keys(discarded).length > 0 ? { discarded } : {}),
+      ...(reason === 'checks_failed' && p.checks
+        ? {
+            detail: 'up: no answer from 3 targets',
+            checks: { state: 'failed', items: p.checks.results },
+          }
+        : {}),
     }
     this.results.push(result)
     try {

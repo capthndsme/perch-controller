@@ -141,6 +141,8 @@ export const dnsRecordPatchValidator = vine.compile(
   vine.object({
     name: vine.string().trim().minLength(1).maxLength(253).optional(),
     value: vine.string().trim().minLength(1).maxLength(253).optional(),
+    /** `host` records only (gateway sync rest.md 7): `dns '1'`. */
+    publishDns: vine.boolean().optional(),
   })
 )
 

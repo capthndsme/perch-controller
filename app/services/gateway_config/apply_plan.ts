@@ -10,10 +10,15 @@ import {
   contentOf,
   EXCLUDED_CONFIGS,
   SectionEditError,
+  type CheckItem,
+  type ChecksCtx,
+  type ChecksPlan,
   type DomainRegistry,
   type SectionEdit,
   type SyncedSection,
 } from '#services/gateway_config/domain'
+import { sideOf, sidesOfSet } from '#services/gateway_config/domains/side'
+import type { GatewaySyncSettings } from '#services/gateway_config/gateway_sync_settings'
 import { wireOptions } from '#services/gateway_config/secrets'
 import {
   applyControllerEdit,
@@ -23,15 +28,19 @@ import {
   reclaimOwnership,
   type SectionState,
 } from '#services/gateway_config/sync_engine'
-import type {
-  ApplyKind,
-  ApplyOp,
-  ConfigDiffEntry,
-  LedgerChange,
-  LedgerEntry,
-  ManagementPath,
-  OpPosition,
-  SectionContent,
+import {
+  hasFeature,
+  type ApplyKind,
+  type ApplyOp,
+  type ConfigDiffEntry,
+  type GatewayCapabilities,
+  type LedgerChange,
+  type LedgerEntry,
+  type ManagementPath,
+  type OpPosition,
+  type SectionContent,
+  type UciConfigSet,
+  type UciSection,
 } from '#services/gateway_config/types'
 
 /**
@@ -54,12 +63,24 @@ import type {
  *   normal apply + confirm (README 7.6).
  * - Sections with an open conflict, or not synced, are never planned
  *   (`blocked`).
+ * - Gateway sync (domains.md 1.5): sections a domain returns checks for go
+ *   into a **checked** job after the ordinary one (the router verifies the
+ *   internet after the commit and rolls back early when it cannot); a
+ *   protected section carries its checks into the protected job. Only with
+ *   `checks` in the input and an agent that announces `config.checks.v1`.
+ *   Jobs: adopt, ordinary, checked, protected (≤ 4 of the chain's 5).
  *
  * Jobs are meant to be sent one at a time: after the first finishes the
  * hashes change, so the caller re-plans for the next.
  */
 
-export type BlockReason = 'conflict' | 'not_synced' | 'excluded_config' | 'no_drift'
+export type BlockReason =
+  | 'conflict'
+  | 'not_synced'
+  | 'excluded_config'
+  | 'no_drift'
+  /** Its domain needs more than the agent announces (gateway sync domains.md 1.2). */
+  | 'capability_missing'
 
 export interface PlannedJob {
   kind: ApplyKind
@@ -79,11 +100,38 @@ export interface PlannedJob {
   written: Record<string, SectionContent | null>
   /** Router contents the job replaces (kept on a revert for "Restore router version"). */
   replaced: Record<string, SectionContent | null>
+  /**
+   * Gateway sync: the job carries checks (the checked job, or a protected
+   * one with checked sections). `checks.items` empty = the request said
+   * "no checks" explicitly (`wan_last_uplink` confirmed): `{"v":1,"items":[]}`.
+   */
+  checked?: boolean
+  checks?: ChecksPlan | null
 }
+
+/** What the planner needs to derive a job's checks (gateway sync domains.md 1.5). */
+export interface PlanChecksInput {
+  settings: GatewaySyncSettings
+  observed: ChecksCtx['observed']
+  /** Per-network check targets (`gateway_wans.check_targets`). */
+  targets?: Record<string, string[]>
+  /** The admin confirmed an edit that leaves no uplink: checked jobs carry no items. */
+  none?: boolean
+}
+
+/** The feature an agent announces when it runs apply checks (protocol.md 4). */
+export const CHECKS_FEATURE = 'config.checks.v1'
 
 export interface ApplyPlan {
   jobs: PlannedJob[]
-  blocked: Array<{ perchId: string; config: string; section: string; reason: BlockReason }>
+  blocked: Array<{
+    perchId: string
+    config: string
+    section: string
+    reason: BlockReason
+    /** `capability_missing`: what the domain's `requires` says is missing. */
+    detail?: string
+  }>
 }
 
 export interface PlanApplyInput {
@@ -110,6 +158,17 @@ export interface PlanApplyInput {
    * conflict) only places created members.
    */
   orders?: PlannedOrder[]
+  /**
+   * The gateway's stored capabilities (gateway sync domains.md 1.2): sections
+   * of a domain whose `requires` names a reason are never planned (blocked
+   * `capability_missing`). Absent or null: nothing is gated.
+   */
+  capabilities?: GatewayCapabilities | null
+  /**
+   * Gateway sync (domains.md 1.5): derive checks. Absent, or an agent without
+   * `config.checks.v1`: no checked jobs (every section plans as before).
+   */
+  checks?: PlanChecksInput | null
 }
 
 export interface PlannedOrder {
@@ -129,15 +188,29 @@ type SectionWork = {
   refs: string[]
   adoptOnly: boolean
   protected: boolean
+  /** A domain returns checks for this section (gateway sync). */
+  checked?: boolean
   change: ConfigDiffEntry | null
 }
 
 /** The planned jobs for the given rows (see the module comment). */
-export function planApply(input: PlanApplyInput): ApplyPlan {
+export function planApply(planInput: PlanApplyInput): ApplyPlan {
+  // Gateway sync domains.md 3.6: whether the controller is reached over a WAN
+  // (domains protect every uplink then).
+  const input: PlanApplyInput = planInput.management
+    ? {
+        ...planInput,
+        management: {
+          ...planInput.management,
+          wanSide: pathIsWanSide(planInput.sections, planInput.management),
+        },
+      }
+    : planInput
   const blocked: ApplyPlan['blocked'] = []
   const ledgerByPerch = new Map(input.ledger.map((e) => [e.perchId, e]))
   const wanted = input.perchIds ? new Set(input.perchIds) : null
   const works: SectionWork[] = []
+  const unavailable = input.registry?.unavailable(input.capabilities) ?? new Map<string, string>()
 
   for (const state of input.sections) {
     if (wanted && !wanted.has(state.perchId)) continue
@@ -152,6 +225,11 @@ export function planApply(input: PlanApplyInput): ApplyPlan {
     }
     if (state.conflict) {
       blocked.push({ ...at, reason: 'conflict' })
+      continue
+    }
+    const missing = state.domain ? unavailable.get(state.domain) : undefined
+    if (missing !== undefined) {
+      if (wanted) blocked.push({ ...at, reason: 'capability_missing', detail: missing })
       continue
     }
     if (input.kind === 'revert' && state.status !== 'drift') {
@@ -176,23 +254,141 @@ export function planApply(input: PlanApplyInput): ApplyPlan {
     works: SectionWork[]
     extra?: OrderPlan
   }> = []
+  const checksOn = checksEnabled(input)
+  if (checksOn) {
+    for (const w of works) {
+      if (!w.adoptOnly) w.checked = (checksOf(input, [w])?.items.length ?? 0) > 0
+    }
+  }
   const adoptOnly = works.filter((w) => w.adoptOnly)
-  const normal = works.filter((w) => !w.adoptOnly && !w.protected)
+  const normal = works.filter((w) => !w.adoptOnly && !w.protected && !w.checked)
+  const checked = works.filter((w) => !w.adoptOnly && !w.protected && w.checked)
   const guarded = works.filter((w) => !w.adoptOnly && w.protected)
   const ordersToGo = orderPlan.ops.length > 0
   if (adoptOnly.length > 0) groups.push({ kind: 'adopt', protected: false, works: adoptOnly })
   if (normal.length > 0 || ordersToGo) {
     groups.push({ kind: input.kind, protected: false, works: normal, extra: orderPlan })
   }
+  if (checked.length > 0) groups.push({ kind: input.kind, protected: false, works: checked })
   if (guarded.length > 0) groups.push({ kind: input.kind, protected: true, works: guarded })
 
-  const jobs = groups.map((g, i) =>
-    buildJob(g.kind, g.protected, g.works, i === 0 ? stale : [], input, g.extra)
-  )
+  const jobs = groups.map((g, i) => {
+    const job = buildJob(g.kind, g.protected, g.works, i === 0 ? stale : [], input, g.extra)
+    if (checksOn && g.kind !== 'adopt' && g.works.some((w) => w.checked)) {
+      const plan = checksOf(input, g.works)
+      if (plan) {
+        job.checked = true
+        job.checks = input.checks?.none ? { timeoutSeconds: 0, items: [] } : plan
+      }
+    }
+    return job
+  })
   if (jobs.length === 0 && stale.length > 0) {
     jobs.push(buildJob('adopt', false, [], stale, input))
   }
   return { jobs, blocked }
+}
+
+/**
+ * Is the management path's network WAN-side by the side rule (a remote
+ * controller)? From the router's config as the rows hold it.
+ */
+function pathIsWanSide(sections: SectionState[], path: ManagementPath): boolean {
+  const all = configSetOf(sections, [])
+  if (path.network !== null) return sideOf(path.network, all) === 'wan'
+  const sides = sidesOfSet(all)
+  return (all.network?.sections ?? []).some(
+    (s) =>
+      s.type === 'interface' &&
+      sides.get(s.name) === 'wan' &&
+      (s.options.device === path.device || s.options.ifname === path.device)
+  )
+}
+
+/** Checks are derived: the input asks for them and the agent runs them. */
+function checksEnabled(input: PlanApplyInput): boolean {
+  return (
+    input.checks !== null &&
+    input.checks !== undefined &&
+    input.registry !== null &&
+    hasFeature(input.capabilities, CHECKS_FEATURE)
+  )
+}
+
+/**
+ * The router's configs from the rows: every row's router content, with the
+ * given works' written content in place of theirs (null = deleted). What the
+ * router will hold once those works are live.
+ */
+function configSetOf(sections: SectionState[], works: SectionWork[]): UciConfigSet {
+  const written = new Map(works.map((w) => [w.state.perchId, w.written]))
+  const out: UciConfigSet = {}
+  const ordered = [...sections].sort(
+    (a, b) =>
+      (a.position ?? Number.MAX_SAFE_INTEGER) - (b.position ?? Number.MAX_SAFE_INTEGER) ||
+      a.perchId.localeCompare(b.perchId)
+  )
+  for (const s of ordered) {
+    const content = written.has(s.perchId) ? written.get(s.perchId)! : s.router
+    if (!content) continue
+    const config = (out[s.config] ??= { name: s.config, hash: '', sections: [] })
+    const section: UciSection = {
+      name: s.name,
+      type: content.type,
+      anonymous: s.anonymous,
+      index: config.sections.length,
+      options: { ...content.options },
+    }
+    config.sections.push(section)
+  }
+  return out
+}
+
+/**
+ * The checks of a set of works (one job, or one section to classify it):
+ * each domain's `checksFor` over its sections, items deduplicated by id (the
+ * first wins), the largest budget. Null when no domain returns an item.
+ */
+function checksOf(input: PlanApplyInput, works: SectionWork[]): ChecksPlan | null {
+  const registry = input.registry
+  const checks = input.checks
+  if (!registry || !checks) return null
+  const byDomain = new Map<string, SectionWork[]>()
+  for (const w of works) {
+    if (!w.state.domain) continue
+    const list = byDomain.get(w.state.domain) ?? []
+    list.push(w)
+    byDomain.set(w.state.domain, list)
+  }
+  const before = configSetOf(input.sections, [])
+  const after = configSetOf(input.sections, works)
+  const items: CheckItem[] = []
+  let timeout = 0
+  for (const [key, list] of byDomain) {
+    const domain = registry.get(key)
+    if (!domain?.checksFor) continue
+    const plan = domain.checksFor({
+      sections: list.map((w) => ({
+        perchId: w.state.perchId,
+        config: w.state.config,
+        name: w.state.name,
+        before: w.state.router,
+        after: w.written,
+      })),
+      before,
+      after,
+      observed: checks.observed,
+      settings: checks.settings,
+      managementPath: input.management,
+      targets: checks.targets,
+    })
+    if (!plan || plan.items.length === 0) continue
+    for (const item of plan.items) {
+      if (!items.some((i) => i.id === item.id)) items.push(item)
+    }
+    timeout = Math.max(timeout, plan.timeoutSeconds)
+  }
+  return items.length > 0 ? { timeoutSeconds: timeout, items } : null
 }
 
 function planSection(
@@ -218,7 +414,22 @@ function planSection(
       if (entry) ledgerRemove.push(state.perchId)
       return ledgerRemove.length > 0 ? work(true) : null
     }
-    ops.push({ op: 'delete', config: state.config, section: state.name })
+    if (!ledgered) {
+      // The agent deletes only sections it owns (perch-collector simulate.go
+      // `not_owned`): a router section Perch imported but never wrote is
+      // adopted first in the same job, renamed when anonymous (an anonymous
+      // section is adopted only with a new name).
+      const renameTo = state.anonymous ? `perch_${state.perchId}` : undefined
+      ops.push({
+        op: 'adopt',
+        config: state.config,
+        section: state.name,
+        perchId: state.perchId,
+        ...(renameTo ? { renameTo } : {}),
+      })
+      if (renameTo) name = renameTo
+    }
+    ops.push({ op: 'delete', config: state.config, section: name })
     if (entry) ledgerRemove.push(state.perchId)
     written = null
   } else {
@@ -276,7 +487,8 @@ function planSection(
     const where = {
       perchId: state.perchId,
       config: state.config,
-      section: name,
+      // A deleted section is shown under the name the router knows it by.
+      section: written === null ? state.name : name,
       domain: state.domain,
     }
     const change = adoptOnly
@@ -334,6 +546,8 @@ function buildJob(
   for (const config of configs) {
     if (input.hashes[config] !== undefined) base[config] = input.hashes[config]
   }
+  const ledgerSet = sorted.flatMap((w) => w.ledgerSet)
+  ledgerSet.push(...domainRelinks(input, configs, ops, ledgerSet))
   return {
     kind,
     protected: guarded,
@@ -341,7 +555,7 @@ function buildJob(
     base,
     ops,
     ledger: {
-      set: sorted.flatMap((w) => w.ledgerSet),
+      set: ledgerSet,
       remove: [...new Set([...sorted.flatMap((w) => w.ledgerRemove), ...staleLedger])],
     },
     perchIds: sorted.map((w) => w.state.perchId),
@@ -352,7 +566,45 @@ function buildJob(
     ],
     written: Object.fromEntries(sorted.map((w) => [w.state.perchId, w.written])),
     replaced: Object.fromEntries(sorted.map((w) => [w.state.perchId, w.state.router])),
+    checked: false,
+    checks: null,
   }
+}
+
+/**
+ * Ledger entries whose `domain` no longer names the row's domain (a section
+ * re-homed to another domain, gateway sync domains.md 1.3) are re-linked by
+ * the next job that touches their config: a `ledger.set` of the same perch id
+ * and section with the new domain. Entries without a domain (adopted ones)
+ * are left alone, as are sections this job deletes, renames or re-links
+ * already.
+ */
+function domainRelinks(
+  input: PlanApplyInput,
+  configs: string[],
+  ops: ApplyOp[],
+  already: LedgerEntry[]
+): LedgerEntry[] {
+  const out: LedgerEntry[] = []
+  const touched = new Set(configs)
+  const moved = new Set<string>()
+  for (const op of ops) {
+    if (op.op === 'delete' || (op.op === 'adopt' && op.renameTo)) {
+      moved.add(`${op.config}/${op.section}`)
+    }
+  }
+  const taken = new Set(already.map((e) => e.perchId))
+  for (const entry of input.ledger) {
+    if (!touched.has(entry.config) || entry.domain === '' || taken.has(entry.perchId)) continue
+    const row = input.sections.find((s) => s.perchId === entry.perchId)
+    if (!row || row.scope !== 'synced' || row.domain === null || row.domain === entry.domain) {
+      continue
+    }
+    if (row.config !== entry.config || row.name !== entry.section) continue
+    if (moved.has(`${entry.config}/${entry.section}`)) continue
+    out.push({ ...entry, domain: row.domain })
+  }
+  return out
 }
 
 interface OrderPlan {

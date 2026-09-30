@@ -6,6 +6,7 @@ import { ConfirmDialog, ErrorLine, FactRow, ToneBadge } from '@/components/gatew
 import { ChangesPanel } from '@/components/gateway-config/changes-panel'
 import { DnsPanel } from '@/components/gateway-config/dns-panel'
 import { GatewayBadges } from '@/components/gateway-config/gateway-badges'
+import { AmbiguityPanel } from '@/components/gateway-sync/ambiguity-panel'
 import { ActivityPanel, HistoryPanel } from '@/components/gateway-config/history-panels'
 import { ModeChooser, ModeDialog } from '@/components/gateway-config/mode-dialogs'
 import { PackagesPanel } from '@/components/gateway-config/packages-panel'
@@ -96,6 +97,8 @@ export function GatewayConfigDetailPage() {
           {g.uncommitted.length > 0 ? ` (${g.uncommitted.join(', ')})` : ''}. Perch reads committed configuration only.
         </p>
       ) : null}
+
+      <AmbiguityPanel gateway={g} isAdmin={isAdmin} />
 
       <nav className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none]" aria-label="Sections of the gateway page">
         <div role="tablist" className="flex min-w-max gap-1 border-b border-border">

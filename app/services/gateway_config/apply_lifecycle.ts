@@ -1,8 +1,26 @@
+import Collector from '#models/collector'
 import Gateway from '#models/gateway'
 import GatewayApply, { type GatewayApplyPostActions } from '#models/gateway_apply'
 import GatewaySecret from '#models/gateway_secret'
+import GatewayWan from '#models/gateway_wan'
 import { AgentOfflineError, AgentTimeoutError } from '#services/collector_agent_hub'
-import { planApply, type PlannedJob, type PlannedOrder } from '#services/gateway_config/apply_plan'
+import {
+  checkedConfirmWindow,
+  checksAllowConfirm,
+  checksParam,
+  failedCheckItems,
+  mergeChecksReport,
+  nextChecksState,
+  parseChecksReport,
+  wireChecks,
+} from '#services/gateway_config/apply_checks'
+import {
+  CHECKS_FEATURE,
+  planApply,
+  type PlanChecksInput,
+  type PlannedJob,
+  type PlannedOrder,
+} from '#services/gateway_config/apply_plan'
 import { contentOf, validateDesired, type SyncedSection } from '#services/gateway_config/domain'
 import { domainRegistry } from '#services/gateway_config/domains/index'
 import { planeError } from '#services/gateway_config/errors'
@@ -26,6 +44,8 @@ import {
   type AgentApplyResult,
   type WriteAccess,
 } from '#services/gateway_config/gateway_registry'
+import { getGatewaySyncSettings } from '#services/gateway_config/gateway_sync_settings'
+import { interfaceFacts, readObservedFacts } from '#services/gateway_config/observed_facts'
 import {
   hasOpenApply,
   loadSections,
@@ -58,6 +78,7 @@ import {
 } from '#services/gateway_config/sync_engine'
 import {
   actorColumns,
+  hasFeature,
   parseSystemActor,
   type ApplyKind,
   type ApplyState,
@@ -120,6 +141,12 @@ export type ApplyRequest = {
   note?: string | null
   /** Work for once the job is live (the WAN block's conntrack flush). */
   postActions?: GatewayApplyPostActions | null
+  /**
+   * Gateway sync (domains.md 3.5, protocol.md 1.6): the admin confirmed an
+   * edit that leaves no uplink (`wan_last_uplink`); checked jobs carry
+   * `{"v":1,"items":[]}`, so the router adds no default-route check either.
+   */
+  skipChecks?: boolean
 }
 
 export type DryRunResult = {
@@ -245,7 +272,8 @@ function planFor(
   gateway: Gateway,
   states: SectionState[],
   request: ApplyRequest,
-  orders: OrderState[] = []
+  orders: OrderState[] = [],
+  checks: PlanChecksInput | null = null
 ) {
   const kind = request.kind ?? 'apply'
   return planApply({
@@ -257,7 +285,33 @@ function planFor(
     management: gateway.managementPath,
     registry: domainRegistry(),
     orders: plannedOrders(orders, kind),
+    capabilities: gateway.capabilities,
+    checks,
   })
+}
+
+/**
+ * What the planner needs to derive checks (gateway sync domains.md 1.5):
+ * Settings → Gateway sync, the last `interfaces` observation and each WAN's
+ * own targets. Null when the agent does not run checks (`config.checks.v1`).
+ */
+export async function checksInputFor(
+  gateway: Gateway,
+  none = false
+): Promise<PlanChecksInput | null> {
+  if (!hasFeature(gateway.capabilities, CHECKS_FEATURE)) return null
+  const settings = await getGatewaySyncSettings()
+  const facts = await readObservedFacts(gateway.collectorId)
+  const targets: Record<string, string[]> = {}
+  for (const wan of await GatewayWan.query().where('gateway_id', gateway.id)) {
+    if (wan.checkTargets && wan.checkTargets.length > 0) targets[wan.network] = wan.checkTargets
+  }
+  return { settings, observed: { interfaces: interfaceFacts(facts) }, targets, none }
+}
+
+/** An apply sent with "no checks" on purpose (`skipChecks`): its re-plans keep that. */
+function explicitlyUnchecked(apply: GatewayApply): boolean {
+  return apply.checks !== null && apply.checks.items.length === 0 && !apply.checks.agentAdded
 }
 
 // ── requesting ───────────────────────────────────────────────────────────
@@ -295,7 +349,28 @@ export async function requestApply(
       }
     }
     const kind = request.kind ?? 'apply'
-    const plan = planFor(gateway, states, request, await loadOrders(gateway.id))
+    const plan = planFor(
+      gateway,
+      states,
+      request,
+      await loadOrders(gateway.id),
+      await checksInputFor(gateway, request.skipChecks === true)
+    )
+    // Gateway sync domains.md 1.2: a requested section whose domain needs
+    // more than the agent announces is never planned; the whole request is
+    // refused, as with conflicts.
+    const incapable = plan.blocked.filter((b) => b.reason === 'capability_missing')
+    if (incapable.length > 0) {
+      throw planeError(
+        409,
+        'gateway_capability_missing',
+        `${incapable[0].detail ?? 'The gateway agent cannot apply this yet'}.`,
+        {
+          capability: incapable[0].detail ?? null,
+          perchIds: incapable.map((b) => b.perchId),
+        }
+      )
+    }
     // Errors block only the sections this request changes: an odd section
     // imported from the router does not freeze every other edit.
     const planned = new Set(plan.jobs.flatMap((j) => j.perchIds))
@@ -423,16 +498,39 @@ async function createApply(
   apply.kind = job.kind
   apply.state = 'queued'
   applyJob(apply, job)
+  // Gateway sync domains.md 1.5: a checked job (the WAN) gets the WAN
+  // confirm window and mode; queued jobs and reverts keep `agent` and are
+  // still gated by their checks.
+  const gatewaySync = job.checked ? await getGatewaySyncSettings() : null
   // Queued applies always confirm by the agent alone (section 5.5): the
   // admin may be long gone when the router comes back.
   apply.confirmMode =
     options.queued || job.kind === 'revert'
       ? 'agent'
-      : (options.confirmMode ?? settings.confirmMode)
-  apply.confirmTimeoutSeconds = confirmTimeoutFor(settings, {
-    protected: job.protected,
-    routerMaxSeconds: routerConfirmMax(gateway),
-  })
+      : gatewaySync
+        ? gatewaySync.wanConfirmMode
+        : (options.confirmMode ?? settings.confirmMode)
+  apply.confirmTimeoutSeconds = gatewaySync
+    ? checkedConfirmWindow(settings, gatewaySync, {
+        protected: job.protected,
+        routerMaxSeconds: routerConfirmMax(gateway),
+      })
+    : confirmTimeoutFor(settings, {
+        protected: job.protected,
+        routerMaxSeconds: routerConfirmMax(gateway),
+      })
+  // "No checks" by request rides on every job of the chain (an unchecked
+  // job sends `{"v":1,"items":[]}` too), so the checked job after it has it.
+  apply.checks =
+    wireChecks(job.checks ?? null, apply.confirmTimeoutSeconds) ??
+    (options.skipChecks ? { v: 1, timeoutSeconds: 0, items: [] } : null)
+  apply.checkResults = null
+  apply.checksState = null
+  if (job.checked && apply.checks && apply.checks.items.length === 0) {
+    const note =
+      'Applied without checks (no uplink is left); the router does not verify the internet.'
+    options = { ...options, note: options.note ? `${options.note} — ${note}` : note }
+  }
   const actor = actorColumns(requestActor(options))
   apply.requestedByUserId = actor.userId
   apply.systemActor = actor.systemActor
@@ -475,7 +573,8 @@ async function applyParams(
   job: Pick<PlannedJob, 'kind' | 'protected' | 'base' | 'ops' | 'ledger' | 'secretRefs'>,
   confirmTimeoutSeconds: number,
   dryRun: boolean,
-  access: WriteAccess
+  access: WriteAccess,
+  checks: GatewayApply['checks'] = null
 ): Promise<Record<string, unknown>> {
   // The agent needs the hash of every config an op touches ("" = no file).
   const base: Record<string, string> = { ...job.base }
@@ -492,6 +591,10 @@ async function applyParams(
   }
   if (job.protected) params.protected = true
   if (confirmTimeoutSeconds > 0) params.confirmTimeoutSeconds = confirmTimeoutSeconds
+  // Gateway sync protocol.md 1: only to an agent that runs them (an older
+  // one ignores the field, and its domains never plan checked sections).
+  const wire = checksParam(checks)
+  if (wire && hasFeature(gateway.capabilities, CHECKS_FEATURE)) params.checks = wire
   if (job.secretRefs.length > 0 && access.writable && !access.signed) {
     const rows = await GatewaySecret.query()
       .where('gateway_id', gateway.id)
@@ -549,7 +652,8 @@ export async function sendApply(gateway: Gateway, apply: GatewayApply): Promise<
       kind: apply.kind === 'revert' ? 'revert' : 'apply',
       perchIds: apply.chainPerchIds ?? (apply.kind === 'revert' ? apply.perchIds : undefined),
     },
-    await loadOrders(gateway.id)
+    await loadOrders(gateway.id),
+    await checksInputFor(gateway, explicitlyUnchecked(apply))
   )
   const job = plan.jobs[0]
   if (!job) {
@@ -582,6 +686,8 @@ export async function sendApply(gateway: Gateway, apply: GatewayApply): Promise<
     op.op === 'adopt' && domains.get(op.perchId) ? { ...op, domain: domains.get(op.perchId)! } : op
   )
   applyJob(apply, job)
+  // The re-plan's checks (the observation may have moved since it queued).
+  if (job.checked) apply.checks = wireChecks(job.checks ?? null, apply.confirmTimeoutSeconds)
   transition(apply, 'send')
   apply.sentAt = DateTime.utc()
   apply.signed = access.signed
@@ -596,7 +702,15 @@ export async function sendApply(gateway: Gateway, apply: GatewayApply): Promise<
     result = await gatewayRequest<Record<string, unknown>>(
       gateway,
       'gateway.config.apply',
-      await applyParams(gateway, apply.applyKey, job, apply.confirmTimeoutSeconds, false, access),
+      await applyParams(
+        gateway,
+        apply.applyKey,
+        job,
+        apply.confirmTimeoutSeconds,
+        false,
+        access,
+        apply.checks
+      ),
       { timeoutMs: APPLY_RPC_TIMEOUT_MS, access }
     )
   } catch (error) {
@@ -666,6 +780,25 @@ async function onApplyReply(
         : DateTime.utc().plus({ seconds: apply.confirmTimeoutSeconds })
     if (typeof result.confirmTimeoutSeconds === 'number') {
       apply.confirmTimeoutSeconds = Math.round(result.confirmTimeoutSeconds)
+    }
+    // Gateway sync protocol.md 1.2: the router runs checks (the controller's,
+    // or its own net for an uplink change without any): they gate the confirm.
+    const report = parseChecksReport(result.checks)
+    if (report) {
+      if (report.agentAdded && !apply.checks?.items.length) {
+        apply.checks = {
+          v: 1,
+          timeoutSeconds: report.timeoutSeconds ?? 90,
+          agentAdded: true,
+          items: (report.baseline ?? []).map((b) => ({
+            id: b.id,
+            kind: 'default_route',
+            family: 4 as const,
+          })),
+        }
+      }
+      apply.checkResults = mergeChecksReport(null, report, apply.checks?.items ?? [])
+      apply.checksState = report.state ?? 'pending'
     }
     await apply.save()
     await recordGatewayEvent(gateway.id, 'applied', {
@@ -810,7 +943,55 @@ export async function onAgentReconnected(gateway: Gateway): Promise<void> {
     }
     apply.agentReconnectedAt = DateTime.utc()
     await apply.save()
+    // The hello's `apply.checks` (protocol.md 1.5): where the checks stand.
+    if (agentApply.checks !== undefined) await recordChecksReport(gateway, apply, agentApply.checks)
   }
+}
+
+/**
+ * `gateway.config.checks` (protocol.md 1.5), in the gateway's queue: the
+ * router's checks of a pending apply moved. Unknown or finished applies are
+ * ignored (a late notification).
+ */
+export async function onChecksNotification(
+  gateway: Gateway,
+  params: Record<string, unknown>
+): Promise<void> {
+  if (typeof params.applyId !== 'string') return
+  const apply = await GatewayApply.query()
+    .where('gateway_id', gateway.id)
+    .where('apply_key', params.applyId)
+    .first()
+  if (!apply || (FINISHED_APPLY_STATES as string[]).includes(apply.state)) return
+  await recordChecksReport(gateway, apply, params)
+}
+
+/**
+ * Merges one report of the router's checks into the apply, records
+ * `checks_passed` / `checks_failed` once, and sends the confirm when the
+ * checks were all that held it back.
+ */
+async function recordChecksReport(gateway: Gateway, apply: GatewayApply, raw: unknown) {
+  const report = parseChecksReport(raw)
+  if (!report) return
+  const before = apply.checksState
+  apply.checkResults = mergeChecksReport(apply.checkResults, report, apply.checks?.items ?? [])
+  apply.checksState = nextChecksState(before, report.state ?? before ?? 'pending')
+  await apply.save()
+  const now = apply.checksState
+  if (now !== before && (now === 'passed' || now === 'failed')) {
+    await recordGatewayEvent(gateway.id, now === 'passed' ? 'checks_passed' : 'checks_failed', {
+      applyId: Number(apply.id),
+      detail: {
+        applyId: apply.applyKey,
+        ...(apply.checkResults.allSkipped ? { allSkipped: true } : {}),
+        ...(now === 'failed'
+          ? { failed: failedCheckItems(apply.checks, apply.checkResults).map((i) => i.id) }
+          : {}),
+      },
+    })
+  }
+  if (now === 'passed' && before !== 'passed') await tryConfirm(gateway, apply)
 }
 
 /** The first accepted `collector.push` on a fresh session: the agent half of the confirm. */
@@ -832,7 +1013,8 @@ export async function onPushAccepted(gateway: Gateway): Promise<void> {
 export async function adminConfirm(
   gatewayId: number,
   applyKey: string,
-  userId: number
+  userId: number,
+  body: { overrideChecks?: boolean; confirm?: string } = {}
 ): Promise<GatewayApply> {
   return gatewayQueue.run(gatewayId, async () => {
     const gateway = await Gateway.findOrFail(gatewayId)
@@ -844,6 +1026,50 @@ export async function adminConfirm(
     }
     if (apply.deadlineAt && apply.deadlineAt < DateTime.utc()) {
       throw planeError(410, 'deadline_passed', 'The confirm window has closed.')
+    }
+    // Gateway sync domains.md 1.5: the router's checks gate "Keep changes".
+    // "Keep anyway" (overrideChecks, with the gateway's name typed) is only
+    // for checks still pending or running: failed checks are being rolled
+    // back by the router already.
+    if (!checksAllowConfirm(apply.checksState)) {
+      const view = { state: apply.checksState, items: apply.checkResults?.items ?? [] }
+      if (apply.checksState === 'failed') {
+        throw planeError(
+          409,
+          'checks_failed',
+          'The router’s checks failed; it rolls the change back.',
+          {
+            checks: view,
+          }
+        )
+      }
+      if (!body.overrideChecks) {
+        throw planeError(
+          409,
+          'checks_pending',
+          'The router is still checking the change; wait for its checks, or keep it anyway.',
+          { checks: view }
+        )
+      }
+      const name = await gatewayNameOf(gateway)
+      if ((body.confirm ?? '').trim() !== name) {
+        throw planeError(
+          422,
+          'confirm_mismatch',
+          `Type the gateway's name (${name}) to keep the change anyway.`,
+          {
+            confirm: name,
+          }
+        )
+      }
+      apply.checksState = 'overridden'
+      apply.checksOverriddenByUserId = userId
+      apply.checksOverriddenAt = DateTime.utc()
+      await recordGatewayEvent(gateway.id, 'checks_overridden', {
+        userId,
+        applyId: Number(apply.id),
+        detail: { applyId: apply.applyKey, items: apply.checkResults?.items ?? [] },
+      })
     }
     apply.adminConfirmedAt = DateTime.utc()
     apply.adminConfirmedBy = userId
@@ -862,6 +1088,8 @@ export async function adminConfirm(
 async function tryConfirm(gateway: Gateway, apply: GatewayApply): Promise<void> {
   if (apply.state !== 'pending_confirm' || !apply.agentConfirmedAt) return
   if (apply.confirmMode === 'admin_and_agent' && !apply.adminConfirmedAt) return
+  // Gateway sync: the router's checks must have passed (or been overridden).
+  if (!checksAllowConfirm(apply.checksState)) return
   const settings = await getGatewayConfigSettings()
   const access = writeAccess(gateway, settings)
   if (!access.writable) return
@@ -870,12 +1098,21 @@ async function tryConfirm(gateway: Gateway, apply: GatewayApply): Promise<void> 
     result = await gatewayRequest<Record<string, unknown>>(
       gateway,
       'gateway.config.confirm',
-      { applyId: apply.applyKey },
+      {
+        applyId: apply.applyKey,
+        ...(apply.checksState === 'overridden' ? { overrideChecks: true } : {}),
+      },
       { access }
     )
   } catch (error) {
     const code = agentErrorCode(error)
     const data = (error as { data?: Record<string, unknown> }).data
+    if ((code === 'checks_pending' || code === 'checks_failed') && data?.checks) {
+      // The router's view of its checks is behind ours or ahead of it:
+      // take it; the next report (or the tick) confirms.
+      await recordChecksReport(gateway, apply, data.checks)
+      return
+    }
     if (code === 'deadline_passed' && data && typeof data.result === 'object') {
       const parsed = parseApplyResult(data.result)
       if (parsed) await applyResult(gateway, parsed)
@@ -994,6 +1231,14 @@ async function finishConfirmed(
       domain: row?.domain ?? '',
     })
   }
+  // A deleted section's entries go with it (the agent drops them by section),
+  // including one this job adopted just to delete it.
+  for (const op of apply.ops) {
+    if (op.op !== 'delete') continue
+    for (const [id, entry] of ledger) {
+      if (entry.config === op.config && entry.section === op.section) ledger.delete(id)
+    }
+  }
   gateway.observedLedger = [...ledger.values()]
   gateway.observedHashes = { ...(gateway.observedHashes ?? {}), ...hashes }
   if (apply.kind === 'revert') gateway.pinnedHashes = gateway.observedHashes
@@ -1026,7 +1271,13 @@ async function chainNext(gateway: Gateway, apply: GatewayApply): Promise<void> {
   }
   // Only the sections the request covered: without a filter, the ones the
   // first job and its siblings carried are the whole draft of that moment.
-  const plan = planFor(gateway, states, request, await loadOrders(gateway.id))
+  const plan = planFor(
+    gateway,
+    states,
+    request,
+    await loadOrders(gateway.id),
+    await checksInputFor(gateway, explicitlyUnchecked(apply))
+  )
   const job = plan.jobs[0]
   if (!job) return
   if (
@@ -1043,6 +1294,7 @@ async function chainNext(gateway: Gateway, apply: GatewayApply): Promise<void> {
     kind: job.kind,
     queued: false,
     chainStep: apply.chainStep + 1,
+    skipChecks: explicitlyUnchecked(apply),
   })
   // Post actions whose sections were not in this job go with the next one.
   if (apply.postActions?.conntrackFlush && !apply.postActions.conntrackFlush.done) {
@@ -1150,13 +1402,31 @@ async function settleRolledBack(gateway: Gateway, apply: GatewayApply, result: A
     apply.state = result.outcome === 'failed' ? 'failed' : 'rolled_back'
     apply.finishedAt = now
   }
+  // Gateway sync protocol.md 1.5: a rollback after failed checks carries them.
+  const checksBefore = apply.checksState
+  const report = parseChecksReport(result.checks)
+  if (report) {
+    apply.checkResults = mergeChecksReport(apply.checkResults, report, apply.checks?.items ?? [])
+    apply.checksState = nextChecksState(checksBefore, report.state)
+  } else if (result.reason === 'checks_failed' && checksBefore !== 'overridden') {
+    apply.checksState = 'failed'
+  }
+  const failedChecks =
+    result.reason === 'checks_failed' ? failedCheckItems(apply.checks, apply.checkResults) : []
   apply.outcome = {
     reason: result.reason ?? (result.outcome === 'failed' ? 'failed' : 'rolled_back'),
     ...(result.detail ? { message: result.detail } : {}),
     ...(discardedConfigs.length > 0 ? { discardedConfigs } : {}),
+    ...(failedChecks.length > 0 ? { checks: failedChecks } : {}),
     hashes: result.hashes ?? {},
   }
   await apply.save()
+  if (apply.checksState === 'failed' && checksBefore !== 'failed') {
+    await recordGatewayEvent(gateway.id, 'checks_failed', {
+      applyId: Number(apply.id),
+      detail: { applyId: apply.applyKey, failed: failedChecks.map((i) => i.id), rolledBack: true },
+    })
+  }
 
   // Discarded router edits, matched to the job's sections by name.
   const renames = new Map<string, string>()
@@ -1271,6 +1541,16 @@ async function afterFailure(gateway: Gateway, apply: GatewayApply) {
       detail: { failures: failures.length, windowMinutes: settings.enforcementWindowMinutes },
     })
   }
+}
+
+/**
+ * The gateway's name as the dashboard shows it (its collector's, else
+ * `Gateway <id>`): what an admin types to keep a change anyway.
+ */
+async function gatewayNameOf(gateway: Gateway): Promise<string> {
+  if (gateway.collectorId === null) return `Gateway ${gateway.id}`
+  const collector = await Collector.find(gateway.collectorId)
+  return collector?.name ?? `Gateway ${gateway.id}`
 }
 
 export async function findApply(gatewayId: number, applyKey: string): Promise<GatewayApply> {
@@ -1432,7 +1712,8 @@ export async function startRevert(
     gateway,
     states,
     { userId, kind: 'revert', perchIds },
-    await loadOrders(gateway.id)
+    await loadOrders(gateway.id),
+    await checksInputFor(gateway)
   )
   const job = plan.jobs.find((j) => j.kind === 'revert') ?? plan.jobs[0]
   if (!job) return null

@@ -83,6 +83,12 @@ export const pages = {
   settingsNotifications: lazyPage(() =>
     import('@/pages/notifications-settings-page').then((m) => m.NotificationsSettingsPage),
   ),
+  gatewayInternet: lazyPage(() => import('@/pages/gateway-internet-page').then((m) => m.GatewayInternetPage)),
+  gatewayVpn: lazyPage(() => import('@/pages/gateway-vpn-page').then((m) => m.GatewayVpnPage)),
+  gatewayIpv6: lazyPage(() => import('@/pages/gateway-ipv6-page').then((m) => m.GatewayIpv6Page)),
+  settingsGatewaySync: lazyPage(() =>
+    import('@/pages/gateway-sync-settings-page').then((m) => m.GatewaySyncSettingsPage),
+  ),
   notFound: lazyPage(() => import('@/pages/not-found-page').then((m) => m.NotFoundPage)),
 }
 

@@ -6,6 +6,9 @@ import { Callout, LastWriteNote, ToneBadge } from '@/components/firewall/firewal
 import { FirewallOverviewPanel } from '@/components/firewall/overview-panel'
 import { PortForwardsPanel } from '@/components/firewall/port-forwards-panel'
 import { RulesPanel } from '@/components/firewall/rules-panel'
+import { AmbiguityPanel } from '@/components/gateway-sync/ambiguity-panel'
+import { FirewallDefaultsCard } from '@/components/gateway-sync/firewall-defaults-card'
+import { UpnpSection } from '@/components/gateway-sync/upnp-section'
 import { EmptyState } from '@/components/ui/empty-state'
 import { KpiTile } from '@/components/ui/kpi-tile'
 import { Spinner } from '@/components/ui/spinner'
@@ -191,6 +194,20 @@ function FirewallBody({
         </Callout>
       ) : null}
 
+      <AmbiguityPanel
+        gateway={gateway}
+        isAdmin
+        configs={['firewall']}
+        onResolved={(a) =>
+          setLastWrite({
+            what: `Resolved the name clashes: ${a.promoted.length} now managed by Perch${a.excluded.length > 0 ? `, ${a.excluded.length} left router-only` : ''}`,
+            issues: a.issues,
+            apply: a.apply,
+            applyError: a.applyError,
+          })
+        }
+      />
+
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <KpiTile label="Zones" value={overview.zones.length} sub={`${overview.forwardings.length} forwardings`} />
         <KpiTile
@@ -246,16 +263,24 @@ function FirewallBody({
         <LastWriteNote gatewayId={gateway.id} {...lastWrite} onDismiss={() => setLastWrite(null)} />
       ) : null}
 
-      {tab === 'overview' ? <FirewallOverviewPanel overview={overview} /> : null}
+      {tab === 'overview' ? (
+        <>
+          <FirewallDefaultsCard gateway={gateway} canWrite={canWrite} onWrite={setLastWrite} />
+          <FirewallOverviewPanel overview={overview} />
+        </>
+      ) : null}
       {tab === 'forwards' ? (
-        <PortForwardsPanel
-          gatewayId={gateway.id}
-          overview={overview}
-          devices={devices}
-          canWrite={canWrite}
-          writeHint={writeHint}
-          onWrite={setLastWrite}
-        />
+        <>
+          <PortForwardsPanel
+            gatewayId={gateway.id}
+            overview={overview}
+            devices={devices}
+            canWrite={canWrite}
+            writeHint={writeHint}
+            onWrite={setLastWrite}
+          />
+          <UpnpSection gateway={gateway} canWrite={canWrite} onWrite={setLastWrite} />
+        </>
       ) : null}
       {tab === 'rules' ? (
         <RulesPanel

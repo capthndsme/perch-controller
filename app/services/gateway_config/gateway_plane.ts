@@ -4,6 +4,7 @@ import GatewayApply from '#models/gateway_apply'
 import {
   applyResult,
   onAgentReconnected,
+  onChecksNotification,
   onPushAccepted,
 } from '#services/gateway_config/apply_lifecycle'
 import {
@@ -39,7 +40,8 @@ import type { DateTime } from 'luxon'
  * - `afterGatewayHello` in the background: unacked results, the fresh
  *   session of a pending apply, capabilities, and a read when the router's
  *   hashes moved while the controller was not looking;
- * - `gateway.config.changed` and `gateway.config.result` notifications;
+ * - `gateway.config.changed`, `gateway.config.result` and (gateway sync)
+ *   `gateway.config.checks` notifications;
  * - every accepted `collector.push` (the agent half of a confirm);
  * - the session's end.
  *
@@ -216,6 +218,27 @@ export async function onConfigResult(collectorId: number, params: unknown): Prom
     logger.warn(
       { gatewayId: gateway.id, error: (error as Error).message },
       'gateway_plane: result not handled'
+    )
+  }
+}
+
+/**
+ * `gateway.config.checks` (gateway sync protocol.md 1.5): the router's checks
+ * of a pending apply moved; passing ones may release the confirm.
+ */
+export async function onConfigChecks(collectorId: number, params: unknown): Promise<void> {
+  if (typeof params !== 'object' || params === null) return
+  const gateway = await gatewayForCollector(collectorId)
+  if (!gateway || normalizeMode(gateway.mode) !== 'managed') return
+  try {
+    await gatewayQueue.run(gateway.id, async () => {
+      await gateway.refresh()
+      await onChecksNotification(gateway, params as Record<string, unknown>)
+    })
+  } catch (error) {
+    logger.warn(
+      { gatewayId: gateway.id, error: (error as Error).message },
+      'gateway_plane: checks notification not handled'
     )
   }
 }

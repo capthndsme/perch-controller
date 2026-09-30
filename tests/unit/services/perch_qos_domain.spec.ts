@@ -271,13 +271,16 @@ test.group('perch_qos domain | the package the planner renders', () => {
     assert.isNull(perchQosDomain.requires({ packages: { 'perch-qos': '1.0.0' } }))
     assert.equal(normalizePerchQosOption('enabled', 'on'), '1')
     assert.equal(normalizePerchQosOption('down_kbit', '050000'), '50000')
-    assert.deepEqual(
-      domainRegistry()
-        .list()
-        .map((d) => d.key)
-        .slice(-2),
-      ['sqm', 'perch_qos']
-    )
+    // The QoS domains follow the firewall's (apply order); the gateway-sync
+    // sibling packages (upnpd, ddns) come after them.
+    const keys = domainRegistry()
+      .list()
+      .map((d) => d.key)
+    assert.deepEqual(keys.slice(keys.indexOf('sqm'), keys.indexOf('sqm') + 2), ['sqm', 'perch_qos'])
+    assert.isAbove(keys.indexOf('sqm'), keys.indexOf('firewall'))
+    // A config listed in managed_config counts as installed (a hand-installed
+    // perch-qos has no package record: the live gateway).
+    assert.isNull(perchQosDomain.requires({ packages: {}, allowedConfigs: ['perch-qos'] }))
     assert.isTrue(perchQosDomain.oneWay)
   })
 

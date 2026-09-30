@@ -2870,3 +2870,64 @@ Design: `docs/design/alerts/` (README §2–4, events.md, api.md, delivery.md). 
   that one runs `migration:run` per test, whose advisory lock (`GET_LOCK('1')`) is sometimes released on another
   pooled connection ("Migration completed, but unable to release database lock"), after which every later test's
   setup fails and the teardown hangs.
+
+## 2026-09-30 — Gateway sync Phase A, controller (G-CTL, branch `gwsync/build`)
+
+Design: workspace `docs/design/gateway-sync/` (local), build plan `docs/design/BUILD-PLAN-2026-09-30.md`. Controller
+only, no migration, live-safe with today's collector.
+
+- **B8 skeleton.** `start/routes/gateway_sync.ts` (one import line in `start/routes.ts`): every route of the design,
+  admin-only; routes of packages not built answer 501 `not_built` with the package id. The registry takes `wan`,
+  `wireguard`, `network_globals`, `firewall_defaults`, `upnp`, `ddns` in claim order; the not-built ones claim
+  nothing. `mwan3` is not registered (decision 12 stands).
+- **B0 core (Phase A parts).** Wildcard types (`wireguard_*`). Claims are gated on the stored capabilities
+  (`requires`); a synced row of a domain the agent can no longer serve follows the router, is never drift and is
+  refused by the planner (`gateway_capability_missing`). Re-homing: a settled synced row another domain claims now
+  moves in place (`section_rehomed`); unclaimed rows are left alone (domains write sections they would not import,
+  e.g. device-group ipsets). Excluded rows leave the identity-key census; an ambiguous member can be excluded.
+  The planner adopts an unledgered section before deleting it (the agent refuses `not_owned`; the scripted gateway
+  now enforces this too), and the ledger model drops a deleted section's entry. `sqm`/`perch_qos` `requires`
+  accept a config listed in `managed_config` (the live perch-qos has no package record). Applies carry
+  `origin.domains`.
+- **B3.** `GET /gateways/:id/ambiguities` + `POST …/ambiguities/resolve` (keep / rename / delete / exclude; one
+  job, anonymous members adopted as `perch_<id>`); `firewall_defaults` domain + `GET/PATCH …/firewall/defaults`
+  (protected job; REJECT/DROP on input/output needs the gateway's name); `dns_records` takes MAC-less hosts
+  (type `host`, `publishDns` on PATCH).
+- **B7a.** `GET /gateways/:id/multiwan`: mwan3 explained as a profile (the live shape reads `balance` with a sticky
+  rule); `profile` is null until the collector joins `mwan3` read-only.
+
+Dry run on the live rows (offline, read-only dump): the first read promotes `dhcp.cfg08fe63` (DNS host) and the
+firewall `defaults` with B = R = C, nothing written, unmodeled 19 → 17; `globe_force` stays in `networks` (the
+side rule is B1). Resolving the four redirects with the suggested names plans one firewall job: four adopts renamed
+`perch_<id>` + four puts, no order op, not protected.
+
+## 2026-09-30 — Gateway sync Phase B, controller (G-B, branch `gwsync/build`)
+
+Design: workspace `docs/design/gateway-sync/` (domains.md 1.5, 1.7, 2, 3; rest.md 2, 3, 11), build plan wave 2
+batch A. Migrations 140–142.
+
+- **B0 checks.** Domains return checks (`checksFor`); the planner puts those sections into a checked job (WAN
+  window 300 s, mode `admin_and_agent` by default, the router's checks gate the confirm and roll back early). The
+  lifecycle records the reply's baseline, `gateway.config.checks`, the hello's `apply.checks` and a `checks_failed`
+  result; "Keep anyway" is `POST …/confirm {overrideChecks, confirm: <gateway name>}`, only while checks run.
+  Per-domain Authoritative policy (`import`).
+- **B1 WAN.** `domains/side.ts` in the collector's order (fixes `globe_force`: a static alias on the WAN 3 modem
+  port was a LAN network); `wan` domain (uplinks, IPv6 companions, aliases, NAT links, the port's device section,
+  the WAN pool; verbatim, exact round trip; validation codes of domains.md 3.4; imports router edits by default,
+  D2); checks derivation (`wan_checks.ts`: `interface_up` per touched uplink/companion, `mustPass` when it is
+  enabled or its connection changes while up, then `default_route`, `reach` via the primary's `$gateway`,
+  `resolve`); REST `GET/PATCH/POST/DELETE /gateways/:id/wan…`, order, aliases, history; guards `wan_last_uplink`
+  (with the gateway's name: sent with `{v:1, items:[]}`) and `wan_management_path`; Settings → Gateway sync
+  (`gateway_sync`, `authoritativeWan: import`); WAN transitions from the `interfaces` observation, pruned daily
+  at 03:55.
+- **Collector (C1 follow-up).** The `resolve` check asks a fresh label `perch-<12 hex>.<name>.` on every probe: a
+  cached `example.com` in dnsmasq cannot pass it while the WAN is down; NXDOMAIN counts as the upstream answering.
+- **Live dry run** (read-only: `uci` over `lxc exec`, secrets redacted; nothing written): the side rule classifies
+  the gateway as README section 2 with or without the agent's facts. Once the collector announces
+  `config.checks.v1`, the first read promotes `wan`, `wan6`, `ADDR`, `globe`, `globev6`, `LANX`, `lan2`, the `wan0`
+  device section and `dhcp.wan` to `wan` (B = R = C, nothing written) and re-homes `globe_force` from `networks`;
+  uplinks rank `wan` 1 (companion `wan6`, alias `ADDR`), `lan2` 2, `globe` 3 (companion `globev6`, alias
+  `globe_force`); `LANX` is a NAT link. One warning: `wan_mac_override_ignored` (the interface-level `macaddr` of
+  `wan` is not the one in effect). The live collector (1.1.0-pre.3) announces no features yet, so until it is
+  updated `wan` claims nothing and the WAN page is read-only (`capability_missing`).
+

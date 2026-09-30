@@ -1,0 +1,95 @@
+# A network config shaped like the live gateway's (README section 2), placeholders only:
+# three DHCP uplinks (wan on wan0, lan2 on wan2, globe on its modem port), IPv6
+# companions (wan6 on the same device, globev6 on @globe), two aliases on uplink devices
+# (ADDR on wan0 in a masquerading zone, globe_force on globe in no zone: the side rule's
+# rule 4), a masqueraded side network (LANX: a NAT link), the uplink port's MAC override,
+# a WireGuard client and the LAN. Secret options (the WireGuard keys) are left out.
+config interface 'loopback'
+	option proto 'static'
+	option ipaddr '127.0.0.1'
+	option netmask '255.0.0.0'
+	option device 'lo'
+
+config interface 'wan'
+	option proto 'dhcp'
+	option device 'wan0'
+	option macaddr '02:00:00:00:00:0a'
+	option metric '1'
+	option peerdns '0'
+	list dns '8.8.8.8'
+	list dns '1.1.1.1'
+
+config interface 'wan6'
+	option proto 'dhcpv6'
+	option device 'wan0'
+	option reqaddress 'try'
+	option reqprefix 'auto'
+	option peerdns '0'
+	list dns '2001:4860:4860::8888'
+
+config interface 'lan'
+	option device 'lan0'
+	option proto 'static'
+	option dns_search 'lan'
+	option delegate '0'
+	option ip6assign '64'
+	option ipaddr '192.168.1.1/24'
+
+config interface 'ADDR'
+	option proto 'static'
+	option device 'wan0'
+	list ipaddr '192.168.100.21/24'
+	list ipaddr '192.168.101.244/24'
+
+config interface 'globe'
+	option proto 'dhcp'
+	option device 'globe'
+	option metric '100'
+
+config interface 'globe_force'
+	option proto 'static'
+	option device 'globe'
+	option ipaddr '192.168.254.2'
+	option netmask '255.255.255.0'
+
+config interface 'globev6'
+	option proto 'dhcpv6'
+	option device '@globe'
+	option reqaddress 'try'
+	option reqprefix 'auto'
+
+config route
+	option interface 'lan'
+	option target '192.168.50.0/24'
+	option gateway '192.168.1.64'
+
+config interface 'LANX'
+	option proto 'static'
+	option device 'eth0'
+	option ipaddr '192.168.200.1'
+	option netmask '255.255.255.0'
+
+config interface 'lan2'
+	option proto 'dhcp'
+	option device 'wan2'
+	option metric '2'
+
+config device
+	option name 'wan0'
+	option macaddr '02:00:00:00:00:0b'
+
+config interface 'wgfix'
+	option proto 'wireguard'
+	list addresses '192.168.77.10/32'
+	list addresses 'fd42:42:42::10/128'
+	option nohostroute '1'
+	option defaultroute '0'
+	option delegate '0'
+
+config wireguard_wgfix
+	option description 'Imported peer configuration'
+	option persistent_keepalive '25'
+	option endpoint_host 'vpn.example.com'
+	option endpoint_port '51820'
+	option route_allowed_ips '1'
+	list allowed_ips '192.168.78.0/24'

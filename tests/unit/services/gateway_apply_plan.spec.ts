@@ -495,9 +495,11 @@ test.group('apply planning | Authoritative revert', () => {
     const job = plan(rows, { kind: 'revert', ledger: ledgerOf(rows.slice(0, 1)) }).jobs[0]
     assert.equal(job.kind, 'revert')
     assert.sameMembers(job.perchIds, ['edited', 'deleted', 'new'])
+    // The router's own new section is adopted first: the agent deletes owned
+    // sections only (perch-collector simulate.go `not_owned`).
     assert.deepEqual(
       job.ops.map((op) => `${op.op}:${'section' in op ? op.section : ''}`),
-      ['delete:extra', 'put:perch_deleted', 'put:perch_edited']
+      ['adopt:extra', 'delete:extra', 'put:perch_deleted', 'put:perch_edited']
     )
     assert.deepEqual(job.replaced.new, extra, 'kept for "Restore router version"')
     assert.deepEqual(

@@ -337,17 +337,26 @@ export async function deleteDeviceReservation(
 export type DnsRecordView = {
   perchId: string
   section: string
-  type: 'a' | 'cname'
+  /** `host`: a MAC-less `dhcp` host that only publishes a name (gateway sync domains.md 6). */
+  type: 'a' | 'cname' | 'host'
   name: string
   value: string
+  /** `host` records: whether dnsmasq answers the name (`dns '1'`); null for the others. */
+  publishDns: boolean | null
   owner: 'perch' | 'router'
   status: string
   applied: boolean
 }
 
 function recordOf(s: SectionState): DnsRecord | null {
-  if (s.config !== 'dhcp' || (s.type !== 'domain' && s.type !== 'cname')) return null
+  if (s.config !== 'dhcp' || !['domain', 'cname', 'host'].includes(s.type)) return null
   return dnsRecordsDomain.parse(asSynced(s))[0] ?? null
+}
+
+function publishDnsOf(r: DnsRecord): boolean | null {
+  if (r.type !== 'host') return null
+  const dns = r.extra.dns
+  return typeof dns === 'string' && ['1', 'true', 'yes', 'on'].includes(dns.trim().toLowerCase())
 }
 
 function recordView(s: SectionState): DnsRecordView | null {
@@ -359,6 +368,7 @@ function recordView(s: SectionState): DnsRecordView | null {
     type: r.type,
     name: r.name,
     value: r.value,
+    publishDns: publishDnsOf(r),
     owner: s.scope === 'synced' ? 'perch' : 'router',
     status: s.status,
     applied: s.router !== null && s.status === 'in_sync',
@@ -372,7 +382,9 @@ export async function dnsOverview(gatewayId: number) {
   return {
     labelNames: gateway.dnsLabelNames === 'off' ? 'off' : 'review',
     records: states.map(recordView).filter((r): r is DnsRecordView => r !== null),
+    // A MAC-less host is a DNS record (type `host`), not a reservation's name.
     names: states
+      .filter((s) => recordOf(s) === null)
       .map(reservationView)
       .filter((r): r is ReservationView => r !== null && r.hostname !== null)
       .map((r) => ({
@@ -451,7 +463,7 @@ export async function updateDnsRecord(
   gatewayId: number,
   userId: number,
   perchId: string,
-  input: { name?: string; value?: string; apply?: boolean }
+  input: { name?: string; value?: string; publishDns?: boolean; apply?: boolean }
 ) {
   const gateway = await findGateway(gatewayId)
   const { states } = await loadSections(gateway.id)
@@ -462,8 +474,19 @@ export async function updateDnsRecord(
     throw planeError(409, 'not_synced', 'This record is the router’s; include it first.')
   }
   if (input.name !== undefined && input.name !== record.name) checkName(gateway, input.name, 'name')
-  const next = { ...record, name: input.name ?? record.name, value: input.value ?? record.value }
-  if (next.type === 'a' && !isValidIp(next.value)) {
+  const extra = { ...record.extra }
+  if (record.type === 'host' && input.publishDns !== undefined) {
+    // `dns '1'` makes dnsmasq answer the name; a host without it publishes nothing.
+    if (input.publishDns) extra.dns = '1'
+    else delete extra.dns
+  }
+  const next = {
+    ...record,
+    name: input.name ?? record.name,
+    value: input.value ?? record.value,
+    extra,
+  }
+  if ((next.type === 'a' || next.type === 'host') && !isValidIp(next.value)) {
     throw planeError(422, 'dns_value_invalid', `"${next.value}" is not an IP address.`)
   }
   await checkRecordPin(gateway, record, next)

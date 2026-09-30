@@ -1,4 +1,5 @@
 import { itemsOf } from '#services/gateway_config/canonical'
+import { masqZoneNetworks, sidesOfSet } from '#services/gateway_config/domains/side'
 import type {
   ConfigDomain,
   SectionEdit,
@@ -29,9 +30,11 @@ import type {
  * every other option verbatim (`extra`). How the sections form a network is
  * `network_model.ts`; the REST writes go through it.
  *
- * Not claimed (they stay unmodeled, mirrored and logged): WAN-side
- * interfaces (any proto other than `static`/`none`, a static one with a
- * `gateway`, or one in a firewall zone with `masq`), `loopback`, `globals`,
+ * Not claimed (they stay unmodeled, mirrored and logged, or another domain
+ * takes them): interfaces that are not on the LAN side by the side rule
+ * (`side.ts`: WANs, aliases on an uplink's device, tunnels; the `wan` domain
+ * takes the WAN side), LAN-side ones with a proto other than `static`/`none`,
+ * `loopback`, `globals`,
  * swconfig `switch`/`switch_vlan` (pre-DSA targets), plain `device`
  * sections (MAC or MTU overrides of a port), routes and rules. WAN
  * protocols belong to the routing sibling.
@@ -172,28 +175,22 @@ export function portOf(item: string): string {
 }
 
 /**
- * Networks in a firewall zone with masquerading: the WAN side (plan 1
- * section 8.3 uses the same rule on the router).
+ * Networks in a firewall zone with masquerading: the WAN side (the side
+ * rule's rule 3, `side.ts`).
  */
 export function masqNetworks(firewall: Array<{ type: string; options: UciOptions }>): Set<string> {
-  const out = new Set<string>()
-  for (const s of firewall) {
-    if (s.type !== 'zone') continue
-    const masq = scalarOf(s.options, 'masq')
-    if (masq !== '1' && masq !== 'true' && masq !== 'on' && masq !== 'yes') continue
-    for (const name of itemsOf(s.options.network).flatMap((v) => v.split(/\s+/))) {
-      if (name) out.add(name)
-    }
-  }
-  return out
+  return masqZoneNetworks(firewall)
 }
 
 export type InterfaceSide = 'lan' | 'wan' | 'loopback'
 
 /**
- * Which side an `interface` section is on: `loopback` (the name, or device
- * `lo`), `wan` (a proto other than `static`/`none`, a static address with a
- * `gateway`, or a network in a masquerading zone), else `lan`.
+ * Which side one `interface` section is on, seen alone (callers without the
+ * other interfaces): `loopback` (the name, or device `lo`), `wan` (a tunnel
+ * or WAN proto, a proto other than `static`/`none`, a `gateway`, or a
+ * network in `wanNetworks`), else `lan`. A domain's claim uses the side rule
+ * over the whole config instead (`side.ts`, which also knows aliases on an
+ * uplink's device); this is kept for the loopback test of the validators.
  */
 export function interfaceSide(
   name: string,
@@ -209,8 +206,19 @@ export function interfaceSide(
   return 'lan'
 }
 
+/**
+ * Networks that are not on the LAN side by the side rule (`side.ts`: WANs,
+ * aliases on an uplink's device, tunnels, loopback), with the facts attached
+ * to the read.
+ */
+export function nonLanNetworks(all: UciConfigSet): Set<string> {
+  const out = new Set<string>()
+  for (const [name, side] of sidesOfSet(all)) if (side !== 'lan') out.add(name)
+  return out
+}
+
 function wanNetworksOf(all: UciConfigSet): Set<string> {
-  return masqNetworks(all.firewall?.sections ?? [])
+  return nonLanNetworks(all)
 }
 
 function kindOf(type: string): NetworkSectionKind | null {

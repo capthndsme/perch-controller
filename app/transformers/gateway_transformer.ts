@@ -5,6 +5,7 @@ import type GatewayConfigEvent from '#models/gateway_config_event'
 import type GatewayRevision from '#models/gateway_revision'
 import GatewaySection from '#models/gateway_section'
 import User from '#models/user'
+import { checksView } from '#services/gateway_config/apply_checks'
 import { domainRegistry } from '#services/gateway_config/domains/index'
 import type { GatewayConfigSettings } from '#services/gateway_config/gateway_config_settings'
 import {
@@ -91,6 +92,10 @@ export function applyView(
         ...(apply.outcome.data && typeof apply.outcome.data === 'object'
           ? { data: apply.outcome.data as Record<string, unknown> }
           : {}),
+        // Gateway sync (rest.md 2): the failed checks of a `checks_failed`
+        // rollback, and the public keys the router generated.
+        ...(Array.isArray(apply.outcome.checks) ? { checks: apply.outcome.checks } : {}),
+        ...(Array.isArray(apply.outcome.generated) ? { generated: apply.outcome.generated } : {}),
       }
     : null
   return {
@@ -117,12 +122,32 @@ export function applyView(
     revision: apply.revisionNumber,
     perchIds: apply.perchIds,
     configs: apply.configs ?? [],
+    // Which domains the job writes (gateway sync: the dashboard links a
+    // pending apply back to the page that made it), from its changes.
+    origin: {
+      domains: [
+        ...new Set(
+          (apply.changes ?? [])
+            .map((c) => c.domain)
+            .filter((d): d is string => typeof d === 'string' && d.length > 0)
+        ),
+      ].sort(),
+    },
+    // Gateway sync (rest.md 2): what the router verifies after the commit.
+    checks: checksView(
+      apply,
+      apply.checksOverriddenByUserId !== null
+        ? (users.get(apply.checksOverriddenByUserId) ?? null)
+        : null
+    ),
     ...(options.changes ? { changes: apply.changes ?? [] } : {}),
   }
 }
 
 export async function applyViews(applies: GatewayApply[], options: { changes?: boolean } = {}) {
-  const users = await userRefs(applies.map((a) => a.requestedByUserId))
+  const users = await userRefs(
+    applies.flatMap((a) => [a.requestedByUserId, a.checksOverriddenByUserId])
+  )
   return applies.map((a) => applyView(a, users, options))
 }
 

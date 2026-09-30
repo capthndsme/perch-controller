@@ -33,6 +33,11 @@ Placeholders only: 192.168.x.x, 203.0.113.x, MACs `02:00:00:…`.
 | `ipset` named `perch_block_wan` | yes | yes | the WAN block set |
 | `defaults`, `include`, `nat`, SNAT `redirect`, other `ipset`s | **no** | mirrored | never |
 
+Since gateway sync Phase A (2026-09-30) `defaults` is claimed by its own domain, `firewall_defaults`
+(policies, SYN flood, invalid drop, flow offloading; always a protected job; REST `GET/PATCH
+/gateways/:id/firewall/defaults`). Two redirects or rules sharing a name can be resolved from
+`GET/POST /gateways/:id/ambiguities[/resolve]`.
+
 Unclaimed sections are `unmodeled`: mirrored, logged, never written, never drift, never reverted.
 That covers package includes (miniupnpd's `config include 'miniupnpd'`), an operator's nftables
 include, and `defaults` (incl. `flow_offloading_hw`, shown as a warning). Perch's own nftables (the

@@ -5,6 +5,7 @@ import GatewaySection from '#models/gateway_section'
 import { AgentOfflineError, AgentRpcError, AgentTimeoutError } from '#services/collector_agent_hub'
 import {
   adminConfirm,
+  checksInputFor,
   findApply,
   requestApply,
   requestPackageInstall,
@@ -34,7 +35,13 @@ import {
   syncStatus,
   type ResolveItem,
 } from '#services/gateway_config/gateway_config_service'
-import { getGatewayConfigSettings } from '#services/gateway_config/gateway_config_settings'
+import {
+  confirmTimeoutFor,
+  getGatewayConfigSettings,
+} from '#services/gateway_config/gateway_config_settings'
+import { checkedConfirmWindow, plannedCheckItems } from '#services/gateway_config/apply_checks'
+import { getGatewaySyncSettings } from '#services/gateway_config/gateway_sync_settings'
+import { applyConfirmValidator } from '#validators/gateway_sync'
 import { ensureGatewayRows, normalizeMode } from '#services/gateway_config/gateway_registry'
 import { loadSections } from '#services/gateway_config/gateway_store'
 import { confirmPairing, pairingView, startPairing, unpair } from '#services/gateway_config/pairing'
@@ -353,7 +360,15 @@ export default class GatewaysController {
         management: gateway.managementPath,
         registry: domainRegistry(),
         orders: plannedOrders(await loadOrders(gateway.id), 'apply'),
+        capabilities: gateway.capabilities,
+        checks: await checksInputFor(gateway),
       })
+      // Gateway sync (rest.md 2): each job with what the router will verify,
+      // its confirm window and mode, as the planner will send it.
+      const settings = await getGatewayConfigSettings()
+      const gatewaySync = await getGatewaySyncSettings()
+      const confirmMax = (gateway.capabilities as Record<string, unknown> | null)?.confirmMaxSeconds
+      const routerMaxSeconds = typeof confirmMax === 'number' ? confirmMax : null
       return serialize({
         changes: plan.jobs.flatMap((j) => j.changes),
         jobs: plan.jobs.map((j) => ({
@@ -361,6 +376,15 @@ export default class GatewaysController {
           protected: j.protected,
           configs: j.configs,
           perchIds: j.perchIds,
+          checked: j.checked === true,
+          checks: plannedCheckItems(j.checks ?? null),
+          confirmTimeoutSeconds: j.checked
+            ? checkedConfirmWindow(settings, gatewaySync, {
+                protected: j.protected,
+                routerMaxSeconds,
+              })
+            : confirmTimeoutFor(settings, { protected: j.protected, routerMaxSeconds }),
+          confirmMode: j.checked ? gatewaySync.wanConfirmMode : settings.confirmMode,
         })),
         issues: validateStates(gateway, states),
         blockedByConflicts: plan.blocked
@@ -528,9 +552,17 @@ export default class GatewaysController {
   }
 
   /** POST /api/v1/gateways/:id/applies/:applyId/confirm ("Keep changes") */
-  async confirmApply({ params, response, auth, serialize }: HttpContext) {
+  async confirmApply({ params, request, response, auth, serialize }: HttpContext) {
+    // Gateway sync (rest.md 2): `{ overrideChecks?, confirm? }` — "Keep
+    // anyway" while the router's checks are still running.
+    const body = await request.validateUsing(applyConfirmValidator)
     try {
-      const apply = await adminConfirm(Number(params.id), params.applyId, auth.getUserOrFail().id)
+      const apply = await adminConfirm(
+        Number(params.id),
+        params.applyId,
+        auth.getUserOrFail().id,
+        body
+      )
       return serialize(await applyViewOf(apply))
     } catch (error) {
       return planeRefusal(response, error)
@@ -611,6 +643,7 @@ export default class GatewaysController {
         management: gateway.managementPath,
         registry: domainRegistry(),
         orders: plannedOrders(await loadOrders(gateway.id), 'apply'),
+        capabilities: gateway.capabilities,
       })
       return serialize({ perchIds, changes: plan.jobs.flatMap((j) => j.changes) })
     } catch (error) {

@@ -27,6 +27,7 @@ import {
   remember,
   writeObservationRow,
 } from '#services/gateway_observation_common'
+import { recordWanTransitions } from '#services/gateway_config/gateway_wan_transitions'
 import db from '@adonisjs/lucid/services/db'
 import type { StrictValues } from '@adonisjs/lucid/types/querybuilder'
 import logger from '@adonisjs/core/services/logger'
@@ -203,6 +204,11 @@ export async function recordGatewayObservation(
 ): Promise<ObservationResult> {
   const result: ObservationResult = { parts: {} }
   if (!isObject(raw)) return result
+  // Gateway sync: WAN transitions compare the new interfaces with the last.
+  const interfacesBefore =
+    raw.interfaces !== undefined && raw.interfaces !== null
+      ? await readObservedInterfaces(collectorId).catch(() => null)
+      : null
   for (const part of OBSERVATION_PARTS) {
     if (raw[part] === undefined || raw[part] === null) continue
     try {
@@ -229,6 +235,14 @@ export async function recordGatewayObservation(
     }
   }
   if (result.parts.neighbors === 'written') bumpGatewayDhcpVersion()
+  if (result.parts.interfaces === 'written' && interfacesBefore) {
+    await recordWanTransitions(
+      collectorId,
+      interfacesBefore,
+      normalizeInterfaces(raw.interfaces),
+      now
+    )
+  }
   return result
 }
 

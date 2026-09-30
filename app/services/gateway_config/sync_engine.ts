@@ -25,6 +25,8 @@ import {
   type FeatureSection,
   type FeatureSyncIssue,
 } from '#services/gateway_config/domain'
+import type { GatewaySyncSettings } from '#services/gateway_config/gateway_sync_settings'
+import { attachSideFacts, type SideFacts } from '#services/gateway_config/domains/side'
 import { routerSecretSlots } from '#services/gateway_config/secrets'
 import {
   orderMembers,
@@ -36,6 +38,7 @@ import type {
   ApplyState,
   ConfigDiffEntry,
   ConflictOption,
+  GatewayCapabilities,
   GatewayEnforcement,
   GatewayEventName,
   GatewayMode,
@@ -633,6 +636,25 @@ export interface ReconcileReadInput {
   inFlight?: Map<string, InFlight>
   /** Admin choice per (config, section name) for sections seen for the first time. */
   initialScope?: (config: string, section: UciSection) => 'synced' | 'excluded' | null
+  /**
+   * The gateway's stored capabilities (gateway sync domains.md 1.2). A domain
+   * whose `requires` names a reason claims nothing new; a synced row of such
+   * a domain (it was available, the collector was downgraded) keeps its row
+   * but follows the router: never drift, never planned, drafts kept where
+   * they merge. Absent or null: nothing is gated.
+   */
+  capabilities?: GatewayCapabilities | null
+  /**
+   * Gateway sync settings (domains.md 1.7): a domain's `authoritative`
+   * policy reads them (`authoritativeWan`). Absent: the domain's default.
+   */
+  gatewaySync?: GatewaySyncSettings | null
+  /**
+   * What the agent reports that the side rule reads (`side.ts`: default
+   * routes, L3 devices, configured WANs), attached to the read's config set
+   * so every domain's `claims` classifies with it. Absent: UCI alone.
+   */
+  sideFacts?: SideFacts | null
 }
 
 export interface ReconcileReadResult {
@@ -655,12 +677,15 @@ export interface ReconcileReadResult {
  */
 export function reconcileRead(input: ReconcileReadInput): ReconcileReadResult {
   const { registry } = input
+  const capabilities = input.capabilities ?? null
+  const unavailable = registry.unavailable(capabilities)
   const changes: SectionChange[] = []
   const events: EngineEvent[] = []
   const readConfigs = input.read.configs.filter(
     (c) => c.name !== LEDGER_CONFIG && !EXCLUDED_CONFIGS.includes(c.name)
   )
   const all: UciConfigSet = Object.fromEntries(readConfigs.map((c) => [c.name, c]))
+  attachSideFacts(all, input.sideFacts ?? null)
   const firstRead = input.rows.length === 0
   const ledgerByPerch = new Map(input.read.ledger.map((e) => [e.perchId, e]))
   let merges = 0
@@ -697,12 +722,19 @@ export function reconcileRead(input: ReconcileReadInput): ReconcileReadResult {
 
     // 3. Router sections nobody matched: claim them once, find duplicates by
     // identity key (plan 2 P6), and re-link synced rows the router lost from
-    // the ledger or renamed.
+    // the ledger or renamed. A section the admin excluded is the router's
+    // alone and never makes another one ambiguous (gateway sync domains.md
+    // 1.4): excluding one member of a pair promotes the other.
+    const excludedHere = new Set(
+      pendingRows
+        .filter((p) => p.row.scope === 'excluded' && p.found)
+        .map((p) => p.found!.section.name)
+    )
     const claimOf = new Map<string, ReturnType<DomainRegistry['claim']>>()
     const keysOf = new Map<string, string[]>()
     const keyCount = new Map<string, number>()
     for (const section of config.sections) {
-      const claim = registry.claim({ ...section, config: config.name }, all)
+      const claim = registry.claim({ ...section, config: config.name }, all, capabilities)
       claimOf.set(section.name, claim)
       const keys = claim
         ? (claim.domain.identityKeys?.({ type: section.type, options: section.options }) ?? []).map(
@@ -710,6 +742,7 @@ export function reconcileRead(input: ReconcileReadInput): ReconcileReadResult {
           )
         : []
       keysOf.set(section.name, keys)
+      if (excludedHere.has(section.name)) continue
       for (const key of new Set(keys)) keyCount.set(key, (keyCount.get(key) ?? 0) + 1)
     }
     const leftovers = config.sections
@@ -762,7 +795,41 @@ export function reconcileRead(input: ReconcileReadInput): ReconcileReadResult {
         changes.push(promoted)
         continue
       }
-      const change = reconcileRow(row, found, config.name, all, rowInput(input, row.domain), events)
+      if (row.scope === 'synced') {
+        // A domain the gateway can no longer use (domains.md 1.2).
+        const missing = row.domain ? unavailable.get(row.domain) : undefined
+        if (missing !== undefined) {
+          const change = reconcileUnavailable(row, found, config.name, all, input, events, missing)
+          if (change) changes.push(change)
+          continue
+        }
+        // Another domain claims the section now (domains.md 1.3).
+        if (found && !relinked.has(row.perchId)) {
+          const rehomed = rehomeRow(
+            row,
+            found,
+            config.name,
+            claimOf.get(found.section.name) ?? null,
+            input,
+            events
+          )
+          if (rehomed) {
+            changes.push(rehomed)
+            continue
+          }
+        }
+      }
+      const change = reconcileRow(
+        row,
+        found,
+        config.name,
+        all,
+        rowInput(input, row.domain, {
+          base: row.base,
+          router: found ? contentFromRouter(found.section) : null,
+        }),
+        events
+      )
       if (!change) continue
       if (relinked.has(row.perchId)) {
         change.kind = 'relinked'
@@ -788,7 +855,12 @@ export function reconcileRead(input: ReconcileReadInput): ReconcileReadResult {
         config.name,
         claim,
         ambiguous.has(left.section.name),
-        claim?.domain.oneWay && firstOfConfig ? input : rowInput(input, claim?.domain.key ?? null),
+        claim?.domain.oneWay && firstOfConfig
+          ? input
+          : rowInput(input, claim?.domain.key ?? null, {
+              base: null,
+              router: contentFromRouter(left.section),
+            }),
         events
       )
       changes.push(change)
@@ -843,9 +915,23 @@ function contentFromRouter(section: UciSection): SectionContent {
  * The read input as one row sees it: a one-way domain's rows are
  * authoritative in managed mode, whatever the gateway's flag.
  */
-function rowInput(input: ReconcileReadInput, domain: string | null): ReconcileReadInput {
-  if (input.authoritative || input.mode !== 'managed') return input
-  return input.registry.get(domain)?.oneWay ? { ...input, authoritative: true } : input
+function rowInput(
+  input: ReconcileReadInput,
+  domain: string | null,
+  row?: { base: SectionContent | null; router: SectionContent | null }
+): ReconcileReadInput {
+  if (input.mode !== 'managed') return input
+  const d = input.registry.get(domain)
+  if (input.authoritative) {
+    // Gateway sync domains.md 1.7: a domain may import router edits of its
+    // sections even under Authoritative Mode (the WAN: owner decision D2).
+    if (d?.authoritative && !d.oneWay) {
+      const policy = d.authoritative(input.gatewaySync ?? null, row ?? { base: null, router: null })
+      if (policy === 'import') return { ...input, authoritative: false }
+    }
+    return input
+  }
+  return d?.oneWay ? { ...input, authoritative: true } : input
 }
 
 /**
@@ -855,10 +941,19 @@ function rowInput(input: ReconcileReadInput, domain: string | null): ReconcileRe
 export function authoritativeFor(
   gateway: { mode: GatewayMode; authoritative: boolean },
   registry: DomainRegistry | null,
-  domain: string | null
+  domain: string | null,
+  gatewaySync?: GatewaySyncSettings | null
 ): boolean {
   if (gateway.mode !== 'managed') return false
-  return gateway.authoritative || registry?.get(domain)?.oneWay === true
+  const d = registry?.get(domain)
+  if (d?.oneWay === true) return true
+  if (!gateway.authoritative) return false
+  // A domain that imports router edits is never enforced (domains.md 1.7).
+  // Without a row, its policy is asked for a router edit of any kind.
+  if (d?.authoritative && gatewaySync !== undefined) {
+    return d.authoritative(gatewaySync, { base: null, router: null }) !== 'import'
+  }
+  return true
 }
 
 /** A decision-15 pause change of one synced row (`routerPause`). */
@@ -1341,7 +1436,7 @@ function recheckClaim(
   all: UciConfigSet,
   input: ReconcileReadInput
 ): SectionState | null {
-  const claim = input.registry.claim({ ...section, config }, all)
+  const claim = input.registry.claim({ ...section, config }, all, input.capabilities ?? null)
   const keeps =
     claim !== null &&
     claim.domain.key === state.domain &&
@@ -1358,6 +1453,173 @@ function recheckClaim(
     desired: state.router,
     conflict: null,
   }
+}
+
+/**
+ * A synced row whose domain the gateway can no longer use (domains.md 1.2: a
+ * collector downgraded below what the domain `requires`). The row is kept,
+ * but it follows the router like observe mode: B := R, never a conflict,
+ * never drift (so Authoritative Mode never reverts it), and the planner
+ * refuses it (`capability_missing`). A draft (C ≠ B) is kept when it merges
+ * cleanly with the router's edit; one that would conflict is dropped
+ * (the router wins). Rows in an apply in flight, and observe mode, take the
+ * ordinary path.
+ */
+function reconcileUnavailable(
+  row: SectionState,
+  found: { section: UciSection; index: number } | null,
+  config: string,
+  all: UciConfigSet,
+  input: ReconcileReadInput,
+  events: EngineEvent[],
+  reason: string
+): SectionChange | null {
+  if (input.mode !== 'managed' || (input.inFlight?.get(row.perchId) ?? null) !== null) {
+    return reconcileRow(row, found, config, all, input, events)
+  }
+  const where = { perchId: row.perchId, config, section: found?.section.name ?? row.name }
+  if (!found) {
+    events.push({
+      event: 'imported',
+      ...where,
+      detail: { deleted: true, capabilityMissing: reason },
+    })
+    return { perchId: row.perchId, kind: 'removed', before: row, after: null, baseChanged: true }
+  }
+  const observed = contentFromRouter(found.section)
+  const rules = input.registry.rules(row.domain)
+  const merge = mergeSection({
+    base: row.base,
+    router: observed,
+    desired: row.desired,
+    ownership: row.ownership,
+    rules,
+  })
+  let base = row.base
+  let desired = row.desired
+  let ownership = row.ownership
+  if (merge.kind === 'merged') {
+    base = merge.base
+    desired = merge.desired
+    ownership = merge.ownership
+  } else if (merge.kind === 'conflict') {
+    base = cloneContent(observed)
+    desired = cloneContent(observed)
+  }
+  const after: SectionState = {
+    ...row,
+    name: found.section.name,
+    anonymous: found.section.anonymous,
+    position: found.index,
+    router: observed,
+    base,
+    desired,
+    ownership,
+    conflict: null,
+    driftSince: null,
+    status: 'in_sync',
+  }
+  after.status = deriveStatus(after, { authoritative: false, rules })
+  const baseChanged = !contentsEqual(row.base, base, DEFAULT_RULES)
+  const quiet =
+    !baseChanged &&
+    row.conflict === null &&
+    row.driftSince === null &&
+    after.status === row.status &&
+    after.name === row.name &&
+    (after.position === row.position || !positionMatters(row, input.registry)) &&
+    contentsEqual(row.router, observed, DEFAULT_RULES) &&
+    contentsEqual(row.desired, desired, DEFAULT_RULES)
+  if (quiet) return null
+  if (baseChanged) {
+    events.push({
+      event: 'imported',
+      ...where,
+      detail: {
+        capabilityMissing: reason,
+        ...(merge.kind === 'conflict' ? { draftDropped: true } : {}),
+      },
+    })
+  }
+  return { perchId: row.perchId, kind: 'imported', before: row, after, baseChanged }
+}
+
+/**
+ * Re-homing a synced section (domains.md 1.3): the router did not touch it
+ * (R = B), but another domain claims it now (a controller upgrade changed
+ * the claims, e.g. the WAN side rule). A settled row (no draft, no conflict,
+ * no drift, not in flight) changes `domain` and `ownership` in place, B/C/R
+ * stay, and the round trip is checked under the new domain (a failure makes
+ * it an `unmodeled` mirror, `no_round_trip`). An unsettled row waits
+ * (`rehome_deferred`) and is reconciled as usual. Null = nothing to re-home,
+ * the caller reconciles the row normally.
+ *
+ * A row no domain claims is left as it is: domains write sections they would
+ * not import (the firewall domain's device-group ipsets `perch_g<id>`), so
+ * "unclaimed" does not mean "no longer Perch's". A router edit of such a
+ * section still goes through `recheckClaim` as before.
+ */
+function rehomeRow(
+  row: SectionState,
+  found: { section: UciSection; index: number },
+  config: string,
+  claim: ReturnType<DomainRegistry['claim']>,
+  input: ReconcileReadInput,
+  events: EngineEvent[]
+): SectionChange | null {
+  if ((input.inFlight?.get(row.perchId) ?? null) !== null) return null
+  if (!claim || claim.domain.key === row.domain) return null
+  const observed = contentFromRouter(found.section)
+  if (!contentsEqual(observed, row.base, DEFAULT_RULES)) return null
+  const to = claim.domain.key
+  const where = { perchId: row.perchId, config, section: found.section.name }
+  const settled =
+    row.conflict === null &&
+    row.driftSince === null &&
+    contentsEqual(row.desired, row.base, DEFAULT_RULES)
+  if (!settled) {
+    events.push({ event: 'rehome_deferred', ...where, detail: { from: row.domain, to } })
+    return null
+  }
+  const located: SectionState = {
+    ...row,
+    name: found.section.name,
+    anonymous: found.section.anonymous,
+    position: found.index,
+    router: observed,
+  }
+  const mirror = (domain: string | null, issue: SectionIssue | null): SectionState => ({
+    ...located,
+    scope: 'unmodeled',
+    domain,
+    issue,
+    ownership: null,
+    base: observed,
+    desired: observed,
+    conflict: null,
+    driftSince: null,
+    status: 'in_sync',
+  })
+  let after: SectionState
+  if (!roundTripsSection(claim.domain, syncedFromRouter(config, found.section, row.perchId))) {
+    after = mirror(claim.domain.key, 'no_round_trip')
+  } else {
+    after = {
+      ...located,
+      domain: claim.domain.key,
+      ownership: claim.ownership.kind === 'section' ? null : claim.ownership,
+    }
+    after.status = deriveStatus(after, {
+      authoritative: rowInput(input, claim.domain.key).authoritative && input.mode === 'managed',
+      rules: input.registry.rules(claim.domain.key),
+    })
+  }
+  events.push({
+    event: 'section_rehomed',
+    ...where,
+    detail: { from: row.domain, to, ...(after.issue ? { issue: after.issue } : {}) },
+  })
+  return { perchId: row.perchId, kind: 'rescoped', before: row, after, baseChanged: false }
 }
 
 function reconcileAuthoritative(
@@ -2065,11 +2327,24 @@ export function checkEnableAuthoritative(
 export function featureSyncIssues(
   registry: DomainRegistry,
   sections: SectionState[],
-  observed: FeatureObservation
+  observed: FeatureObservation,
+  capabilities?: GatewayCapabilities | null
 ): FeatureSyncIssue[] {
   const out: FeatureSyncIssue[] = []
+  const unavailable = registry.unavailable(capabilities)
   for (const domain of registry.list()) {
     const rows = sections.filter((s) => s.domain === domain.key)
+    // Gateway sync domains.md 1.2: synced rows of a domain the agent can no
+    // longer serve follow the router and are never enforced.
+    const missing = unavailable.get(domain.key)
+    if (missing !== undefined && rows.some((s) => s.scope === 'synced')) {
+      out.push({
+        feature: domain.key,
+        objectId: null,
+        code: 'capability_missing',
+        message: missing,
+      })
+    }
     for (const s of rows) {
       if (s.scope === 'unmodeled' && (s.issue === 'ambiguous' || s.issue === 'duplicate')) {
         out.push({
@@ -2097,6 +2372,143 @@ export function featureSyncIssues(
     if (featureRows.length > 0) out.push(...domain.inSync(featureRows, observed))
   }
   return out
+}
+
+// ── ambiguity resolution (gateway sync domains.md 1.4) ───────────────────
+
+/** Why `promoteForResolution` left a section as it was. */
+export type ResolutionRefusal =
+  | 'not_ambiguous'
+  | 'not_on_router'
+  | 'unclaimed'
+  | 'no_round_trip'
+  | 'capability_missing'
+
+/** A row's router content as the section a domain claims (`claims`, `ownership`). */
+export function routerSectionOf(row: SectionState): (UciSection & { config: string }) | null {
+  if (!row.router) return null
+  const secrets = Object.fromEntries(
+    Object.entries(row.router.secrets ?? {}).map(([name, slot]) => [name, slot.fingerprint])
+  )
+  return {
+    config: row.config,
+    name: row.name,
+    type: row.router.type,
+    anonymous: row.anonymous,
+    index: row.position ?? 0,
+    options: { ...row.router.options },
+    ...(Object.keys(secrets).length > 0 ? { secrets } : {}),
+  }
+}
+
+/** A claimable section without its `config` (the shape a read carries). */
+function plainSection(section: UciSection & { config: string }): UciSection {
+  const out: UciSection = {
+    name: section.name,
+    type: section.type,
+    anonymous: section.anonymous,
+    index: section.index,
+    options: section.options,
+  }
+  if (section.secrets) out.secrets = section.secrets
+  return out
+}
+
+/**
+ * The router's configs as the rows last saw them (router contents in file
+ * order): the `all` a domain's `claims` gets outside a read.
+ */
+export function routerConfigSet(rows: SectionState[]): UciConfigSet {
+  const out: UciConfigSet = {}
+  const onRouter = rows
+    .filter((r) => r.router !== null && !EXCLUDED_CONFIGS.includes(r.config))
+    .sort(
+      (a, b) =>
+        compareConfigs(a.config, b.config) ||
+        (a.position ?? Number.MAX_SAFE_INTEGER) - (b.position ?? Number.MAX_SAFE_INTEGER) ||
+        a.perchId.localeCompare(b.perchId)
+    )
+  for (const row of onRouter) {
+    const section = routerSectionOf(row)!
+    const config = (out[row.config] ??= { name: row.config, hash: '', sections: [] })
+    config.sections.push(plainSection(section))
+  }
+  return out
+}
+
+/**
+ * Promotes ambiguous (or duplicate) mirrors the admin resolves (domains.md
+ * 1.4.3): each named `unmodeled` row with issue `ambiguous`/`duplicate`
+ * becomes a synced row with B = R = C = the router's content and the
+ * claiming domain's ownership: `promoteMirror` without the ambiguity test.
+ * Promoted rows are matched by name on later reads (step 1 of
+ * `reconcileRead`), so they are never leftovers and never ambiguous again,
+ * even before a rename reaches the router. The next apply adopts them into
+ * the ledger (anonymous ones renamed `perch_<id>`). Pure: the caller stores
+ * `promoted` in the gateway's queue.
+ */
+export function promoteForResolution(
+  rows: SectionState[],
+  perchIds: string[],
+  registry: DomainRegistry,
+  capabilities?: GatewayCapabilities | null
+): {
+  promoted: SectionState[]
+  refused: Array<{ perchId: string; reason: ResolutionRefusal }>
+} {
+  const promoted: SectionState[] = []
+  const refused: Array<{ perchId: string; reason: ResolutionRefusal }> = []
+  const all = routerConfigSet(rows)
+  const unavailable = registry.unavailable(capabilities)
+  for (const perchId of perchIds) {
+    const row = rows.find((r) => r.perchId === perchId)
+    if (
+      !row ||
+      row.scope !== 'unmodeled' ||
+      (row.issue !== 'ambiguous' && row.issue !== 'duplicate') ||
+      row.domain === null
+    ) {
+      refused.push({ perchId, reason: 'not_ambiguous' })
+      continue
+    }
+    const section = routerSectionOf(row)
+    if (!section || !row.router) {
+      refused.push({ perchId, reason: 'not_on_router' })
+      continue
+    }
+    if (unavailable.has(row.domain)) {
+      refused.push({ perchId, reason: 'capability_missing' })
+      continue
+    }
+    const claim = registry.claim(section, all, capabilities ?? null)
+    if (!claim) {
+      refused.push({ perchId, reason: 'unclaimed' })
+      continue
+    }
+    if (
+      !roundTripsSection(
+        claim.domain,
+        syncedFromRouter(row.config, plainSection(section), row.perchId)
+      )
+    ) {
+      refused.push({ perchId, reason: 'no_round_trip' })
+      continue
+    }
+    promoted.push({
+      ...row,
+      type: row.router.type,
+      scope: 'synced',
+      domain: claim.domain.key,
+      ownership: claim.ownership.kind === 'section' ? null : claim.ownership,
+      issue: null,
+      base: cloneContent(row.router),
+      desired: cloneContent(row.router),
+      conflict: null,
+      driftSince: null,
+      status: 'in_sync',
+    })
+  }
+  return { promoted, refused }
 }
 
 // ── helpers for callers ──────────────────────────────────────────────────

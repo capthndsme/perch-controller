@@ -140,9 +140,15 @@ test.group('networks domain | claims and round trip (plan 1 section 8.1)', () =>
     )
     const set = networkConfigSet()
     const reg = domainRegistry()
-    for (const name of ['loopback', 'globals', 'cfg040f15', 'wan', 'wan6', 'wan2', 'cfg0a0f15']) {
+    for (const name of ['loopback', 'globals', 'cfg0a0f15']) {
       const s = set.network.sections.find((x) => x.name === name)!
       assert.isNull(reg.claim({ ...s, config: 'network' }, set), name)
+    }
+    // Gateway sync (domains.md 3): the WAN side and the uplink port's MAC
+    // override are the `wan` domain's, never `networks`'.
+    for (const name of ['cfg040f15', 'wan', 'wan6', 'wan2']) {
+      const s = set.network.sections.find((x) => x.name === name)!
+      assert.equal(reg.claim({ ...s, config: 'network' }, set)?.domain.key, 'wan', name)
     }
     // Without the firewall read, a static WAN is still known by its gateway.
     const noFw = { network: dsaNetworkConfig() }
@@ -156,6 +162,9 @@ test.group('networks domain | claims and round trip (plan 1 section 8.1)', () =>
       [
         'system',
         'networks',
+        'wan',
+        'wireguard',
+        'network_globals',
         'routes',
         'dhcp_pools',
         'dhcp_hosts',
@@ -163,8 +172,11 @@ test.group('networks domain | claims and round trip (plan 1 section 8.1)', () =>
         'dns_settings',
         'dhcp_tags',
         'firewall',
+        'firewall_defaults',
         'sqm',
         'perch_qos',
+        'upnp',
+        'ddns',
       ]
     )
     assert.deepEqual(domainRegistry().configs(), [
@@ -174,6 +186,8 @@ test.group('networks domain | claims and round trip (plan 1 section 8.1)', () =>
       'firewall',
       'sqm',
       'perch-qos',
+      'ddns',
+      'upnpd',
     ])
   })
 
