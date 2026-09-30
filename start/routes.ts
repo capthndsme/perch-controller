@@ -19,6 +19,7 @@ import { controllers } from '#generated/controllers'
 import '#start/routes/gateway_sync'
 import '#start/routes/alerts'
 import { registerWifiRoutes } from '#start/routes/wifi'
+import '#start/routes/agent_updates'
 
 /**
  * The setup controller isn't in the auto-generated `controllers` registry

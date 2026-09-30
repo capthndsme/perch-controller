@@ -7,6 +7,309 @@
 import { BaseModel, column } from '@adonisjs/lucid/orm'
 import { DateTime } from 'luxon'
 
+export class AgentArtefactSchema extends BaseModel {
+  static $columns = ['arch', 'fileName', 'gzipBytes', 'id', 'kind', 'manager', 'openwrtSeries', 'packageName', 'packageVersion', 'pkgArch', 'releaseId', 'sha256', 'sizeBytes', 'sourceUrl', 'storedAt', 'storedPath', 'variant'] as const
+  $columns = AgentArtefactSchema.$columns
+  @column()
+  declare arch: string | null
+  @column()
+  declare fileName: string
+  @column()
+  declare gzipBytes: bigint | number | null
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare kind: string
+  @column()
+  declare manager: string | null
+  @column()
+  declare openwrtSeries: string | null
+  @column()
+  declare packageName: string | null
+  @column()
+  declare packageVersion: string | null
+  @column()
+  declare pkgArch: string | null
+  @column()
+  declare releaseId: number
+  @column()
+  declare sha256: string
+  @column()
+  declare sizeBytes: bigint | number
+  @column()
+  declare sourceUrl: string | null
+  @column.dateTime()
+  declare storedAt: DateTime | null
+  @column()
+  declare storedPath: string | null
+  @column()
+  declare variant: string | null
+}
+
+export class AgentReleaseSchema extends BaseModel {
+  static $columns = ['channel', 'githubReleaseId', 'id', 'importedAt', 'importedByUserId', 'keyId', 'manifest', 'manifestSha256', 'minControllerVersion', 'minFromVersion', 'minVersion', 'notesUrl', 'product', 'releasedAt', 'signature', 'source', 'version', 'versionSort', 'withdrawnAt', 'withdrawnByUserId'] as const
+  $columns = AgentReleaseSchema.$columns
+  @column()
+  declare channel: string
+  @column()
+  declare githubReleaseId: bigint | number | null
+  @column({ isPrimary: true })
+  declare id: number
+  @column.dateTime()
+  declare importedAt: DateTime
+  @column()
+  declare importedByUserId: number | null
+  @column()
+  declare keyId: string
+  @column()
+  declare manifest: string
+  @column()
+  declare manifestSha256: string
+  @column()
+  declare minControllerVersion: string | null
+  @column()
+  declare minFromVersion: string | null
+  @column()
+  declare minVersion: string | null
+  @column()
+  declare notesUrl: string | null
+  @column()
+  declare product: string
+  @column.dateTime()
+  declare releasedAt: DateTime | null
+  @column()
+  declare signature: string
+  @column()
+  declare source: string
+  @column()
+  declare version: string
+  @column()
+  declare versionSort: string
+  @column.dateTime()
+  declare withdrawnAt: DateTime | null
+  @column()
+  declare withdrawnByUserId: number | null
+}
+
+export class AgentUpdateDeviceSchema extends BaseModel {
+  static $columns = ['apId', 'autoUpdate', 'channel', 'collectorId', 'facts', 'id', 'pinnedVersion', 'report', 'reportedAt', 'updatedAt', 'versionSeen'] as const
+  $columns = AgentUpdateDeviceSchema.$columns
+  @column()
+  declare apId: number | null
+  @column()
+  declare autoUpdate: string
+  @column()
+  declare channel: string | null
+  @column()
+  declare collectorId: number | null
+  @column()
+  declare facts: string | null
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare pinnedVersion: string | null
+  @column()
+  declare report: string | null
+  @column.dateTime()
+  declare reportedAt: DateTime | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime
+  @column()
+  declare versionSeen: string | null
+}
+
+export class AgentUpdateEventSchema extends BaseModel {
+  static $columns = ['apId', 'collectorId', 'createdAt', 'detail', 'deviceName', 'event', 'id', 'jobId', 'releaseId', 'rolloutId', 'severity', 'systemActor', 'userId'] as const
+  $columns = AgentUpdateEventSchema.$columns
+  @column()
+  declare apId: number | null
+  @column()
+  declare collectorId: number | null
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare detail: string | null
+  @column()
+  declare deviceName: string | null
+  @column()
+  declare event: string
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare jobId: bigint | number | null
+  @column()
+  declare releaseId: number | null
+  @column()
+  declare rolloutId: number | null
+  @column()
+  declare severity: string
+  @column()
+  declare systemActor: string | null
+  @column()
+  declare userId: number | null
+}
+
+export class AgentUpdateJobSchema extends BaseModel {
+  static $columns = ['acceptUnrecoverable', 'activeKey', 'apId', 'candidateConnectedAt', 'collectorId', 'confirmedAt', 'createdAt', 'deadlineAt', 'detail', 'deviceName', 'finishedAt', 'fromVersion', 'id', 'installSentAt', 'method', 'notBefore', 'preflight', 'product', 'progressBytes', 'progressTotal', 'pushesSeen', 'reason', 'reconnectedAt', 'releaseId', 'requestedByUserId', 'respectWindow', 'restageCount', 'rollbackStore', 'rolloutId', 'source', 'stagedAt', 'state', 'systemActor', 'toVersion', 'updateKey', 'updatedAt'] as const
+  $columns = AgentUpdateJobSchema.$columns
+  @column()
+  declare acceptUnrecoverable: boolean
+  @column()
+  declare activeKey: string | null
+  @column()
+  declare apId: number | null
+  @column.dateTime()
+  declare candidateConnectedAt: DateTime | null
+  @column()
+  declare collectorId: number | null
+  @column.dateTime()
+  declare confirmedAt: DateTime | null
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column.dateTime()
+  declare deadlineAt: DateTime | null
+  @column()
+  declare detail: string | null
+  @column()
+  declare deviceName: string
+  @column.dateTime()
+  declare finishedAt: DateTime | null
+  @column()
+  declare fromVersion: string
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column.dateTime()
+  declare installSentAt: DateTime | null
+  @column()
+  declare method: string
+  @column.dateTime()
+  declare notBefore: DateTime | null
+  @column()
+  declare preflight: string | null
+  @column()
+  declare product: string
+  @column()
+  declare progressBytes: bigint | number | null
+  @column()
+  declare progressTotal: bigint | number | null
+  @column()
+  declare pushesSeen: number
+  @column()
+  declare reason: string | null
+  @column.dateTime()
+  declare reconnectedAt: DateTime | null
+  @column()
+  declare releaseId: number | null
+  @column()
+  declare requestedByUserId: number | null
+  @column()
+  declare respectWindow: boolean
+  @column()
+  declare restageCount: boolean
+  @column()
+  declare rollbackStore: string | null
+  @column()
+  declare rolloutId: number | null
+  @column()
+  declare source: string
+  @column.dateTime()
+  declare stagedAt: DateTime | null
+  @column()
+  declare state: string
+  @column()
+  declare systemActor: string | null
+  @column()
+  declare toVersion: string
+  @column()
+  declare updateKey: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime
+}
+
+export class AgentUpdateRolloutSchema extends BaseModel {
+  static $columns = ['acceptUnrecoverable', 'auto', 'batchGapSeconds', 'batchSize', 'canaryConfirmedAt', 'canaryObserveMinutes', 'createdAt', 'createdByUserId', 'finishedAt', 'id', 'method', 'nextActionAt', 'offlineWaitMinutes', 'pausedDetail', 'pausedReason', 'product', 'releaseId', 'respectWindow', 'startedAt', 'state', 'stopOnFailure', 'updatedAt', 'version', 'waitingFor'] as const
+  $columns = AgentUpdateRolloutSchema.$columns
+  @column()
+  declare acceptUnrecoverable: boolean
+  @column()
+  declare auto: boolean
+  @column()
+  declare batchGapSeconds: number
+  @column()
+  declare batchSize: number
+  @column.dateTime()
+  declare canaryConfirmedAt: DateTime | null
+  @column()
+  declare canaryObserveMinutes: number
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdByUserId: number | null
+  @column.dateTime()
+  declare finishedAt: DateTime | null
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare method: string
+  @column.dateTime()
+  declare nextActionAt: DateTime | null
+  @column()
+  declare offlineWaitMinutes: number
+  @column()
+  declare pausedDetail: string | null
+  @column()
+  declare pausedReason: string | null
+  @column()
+  declare product: string
+  @column()
+  declare releaseId: number | null
+  @column()
+  declare respectWindow: boolean
+  @column.dateTime()
+  declare startedAt: DateTime | null
+  @column()
+  declare state: string
+  @column()
+  declare stopOnFailure: boolean
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime
+  @column()
+  declare version: string
+  @column()
+  declare waitingFor: string | null
+}
+
+export class AgentUpdateRolloutDeviceSchema extends BaseModel {
+  static $columns = ['apId', 'collectorId', 'detail', 'deviceName', 'id', 'isCanary', 'jobId', 'offlineSince', 'position', 'rolloutId', 'skipReason', 'state', 'updatedAt'] as const
+  $columns = AgentUpdateRolloutDeviceSchema.$columns
+  @column()
+  declare apId: number | null
+  @column()
+  declare collectorId: number | null
+  @column()
+  declare detail: string | null
+  @column()
+  declare deviceName: string
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare isCanary: boolean
+  @column()
+  declare jobId: bigint | number | null
+  @column.dateTime()
+  declare offlineSince: DateTime | null
+  @column()
+  declare position: number
+  @column()
+  declare rolloutId: number
+  @column()
+  declare skipReason: string | null
+  @column()
+  declare state: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime
+}
+
 export class AlertSchema extends BaseModel {
   static $columns = ['ackNote', 'acknowledgedAt', 'acknowledgedByUserId', 'activeKey', 'body', 'bumpedAt', 'category', 'createdAt', 'dedupeKey', 'eventCount', 'firstRaisedAt', 'flapping', 'id', 'kind', 'lastEventAt', 'lastTransitionAt', 'muted', 'nextReminderAt', 'notified', 'notifyAt', 'openedAt', 'path', 'payload', 'quietResolve', 'raisedAt', 'recoveryDueAt', 'resolvedAt', 'resolvedByUserId', 'severity', 'state', 'subjectKind', 'subjectLabel', 'subjectRef', 'title', 'transitions', 'type', 'updatedAt'] as const
   $columns = AlertSchema.$columns

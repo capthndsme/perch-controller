@@ -1,7 +1,16 @@
 import { onApAgentReady } from '#services/ap_groups'
+import {
+  attachAgentUpdates,
+  noteAgentPush,
+  recordUpdateReport,
+} from '#services/agent_updates/bridge'
 import WifiAccessPoint from '#models/wifi_access_point'
 import type { AgentEndpoint } from '#services/agent_gateway'
-import hub, { type AgentConnection, AgentOfflineError } from '#services/ap_agent_hub'
+import hub, {
+  type AgentConnection,
+  type AgentSession,
+  AgentOfflineError,
+} from '#services/ap_agent_hub'
 import { agentSecretMatches, parseAgentBearer } from '#services/ap_agent_credentials'
 import { agentConfigureParams, handleMetricsPush } from '#services/ap_agent_metrics'
 import { recordAgentAuthFailure } from '#services/ap_agent_rate_limit'
@@ -47,10 +56,14 @@ export function apAgentEndpoint(): AgentEndpoint<WifiAccessPoint> {
     attach() {
       // Pushed metrics (docs/ap-controller.md section 3.1).
       hub.onNotification('metrics.push', async (apId, params) => {
-        await handleMetricsPush(apId, params)
+        const outcome = await handleMetricsPush(apId, params)
+        // Agent updates: an accepted push is the health signal (controller.md 4.2).
+        if (outcome.status === 'ingested') await noteAgentPush('ap', apId)
       })
       // The Wi-Fi plane's notifications (docs/design/wifi controller.md 4.1).
       wifiPlane.attachWifiNotifications()
+      // Agent updates: agent.update.progress / agent.update.result.
+      attachAgentUpdates(hub, 'ap')
     },
 
     async authenticate(request, { address }) {
@@ -117,7 +130,7 @@ export function apAgentEndpoint(): AgentEndpoint<WifiAccessPoint> {
 
       logger.info({ apId: ap.id, address }, 'ap_agent_gateway: agent connected')
       markAgentConnected(ap.id, agentId, session.info.address)
-        .then(() => refreshSystemInfo(ap.id, agentId))
+        .then(() => refreshSystemInfo(ap.id, agentId, session))
         .catch((error) =>
           logger.warn({ apId: ap.id, err: error }, 'ap_agent_gateway: could not record connect')
         )
@@ -133,12 +146,23 @@ export function apAgentEndpoint(): AgentEndpoint<WifiAccessPoint> {
  * `system.info` right after connect: identity, version and capabilities
  * (what the command buttons are enabled from).
  */
-async function refreshSystemInfo(apId: number, agentId: string): Promise<void> {
+async function refreshSystemInfo(
+  apId: number,
+  agentId: string,
+  session?: AgentSession
+): Promise<void> {
   try {
     const info = await hub.request<SystemInfoResult>(apId, 'system.info')
     if (info && typeof info === 'object' && !Array.isArray(info)) {
-      await recordSystemInfo(apId, info, agentId)
+      const recorded = await recordSystemInfo(apId, info, agentId)
       await wifiPlane.onSystemInfo(apId, info)
+      // Agent updates: the `update` block (absent on agents without self-update).
+      if (recorded) {
+        await recordUpdateReport('ap', apId, info.update, {
+          version: typeof info.agentVersion === 'string' ? info.agentVersion.slice(0, 64) : null,
+          session: session ?? null,
+        })
+      }
       // Device groups on the AP (docs/gateway/device-groups.md section 7).
       onApAgentReady(apId)
     }

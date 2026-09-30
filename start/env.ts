@@ -183,4 +183,13 @@ export default await Env.create(new URL('../', import.meta.url), {
   | Default: on.
   */
   ALERTS_DELIVERY: Env.schema.enum.optional(['on', 'off'] as const),
+
+  /*
+  |----------------------------------------------------------
+  | Data directory (the Docker image sets /data, its volume)
+  |----------------------------------------------------------
+  | Agent update artefacts live in <PERCH_DATA_DIR>/agent-artefacts
+  | (app/services/agent_updates/store.ts). Unset: tmp/agent-artefacts.
+  */
+  PERCH_DATA_DIR: Env.schema.string.optional(),
 })

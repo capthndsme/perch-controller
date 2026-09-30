@@ -95,6 +95,7 @@ export const pages = {
   settingsGatewaySync: lazyPage(() =>
     import('@/pages/gateway-sync-settings-page').then((m) => m.GatewaySyncSettingsPage),
   ),
+  settingsUpdates: lazyPage(() => import('@/pages/agent-updates-page').then((m) => m.AgentUpdatesPage)),
   notFound: lazyPage(() => import('@/pages/not-found-page').then((m) => m.NotFoundPage)),
 }
 

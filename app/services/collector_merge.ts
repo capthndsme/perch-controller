@@ -1,4 +1,5 @@
 import Collector from '#models/collector'
+import { repointAgentUpdates } from '#services/agent_updates/merge'
 import {
   bucketTierRetentionDays,
   nativeRetentionDaysFromEnv,
@@ -142,6 +143,11 @@ export const NON_HISTORY_TABLES = new Set([
   'gateway_upnp_mappings',
   'gateway_upnp_events',
   'gateway_backups',
+  // Agent updates (repointAgentUpdates, app/services/agent_updates/merge.ts).
+  'agent_update_devices',
+  'agent_update_jobs',
+  'agent_update_events',
+  'agent_update_rollout_devices',
 ])
 const IDENTITY_COLUMNS = ['primary_ip', 'ips', 'first_seen_at', 'last_seen_at']
 const SERVICE_SUMS = ['bytes_served', 'bytes_received', 'packets_served', 'packets_received']
@@ -1324,6 +1330,9 @@ export async function executeCollectorMerge(
 
   // Config history hangs off the gateway row: it follows the merged collector.
   const gateways = await repointGateway(trx, { survivorId, removedId, intoId: plan.into.id })
+
+  // Agent updates: settings, jobs and audit rows follow the merged collector.
+  await repointAgentUpdates(trx, { survivorId, removedId })
 
   const intoRow = intoIsRemoved ? removed : survivor
   const identity: Record<string, unknown> = {}

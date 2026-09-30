@@ -1,0 +1,70 @@
+/*
+ * Settings → Updates: the few moving parts that say "this is happening now".
+ * Loaded with the page's chunk (pages/agent-updates-page.tsx), never by the
+ * entry. Nothing here runs on the 5 s refresh itself: the halo and the sweep
+ * loop only while a device is updating, and stop the moment it is done.
+ */
+
+/* A device that is updating right now: a soft ring grows out of its dot and
+ * fades, once every 1.6 s (ease-out: it leaves). Runs off the main thread. */
+@keyframes au-halo {
+  from {
+    opacity: 0.55;
+    scale: 1;
+  }
+  to {
+    opacity: 0;
+    scale: 2.4;
+  }
+}
+
+.au-halo {
+  position: relative;
+}
+
+.au-halo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: au-halo 1600ms var(--ease-out) infinite;
+  pointer-events: none;
+}
+
+/* Work without a percentage (installing, checking): a light band sweeps along
+ * the bar at a constant pace (linear: it is a loop, not an arrival). */
+@keyframes au-sweep {
+  from {
+    translate: -100% 0;
+  }
+  to {
+    translate: 250% 0;
+  }
+}
+
+.au-sweep {
+  position: relative;
+  overflow: hidden;
+}
+
+.au-sweep::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--card) 55%, transparent), transparent);
+  animation: au-sweep 1400ms linear infinite;
+  pointer-events: none;
+}
+
+/* Reduced motion: the dot and the bar stand still; their colour still says
+ * "updating" and the words say how far. */
+@media (prefers-reduced-motion: reduce) {
+  .au-halo::after,
+  .au-sweep::after {
+    animation: none;
+    opacity: 0;
+  }
+}

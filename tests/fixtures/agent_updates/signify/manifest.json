@@ -1,0 +1,22 @@
+{
+  "schema": "perch-release/1",
+  "product": "perch-apd",
+  "version": "1.2.0",
+  "channel": "stable",
+  "releasedAt": "2026-10-20T09:00:00Z",
+  "commit": "1e4605b0c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7",
+  "minVersion": "1.1.0",
+  "minFromVersion": null,
+  "minControllerVersion": "1.1.0-pre.1",
+  "notesUrl": "https://github.com/capthndsme/perch-apd/releases/tag/v1.2.0",
+  "artefacts": [
+    {
+      "file": "perch-apd-linux-mipsle",
+      "kind": "binary",
+      "arch": "mipsle",
+      "size": 2752,
+      "gzipSize": 120,
+      "sha256": "5e27153d639ce1f990aa91a5e7cee79efb638cdc429bf8754a3149efba7bef7e"
+    }
+  ]
+}

@@ -125,6 +125,8 @@ export const router = createBrowserRouter([
           { path: 'settings/alerts', ...page('settingsAlerts') },
           { path: 'settings/notifications', ...page('settingsNotifications') },
           { path: 'settings/gateway-sync', ...page('settingsGatewaySync') },
+          { path: 'settings/updates', ...page('settingsUpdates') },
+          { path: 'settings/updates/rollouts/:rolloutId', ...page('settingsUpdates') },
           { path: '*', ...page('notFound') },
         ],
       },
