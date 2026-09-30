@@ -35,6 +35,17 @@ export type GatewayApplyPostActions = {
     done?: boolean
     result?: Record<string, unknown> | null
   }
+  /**
+   * Gateway sync (rest.md 8): a device blocked from UPnP loses its current
+   * mappings once its deny rule is live (earlier it would just open them again).
+   */
+  upnpDelete?: {
+    mac: string
+    mappings: Array<{ proto: 'TCP' | 'UDP'; extPort: number }>
+    perchIds: string[]
+    done?: boolean
+    result?: Record<string, unknown> | null
+  }
 }
 
 /** One check item as sent (gateway sync protocol.md 1.1). */

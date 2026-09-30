@@ -3,7 +3,8 @@ import type GatewayApply from '#models/gateway_apply'
 import GatewayWanBlock, { type WanBlockFlush } from '#models/gateway_wan_block'
 import { recordGatewayEvent } from '#services/gateway_config/events'
 import { agentErrorCode, gatewayRequest } from '#services/gateway_config/gateway_agent'
-import { gatewaySession } from '#services/gateway_config/gateway_registry'
+import { getGatewayConfigSettings } from '#services/gateway_config/gateway_config_settings'
+import { gatewaySession, writeAccess } from '#services/gateway_config/gateway_registry'
 import logger from '@adonisjs/core/services/logger'
 import { DateTime } from 'luxon'
 
@@ -70,6 +71,7 @@ export async function flushConntrack(gateway: Gateway, ipsIn: string[]): Promise
  * first push) and when a job is confirmed without a window.
  */
 export async function runPostActions(gateway: Gateway, apply: GatewayApply): Promise<void> {
+  await runUpnpDelete(gateway, apply)
   const flush = apply.postActions?.conntrackFlush
   if (!flush || flush.done) return
   if (!apply.perchIds.some((id) => flush.perchIds.includes(id))) return
@@ -103,4 +105,47 @@ export async function runPostActions(gateway: Gateway, apply: GatewayApply): Pro
       'post_actions: conntrack flush failed; existing connections continue'
     )
   }
+}
+
+export const UPNP_DELETE_TIMEOUT_MS = 20_000
+
+/**
+ * The UPnP device block's second half (gateway sync rest.md 8): the
+ * device's mappings are deleted once the deny rule is live
+ * (`gateway.upnp.delete`, feature `upnp.delete`). Never throws; the result
+ * goes to the job and the audit log.
+ */
+async function runUpnpDelete(gateway: Gateway, apply: GatewayApply): Promise<void> {
+  const action = apply.postActions?.upnpDelete
+  if (!action || action.done) return
+  if (!apply.perchIds.some((id) => action.perchIds.includes(id))) return
+  let result: Record<string, unknown>
+  const features = (gateway.capabilities?.features ?? []) as unknown
+  if (action.mappings.length === 0) {
+    result = { deleted: 0, notFound: 0, restarted: false }
+  } else if (!Array.isArray(features) || !features.includes('upnp.delete')) {
+    result = { deleted: null, reason: 'capability_missing' }
+  } else {
+    try {
+      // A write method: signed on a signed session, like the apply was.
+      const access = writeAccess(gateway, await getGatewayConfigSettings())
+      result = await gatewayRequest<Record<string, unknown>>(
+        gateway,
+        'gateway.upnp.delete',
+        { mappings: action.mappings.slice(0, 64) },
+        { timeoutMs: UPNP_DELETE_TIMEOUT_MS, access }
+      )
+    } catch (error) {
+      result = {
+        deleted: null,
+        reason: agentErrorCode(error) ?? ((error as Error).message ?? 'error').slice(0, 120),
+      }
+    }
+  }
+  apply.postActions = { ...apply.postActions, upnpDelete: { ...action, done: true, result } }
+  await apply.save()
+  await recordGatewayEvent(gateway.id, 'upnp_mappings_deleted', {
+    applyId: Number(apply.id),
+    detail: { mac: action.mac, mappings: action.mappings.length, ...result },
+  })
 }

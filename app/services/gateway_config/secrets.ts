@@ -141,7 +141,8 @@ export function controllerSecretSlot(
 /**
  * The options of a `put` op for a desired content: plain values as they
  * are, controller secrets as `{"$secret": ref}`, router-owned secrets as
- * `{"$keep": true}`. Also returns the refs the apply must carry.
+ * `{"$keep": true}`, values the router generates as `{"$generate": kind}`.
+ * Also returns the refs the apply must carry.
  */
 export function wireOptions(content: SectionContent): {
   options: Record<string, WireValue>
@@ -153,7 +154,9 @@ export function wireOptions(content: SectionContent): {
     options[name] = Array.isArray(value) ? [...value] : value
   }
   for (const [name, slot] of Object.entries(content.secrets ?? {})) {
-    if (slot.ref) {
+    if (slot.generate) {
+      options[name] = { $generate: slot.generate }
+    } else if (slot.ref) {
       options[name] = { $secret: slot.ref }
       refs.push(slot.ref)
     } else {

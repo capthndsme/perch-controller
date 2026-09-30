@@ -9,13 +9,14 @@ import {
   isObject,
   list,
   text,
+  unixSeconds,
 } from '#services/gateway_observation_common'
 
 /**
  * Normalisers of the observation parts the controller keeps as one blob per
  * collector (`gateway_observations.payload`, docs/gateway/observation.md
  * section 2): `interfaces`, `mwan3`, `resolver`, `system`, `wireguard`,
- * `packages`. Each takes whatever the agent sent and returns the cleaned,
+ * `ddns`, `packages`. Each takes whatever the agent sent and returns the cleaned,
  * capped value, or null when it is not one (not an object / array). Unknown
  * fields are dropped, so nothing the agent should not send (a private key)
  * can be stored.
@@ -54,6 +55,32 @@ export type ObservedInterface = {
   dnsServers: string[]
   /** netifd's first error code (`NO_DEVICE`, …). */
   error: string | null
+  /**
+   * Gateway sync (protocol.md 6.1, feature `observe.ipv6_prefixes`): prefixes
+   * delegated to an upstream, and what netifd assigned to a LAN. Empty when
+   * the agent does not report them.
+   */
+  ipv6Prefixes: { prefix: string; preferredUntil: string | null; validUntil: string | null }[]
+  ipv6Assigned: string[]
+}
+
+export const MAX_IPV6_PREFIXES = 16
+
+/**
+ * A time as ISO-8601 UTC (seconds): the agent sends Unix seconds, a stored
+ * blob holds the ISO string (blobs are normalised again on read, so this
+ * must take its own output). Null for 0, absent or nonsense.
+ */
+export function isoFromUnix(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const ms = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(value)
+      ? Date.parse(value)
+      : Number.NaN
+    return Number.isNaN(ms) ? null : new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z')
+  }
+  const seconds = unixSeconds(value)
+  if (!seconds) return null
+  return new Date(seconds * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z')
 }
 
 export function normalizeInterfaces(value: unknown): ObservedInterface[] | null {
@@ -94,6 +121,25 @@ export function normalizeInterfaces(value: unknown): ObservedInterface[] | null 
         ),
       ].slice(0, 16),
       error: text(entry.error, 64),
+      ipv6Prefixes: list(entry.ipv6Prefixes)
+        .filter(isObject)
+        .map((p) => ({
+          prefix: cidr(p.prefix, 6),
+          preferredUntil: isoFromUnix(p.preferredUntil),
+          validUntil: isoFromUnix(p.validUntil),
+        }))
+        .filter(
+          (p): p is { prefix: string; preferredUntil: string | null; validUntil: string | null } =>
+            p.prefix !== null
+        )
+        .slice(0, MAX_IPV6_PREFIXES),
+      ipv6Assigned: [
+        ...new Set(
+          list(entry.ipv6Assigned)
+            .map((a) => cidr(a, 6))
+            .filter((a): a is string => a !== null)
+        ),
+      ].slice(0, MAX_IPV6_PREFIXES),
     })
   }
   return out.sort((a, b) => (a.network < b.network ? -1 : a.network > b.network ? 1 : 0))
@@ -347,6 +393,8 @@ export function normalizeSystem(value: unknown): SystemObservation | null {
 export type WireguardObservation = {
   interfaces: {
     name: string
+    /** The UCI network (interface section) it belongs to. */
+    network: string | null
     publicKey: string | null
     listenPort: number | null
     peers: {
@@ -358,6 +406,8 @@ export type WireguardObservation = {
       latestHandshake: number | null
       rxBytes: number | null
       txBytes: number | null
+      /** Persistent keepalive in seconds, null when off. */
+      keepalive: number | null
     }[]
   }[]
 }
@@ -392,16 +442,82 @@ export function normalizeWireguard(value: unknown): WireguardObservation | null 
         latestHandshake: count(peer.latestHandshake, 2 ** 40),
         rxBytes: count(peer.rxBytes),
         txBytes: count(peer.txBytes),
+        keepalive: count(peer.keepalive, 65535) || null,
       })
     }
     interfaces.push({
       name,
+      network: text(entry.network, 32),
       publicKey: wgKey(entry.publicKey),
       listenPort: count(entry.listenPort, 65535),
       peers,
     })
   }
   return { interfaces }
+}
+
+// ── ddns ───────────────────────────────────────────────────────────────────
+
+export const MAX_DDNS_SERVICES = 64
+export const MAX_DDNS_PROVIDERS = 512
+
+export type DdnsObservation = {
+  installed: boolean
+  /** `/etc/init.d/ddns` enabled at boot; null when the agent does not say. */
+  serviceEnabled: boolean | null
+  /** Provider names ddns-scripts knows (`service_name` values). */
+  providers: string[]
+  services: {
+    name: string
+    enabled: boolean | null
+    domain: string | null
+    /** The address the provider has (the `.ip` file). */
+    registeredIp: string | null
+    /** Last successful update, ISO; null = never. */
+    lastUpdate: string | null
+    running: boolean
+    /** The last ERROR/WARN log line after the last success, ≤ 200 bytes. */
+    lastError: string | null
+  }[]
+}
+
+/** ddns-scripts' state (protocol.md 6.1): never a password. */
+export function normalizeDdns(value: unknown): DdnsObservation | null {
+  if (!isObject(value)) return null
+  const providers = [
+    ...new Set(
+      list(value.providers)
+        .map((p) => text(p, 128))
+        .filter((p): p is string => p !== null)
+    ),
+  ]
+    .sort()
+    .slice(0, MAX_DDNS_PROVIDERS)
+  const services: DdnsObservation['services'] = []
+  const seen = new Set<string>()
+  for (const entry of list(value.services)) {
+    if (services.length >= MAX_DDNS_SERVICES) break
+    if (!isObject(entry)) continue
+    const name = text(entry.name, 64)
+    if (!name || seen.has(name)) continue
+    seen.add(name)
+    services.push({
+      name,
+      enabled: bool(entry.enabled),
+      domain: text(entry.domain, 253),
+      registeredIp: ipAny(entry.registeredIp),
+      lastUpdate: isoFromUnix(entry.lastUpdate),
+      running: entry.running === true,
+      lastError: text(entry.lastError, 200),
+    })
+  }
+  services.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+  return {
+    installed: value.installed !== false,
+    serviceEnabled: bool(value.serviceEnabled),
+    providers,
+    services,
+  }
 }
 
 // ── packages ───────────────────────────────────────────────────────────────
@@ -442,6 +558,7 @@ export const BLOB_PARTS = {
   resolver: normalizeResolver,
   system: normalizeSystem,
   wireguard: normalizeWireguard,
+  ddns: normalizeDdns,
   packages: normalizePackages,
 } as const
 

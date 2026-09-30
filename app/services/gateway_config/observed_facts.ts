@@ -3,14 +3,18 @@ import type { FeatureObservation, ObservedInterfaceFact } from '#services/gatewa
 import type { SideFacts } from '#services/gateway_config/domains/side'
 import { parseJsonObject, rawRows } from '#services/gateway_observation_common'
 import {
+  normalizeDdns,
   normalizeInterfaces,
   normalizeMwan3,
   normalizeResolver,
   normalizeSystem,
+  normalizeWireguard,
+  type DdnsObservation,
   type Mwan3Observation,
   type ObservedInterface,
   type ResolverObservation,
   type SystemObservation,
+  type WireguardObservation,
 } from '#services/gateway_observation_parts'
 import db from '@adonisjs/lucid/services/db'
 
@@ -32,7 +36,19 @@ export type ObservedFacts = {
   system: SystemObservation | null
   interfaces: ObservedInterface[] | null
   mwan3: Mwan3Observation | null
-  observedAt: Partial<Record<'resolver' | 'system' | 'interfaces' | 'mwan3', string>>
+  /** Gateway sync: ddns-scripts' state and the WireGuard peers (protocol.md 6.1). */
+  ddns: DdnsObservation | null
+  wireguard: WireguardObservation | null
+  /** The `upnp` part's summary (the mappings live in their own table). */
+  upnp: {
+    installed: boolean
+    enabled: boolean | null
+    running: boolean | null
+    secureMode: boolean | null
+  } | null
+  observedAt: Partial<
+    Record<'resolver' | 'system' | 'interfaces' | 'mwan3' | 'ddns' | 'wireguard' | 'upnp', string>
+  >
 }
 
 export const NO_FACTS: ObservedFacts = Object.freeze({
@@ -40,6 +56,9 @@ export const NO_FACTS: ObservedFacts = Object.freeze({
   system: null,
   interfaces: null,
   mwan3: null,
+  ddns: null,
+  wireguard: null,
+  upnp: null,
   observedAt: {},
 }) as ObservedFacts
 
@@ -50,7 +69,7 @@ export async function readObservedFacts(collectorId: number | null): Promise<Obs
       `SELECT kind, payload, DATE_FORMAT(observed_at, '%Y-%m-%dT%H:%i:%sZ') AS observedAt,
               TIMESTAMPDIFF(SECOND, observed_at, UTC_TIMESTAMP()) AS age
          FROM gateway_observations
-        WHERE collector_id = ? AND kind IN ('resolver', 'system', 'interfaces', 'mwan3')`,
+        WHERE collector_id = ? AND kind IN ('resolver', 'system', 'interfaces', 'mwan3', 'ddns', 'wireguard', 'upnp')`,
       [collectorId]
     )
   )
@@ -66,6 +85,17 @@ export async function readObservedFacts(collectorId: number | null): Promise<Obs
       if (kind === 'resolver') out.resolver = normalizeResolver(payload)
       if (kind === 'system') out.system = normalizeSystem(payload)
       if (kind === 'mwan3') out.mwan3 = normalizeMwan3(payload)
+      if (kind === 'ddns') out.ddns = normalizeDdns(payload)
+      if (kind === 'wireguard') out.wireguard = normalizeWireguard(payload)
+      if (kind === 'upnp') {
+        const flag = (v: unknown) => (typeof v === 'boolean' ? v : null)
+        out.upnp = {
+          installed: payload.installed !== false,
+          enabled: flag(payload.enabled),
+          running: flag(payload.running),
+          secureMode: flag(payload.secureMode),
+        }
+      }
     }
     out.observedAt[kind] = String(row.observedAt)
   }
@@ -95,12 +125,26 @@ export function featureObservation(facts: ObservedFacts): FeatureObservation {
           proto: i.proto,
           defaultRoute: i.defaultRoute,
           metric: i.metric,
+          ipv6Assigned: i.ipv6Assigned,
         }))
       : null,
     offloading: facts.system
       ? {
           flowOffloading: facts.system.flowOffloading,
           flowOffloadingHw: facts.system.flowOffloadingHw,
+        }
+      : null,
+    upnp: facts.upnp ? { running: facts.upnp.running } : null,
+    ddns: facts.ddns
+      ? { services: facts.ddns.services.map((s) => ({ name: s.name, running: s.running })) }
+      : null,
+    wireguard: facts.wireguard
+      ? {
+          interfaces: facts.wireguard.interfaces.map((i) => ({
+            name: i.name,
+            network: i.network,
+            peers: i.peers.map((p) => p.publicKey),
+          })),
         }
       : null,
   }

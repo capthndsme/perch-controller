@@ -10,6 +10,7 @@ import {
 } from '#services/gateway_config/domain'
 import { dhcpPoolsDomain } from '#services/gateway_config/domains/dhcp_pools'
 import { DOMAINS, domainRegistry } from '#services/gateway_config/domains/index'
+import { NETWORK_GLOBALS_KEY } from '#services/gateway_config/domains/network_globals'
 import {
   cidrsOverlap,
   interfaceCidrs,
@@ -140,10 +141,13 @@ test.group('networks domain | claims and round trip (plan 1 section 8.1)', () =>
     )
     const set = networkConfigSet()
     const reg = domainRegistry()
-    for (const name of ['loopback', 'globals', 'cfg0a0f15']) {
+    for (const name of ['loopback', 'cfg0a0f15']) {
       const s = set.network.sections.find((x) => x.name === name)!
       assert.isNull(reg.claim({ ...s, config: 'network' }, set), name)
     }
+    // The ULA lives in `globals`: the IPv6 work's own domain (B4), not `networks`'.
+    const globals = set.network.sections.find((x) => x.name === 'globals')!
+    assert.equal(reg.claim({ ...globals, config: 'network' }, set)?.domain.key, NETWORK_GLOBALS_KEY)
     // Gateway sync (domains.md 3): the WAN side and the uplink port's MAC
     // override are the `wan` domain's, never `networks`'.
     for (const name of ['cfg040f15', 'wan', 'wan6', 'wan2']) {

@@ -9,6 +9,8 @@ import { isSecretOption, routerSecretSlots } from '#services/gateway_config/secr
 import {
   WHOLE_SECTION,
   type GatewayCapabilities,
+  GENERATED_FINGERPRINT_PREFIX,
+  type GeneratedSecretKind,
   type Issue,
   type ManagementPath,
   type SecretSlot,
@@ -105,6 +107,11 @@ export type SecretEdit =
   | { ref: string; fingerprint: string }
   /** Leave the router's value (it owns it). */
   | { keep: true }
+  /**
+   * The router generates it (gateway sync domains.md 1.6); `nonce` makes the
+   * slot's `gen:` placeholder fingerprint unique, so the planner sends it.
+   */
+  | { generate: GeneratedSecretKind; nonce: string }
 
 /**
  * A domain's edit of the desired state. `put` fully replaces the options of
@@ -168,9 +175,19 @@ export interface FeatureObservation {
     proto?: string | null
     defaultRoute?: boolean | null
     metric?: number | null
+    /** Prefixes netifd assigned to this network (feature `observe.ipv6_prefixes`). */
+    ipv6Assigned?: string[]
   }> | null
   /** `system` part: flow offloading as the router runs it (`firewall_defaults`' check). */
   offloading?: { flowOffloading: boolean | null; flowOffloadingHw: boolean | null } | null
+  /** `upnp` part: whether miniupnpd runs (`upnp`'s check). */
+  upnp?: { running: boolean | null } | null
+  /** `ddns` part: which services' updaters run (`ddns`' check). */
+  ddns?: { services: Array<{ name: string; running: boolean }> } | null
+  /** `wireguard` part: the peers each interface has loaded (`wireguard`'s check). */
+  wireguard?: {
+    interfaces: Array<{ name: string; network: string | null; peers: string[] }>
+  } | null
 }
 
 // ── apply checks (gateway sync domains.md 1.5, protocol.md 1) ────────────
@@ -573,6 +590,11 @@ export function applySectionEdits(
         const slot = existing?.secrets?.[name]
         if (!slot) throw new SectionEditError(`no secret ${name} to keep on ${edit.perchId}`)
         secrets[name] = { ...slot }
+      } else if ('generate' in secret) {
+        secrets[name] = {
+          fingerprint: `${GENERATED_FINGERPRINT_PREFIX}${secret.nonce}`,
+          generate: secret.generate,
+        }
       } else {
         secrets[name] = { ref: secret.ref, fingerprint: secret.fingerprint }
       }

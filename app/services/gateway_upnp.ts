@@ -52,6 +52,8 @@ export type UpnpObservation = {
   installed: boolean
   /** A miniupnpd process runs; null when not said. */
   running: boolean | null
+  /** UCI `secure_mode` (gateway sync, protocol.md 6.1); null when not said. */
+  secureMode: boolean | null
   mappings: UpnpMappingInput[]
 }
 
@@ -81,6 +83,7 @@ export function normalizeUpnp(value: unknown): UpnpObservation | null {
     enabled: bool(value.enabled),
     installed: value.installed === false ? false : true,
     running: bool(value.running),
+    secureMode: bool(value.secureMode),
     mappings: [...byKey.values()].sort((a, b) =>
       a.proto === b.proto ? a.extPort - b.extPort : a.proto < b.proto ? -1 : 1
     ),
@@ -91,6 +94,7 @@ export type UpnpPayload = {
   enabled: boolean | null
   installed: boolean
   running: boolean | null
+  secureMode?: boolean | null
   mappings: number
 }
 
@@ -155,6 +159,7 @@ export async function recordUpnpObservation(
     enabled: obs.enabled,
     installed: obs.installed,
     running: obs.running,
+    secureMode: obs.secureMode,
     mappings: obs.mappings.length,
   }
 

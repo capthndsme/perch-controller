@@ -2118,6 +2118,31 @@ export class GatewayWanTransitionSchema extends BaseModel {
   declare network: string
 }
 
+export class GatewayWireguardPeerSchema extends BaseModel {
+  static $columns = ['clientConfigIssuedAt', 'createdAt', 'createdByUserId', 'deviceMac', 'gatewayId', 'id', 'interface', 'peerPerchId', 'publicKey', 'updatedAt'] as const
+  $columns = GatewayWireguardPeerSchema.$columns
+  @column.dateTime()
+  declare clientConfigIssuedAt: DateTime | null
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdByUserId: number | null
+  @column()
+  declare deviceMac: string | null
+  @column()
+  declare gatewayId: number
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare interface: string
+  @column()
+  declare peerPerchId: string | null
+  @column()
+  declare publicKey: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
 export class HotspotCheckoutSchema extends BaseModel {
   static $columns = ['amount', 'checkoutRef', 'coinCount', 'createdAt', 'currency', 'decimals', 'downKbps', 'durationMode', 'durationSeconds', 'eventKey', 'finalizedAt', 'gatewayId', 'hostname', 'id', 'ip', 'keyEpoch', 'kind', 'mac', 'note', 'openedAt', 'portalId', 'priceRevision', 'priceTableId', 'quotaBytes', 'reason', 'refundAmount', 'resolvedAt', 'resolvedByUserId', 'routerSig', 'state', 'terminalId', 'terminalName', 'unusedAmount', 'upKbps', 'updatedAt', 'voucherId'] as const
   $columns = HotspotCheckoutSchema.$columns
