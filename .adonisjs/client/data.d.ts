@@ -5,6 +5,8 @@
 
 /// <reference path="./manifest.d.ts" />
 import type { InferData, InferVariants } from '@adonisjs/core/types/transformers'
+import type AlertDeliveriesTransformer from '#transformers/alert_deliveries'
+import type AlertsTransformer from '#transformers/alerts'
 import type CollectorSummaryTransformer from '#transformers/collector_summary_transformer'
 import type CollectorTransformer from '#transformers/collector_transformer'
 import type DeviceSummaryTransformer from '#transformers/device_summary_transformer'
@@ -17,6 +19,14 @@ import type UserTransformer from '#transformers/user_transformer'
 import type WifiAccessPointTransformer from '#transformers/wifi_access_point_transformer'
 
 export namespace Data {
+  export type AlertDeliveries = InferData<AlertDeliveriesTransformer>
+  export namespace AlertDeliveries {
+    export type Variants = InferVariants<AlertDeliveriesTransformer>
+  }
+  export type Alerts = InferData<AlertsTransformer>
+  export namespace Alerts {
+    export type Variants = InferVariants<AlertsTransformer>
+  }
   export type CollectorSummary = InferData<CollectorSummaryTransformer>
   export namespace CollectorSummary {
     export type Variants = InferVariants<CollectorSummaryTransformer>
