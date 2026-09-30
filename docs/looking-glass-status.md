@@ -3032,3 +3032,35 @@ Fixed on the way (each with tests):
 Not covered in the lab yet (owner actions): the Wi-Fi plane (needs `mac80211_hwsim`), agent updates (needs the release
 key), Web Push (a phone). Also: DDNS showed the generic last line of a failed run instead of its cause (collector
 f52956e).
+
+## 2026-09-30 — Live rollout of the four-area build (owner: "yes, let's live rollout this")
+
+Local releases (tags not pushed): controller **1.1.0-pre.5** (68032d3), collector **1.1.0-pre.4** (f52956e), perch-apd
+**1.1.0-pre.3** (c08942d), kit **0.4.0-pre.1** (4d65d10). The main checkouts' branches were fast-forwarded to
+`four/integration`. Rollback set in `~/metricslite-rollback/2026-09-30-four/`: DB dump `hypermetrics-before-four.sql.gz`
+(280 MB), image `perch-controller:rollback-pre4-2026-09-30`, the gateway's pre.3 binary/init and config tarball, and
+each AP's pre.2 binary, init and `perch-apd`/`wireless`/`network` configs (0600).
+
+1. **Controller**: `docker compose up -d --build`; 35 migrations (125–174) in 5 s; no warnings; 150 MiB. Alerts live
+   (first ones real: disk space low, a new device).
+2. **Gateway collector** (static nDPI build over pre.3, new init + guard, the `config-guard --overdue` cron line,
+   `cronloglevel 9`): six gateway-sync features announced; 105 sections synced (was 82): WAN promoted as the dry run
+   predicted (`wan` 1, `lan2` 2, `globe` 3, `LANX` a NAT link, warning `wan_mac_override_ignored`); WireGuard client
+   link `wgfix` up with its peer online; miniupnpd running with **secure mode off**; DDNS not installed; no IPv6 prefix
+   delegated. Nothing was applied: the draft lists 94 adoptions, ~76 of them renames of anonymous sections that were
+   pending (hidden) before the planner fix; the two name-clash groups (`game`, `wgx`) block Authoritative Mode.
+3. **Wi-Fi lab first** (hwsim, `plab-ap` with two radios on 2.4 GHz since the world domain forbids 5 GHz AP start,
+   `plab-w1` as client, TLS to plab-ctl through an nginx proxy with a lab CA — plain-HTTP writes need pairing, not built):
+   observe (keys as fingerprints), adoption with no write, passphrase verify (mismatch refused), Managed with no
+   reload, a hidden-flag change confirmed by the AP's health check (client lost 3.4 s at the commit), a confirm timeout
+   (AP cut off from the controller after the commit) rolled back by the AP at its deadline, retry, device-groups
+   sections left alone.
+4. **APs** (garage first, then First and Second Floor): binary swap (the AX23 keeps 3.98 MB free), new init,
+   `wifi_config 'read'` → Observe: every AP in sync over TLS; adoption accepted (four networks: "Searching...",
+   "The Batcave", "Searching IOT", "@GoSurf_FreeWifi"; the open "OpenWrt" leftover excluded; nine orphans skipped;
+   no fleet country): no AP's `wireless` changed, no divergence. Then `wifi_config 'write'` (boot guard installed),
+   still Observe.
+
+Left to the owner (dashboard): Managed per AP (password step-up), the fleet country (APs report TW/US, PH, PH/TW;
+PH suggested), passphrases (optional until a passphrase change), then the first real Wi-Fi change; the gateway
+draft's adoptions; UPnP secure mode; the release key for agent updates; a push subscription on a phone.
