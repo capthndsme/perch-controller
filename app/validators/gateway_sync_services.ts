@@ -202,3 +202,36 @@ export const wgPeerPatchValidator = vine.compile(
     deviceMac: vine.string().trim().maxLength(17).nullable().optional(),
   })
 )
+
+/** `PATCH /gateways/:id/ipv6` (rest.md 5). */
+export const ipv6PatchValidator = vine.compile(
+  vine.object({
+    ula: vine.string().trim().maxLength(49).nullable(),
+    confirm: vine.string().trim().maxLength(64).optional(),
+  })
+)
+
+const ipv6Mode = () =>
+  vine
+    .enum(['server', 'relay', 'hybrid', 'disabled'] as const)
+    .nullable()
+    .optional()
+
+/** `PATCH /gateways/:id/ipv6/lans/:network` (rest.md 5). */
+export const ipv6LanPatchValidator = vine.compile(
+  vine.object({
+    ip6assign: vine.number().withoutDecimals().min(0).max(64).nullable().optional(),
+    ip6hint: vine.string().trim().maxLength(4).nullable().optional(),
+    ip6class: vine.array(vine.string().trim().minLength(1).maxLength(32)).maxLength(8).optional(),
+    ra: ipv6Mode(),
+    dhcpv6: ipv6Mode(),
+    ndp: vine
+      .enum(['relay', 'hybrid', 'disabled'] as const)
+      .nullable()
+      .optional(),
+    raFlags: vine.array(vine.string().trim().maxLength(16)).maxLength(4).optional(),
+    raSlaac: vine.boolean().optional(),
+    dns: vine.array(vine.string().trim().maxLength(45)).maxLength(4).optional(),
+    confirm: vine.string().trim().maxLength(64).optional(),
+  })
+)

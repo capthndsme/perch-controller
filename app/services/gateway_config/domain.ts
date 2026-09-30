@@ -175,6 +175,8 @@ export interface FeatureObservation {
     proto?: string | null
     defaultRoute?: boolean | null
     metric?: number | null
+    /** Prefixes netifd assigned to this network (feature `observe.ipv6_prefixes`). */
+    ipv6Assigned?: string[]
   }> | null
   /** `system` part: flow offloading as the router runs it (`firewall_defaults`' check). */
   offloading?: { flowOffloading: boolean | null; flowOffloadingHw: boolean | null } | null

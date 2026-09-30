@@ -46,6 +46,37 @@ export const DHCP_POOL_OWNED_OPTIONS = [
   'force',
 ] as const
 
+/**
+ * Gateway sync (domains.md 7): the IPv6 options the pool takes over from the
+ * router. A row claimed before gateway sync owns them only after its first
+ * IPv6 edit (`widenOwnership`), so the upgrade never turns a router value
+ * into drift.
+ */
+export const DHCP_POOL_IPV6_OPTIONS = [
+  'ra',
+  'dhcpv6',
+  'ndp',
+  'ra_flags',
+  'ra_slaac',
+  'ra_default',
+  'dns',
+  'dns_service',
+  'ra_preference',
+  'ra_mtu',
+  'ra_hoplimit',
+  'ra_lifetime',
+  'ra_maxinterval',
+  'ra_mininterval',
+  'dhcpv6_na',
+  'dhcpv6_pd',
+  'max_preferred_lifetime',
+  'max_valid_lifetime',
+] as const
+
+export const IPV6_MODES = ['server', 'relay', 'hybrid', 'disabled'] as const
+export const NDP_MODES = ['relay', 'hybrid', 'disabled'] as const
+export const RA_FLAGS = ['managed-config', 'other-config', 'home-agent', 'none'] as const
+
 export interface DhcpPool {
   perchId: string | null
   section: string
@@ -209,6 +240,50 @@ function validatePools(desired: SyncedSection[], ctx: ValidationCtx): Issue[] {
       section: s.name,
       ...(option ? { option } : {}),
     })
+
+  // Gateway sync (domains.md 7): IPv6 modes; relay needs a master pool upstream.
+  const hasMaster = [...pools, ...others].some(
+    (s) => truthy(scalarOf(s.options, 'master') ?? '0') === '1'
+  )
+  for (const s of pools) {
+    for (const option of ['ra', 'dhcpv6'] as const) {
+      const v = scalarOf(s.options, option)
+      if (v !== null && !(IPV6_MODES as readonly string[]).includes(v)) {
+        issue(
+          s,
+          'error',
+          'ipv6_mode_invalid',
+          `${option} is server, relay, hybrid or disabled.`,
+          option
+        )
+      }
+    }
+    const ndp = scalarOf(s.options, 'ndp')
+    if (ndp !== null && !(NDP_MODES as readonly string[]).includes(ndp)) {
+      issue(s, 'error', 'ipv6_mode_invalid', 'ndp is relay, hybrid or disabled.', 'ndp')
+    }
+    const relays = ['ra', 'dhcpv6', 'ndp'].some((o) => scalarOf(s.options, o) === 'relay')
+    if (relays && truthy(scalarOf(s.options, 'master') ?? '0') !== '1' && !hasMaster) {
+      issue(
+        s,
+        'error',
+        'ipv6_relay_needs_master',
+        'Relay mode needs the WAN-side pool in relay with master 1.',
+        'ra'
+      )
+    }
+    const flags = s.options.ra_flags
+    const items = flags === undefined ? [] : Array.isArray(flags) ? flags : flags.split(/\s+/)
+    if (items.some((f) => f && !(RA_FLAGS as readonly string[]).includes(f))) {
+      issue(
+        s,
+        'error',
+        'ipv6_ra_flags_invalid',
+        'RA flags are managed-config, other-config, home-agent or none.',
+        'ra_flags'
+      )
+    }
+  }
 
   const seen = new Map<string, SyncedSection>()
   for (const s of others) {

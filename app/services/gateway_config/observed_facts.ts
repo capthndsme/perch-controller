@@ -125,6 +125,7 @@ export function featureObservation(facts: ObservedFacts): FeatureObservation {
           proto: i.proto,
           defaultRoute: i.defaultRoute,
           metric: i.metric,
+          ipv6Assigned: i.ipv6Assigned,
         }))
       : null,
     offloading: facts.system
