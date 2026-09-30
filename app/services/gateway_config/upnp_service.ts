@@ -39,7 +39,12 @@ import { findOrder } from '#services/gateway_config/order_store'
 import { runtimeRequest } from '#services/gateway_config/runtime_rpc'
 import { orderMembers, routerOrder, type OrderKey } from '#services/gateway_config/section_order'
 import type { SectionState } from '#services/gateway_config/sync_engine'
-import { configAllowed, hasFeature, type UciOptions } from '#services/gateway_config/types'
+import {
+  configAllowed,
+  hasFeature,
+  packageInstalled,
+  type UciOptions,
+} from '#services/gateway_config/types'
 import { readUpnp, type UpnpMapping } from '#services/gateway_observation_read'
 
 /**
@@ -155,14 +160,12 @@ function aclRows(states: SectionState[], desired: string[] | null): SectionState
 }
 
 function isInstalled(ctx: Ctx): boolean {
-  const packages = (ctx.gateway.capabilities?.packages ?? {}) as Record<string, string>
-  return (
-    'miniupnpd' in packages ||
-    'miniupnpd-nftables' in packages ||
-    'miniupnpd-iptables' in packages ||
-    ctx.live.installed === true ||
-    settingsRow(ctx.states) !== null
+  const reported = packageInstalled(
+    ctx.gateway.capabilities,
+    ['miniupnpd-nftables', 'miniupnpd', 'miniupnpd-iptables'],
+    'upnp.delete'
   )
+  return reported ?? (ctx.live.installed === true || settingsRow(ctx.states) !== null)
 }
 
 function unavailable(ctx: Ctx, installed: boolean): UpnpConfigView['unavailableReason'] {

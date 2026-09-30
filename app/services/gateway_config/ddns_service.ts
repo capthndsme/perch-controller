@@ -35,7 +35,7 @@ import {
 import { readObservedFacts } from '#services/gateway_config/observed_facts'
 import { runtimeRequest } from '#services/gateway_config/runtime_rpc'
 import type { SectionState } from '#services/gateway_config/sync_engine'
-import { configAllowed, type UciOptions } from '#services/gateway_config/types'
+import { configAllowed, packageInstalled, type UciOptions } from '#services/gateway_config/types'
 import type { DdnsObservation, ObservedInterface } from '#services/gateway_observation_parts'
 import { readDdns } from '#services/gateway_observation_read'
 
@@ -125,8 +125,8 @@ function isInstalled(
   observed: DdnsObservation | null,
   rows: SectionState[]
 ): boolean {
-  const packages = (gateway.capabilities?.packages ?? {}) as Record<string, string>
-  return 'ddns-scripts' in packages || observed?.installed === true || rows.length > 0
+  const reported = packageInstalled(gateway.capabilities, ['ddns-scripts'], 'ddns.update')
+  return reported ?? (observed?.installed === true || rows.length > 0)
 }
 
 function unavailable(gateway: Gateway, installed: boolean): DdnsOverview['unavailableReason'] {

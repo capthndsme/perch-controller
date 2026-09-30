@@ -14,6 +14,7 @@ import {
   wireguardDomain,
 } from '#services/gateway_config/domains/wireguard'
 import { applySectionEdits } from '#services/gateway_config/domain'
+import { packageInstalled } from '#services/gateway_config/types'
 import { wireOptions } from '#services/gateway_config/secrets'
 import { clientConfigText, wgKeyPair } from '#services/gateway_config/wireguard_keys'
 import {
@@ -476,3 +477,26 @@ const NETWORK_WITH_LAN = [
     netmask: '255.255.255.0',
   }),
 ]
+
+test.group('gateway sync Phase C | installed packages', () => {
+  test('the agent’s package report wins over leftover config; unknown for older agents', ({
+    assert,
+  }) => {
+    const caps = (features: string[], packages?: Record<string, string>) =>
+      ({ access: 'write', features, ...(packages ? { packages } : {}) }) as any
+    const wg = (c: any) => packageInstalled(c, ['wireguard-tools'], 'config.plain_public_key')
+    assert.isTrue(wg(caps(['config.plain_public_key'], { 'wireguard-tools': '1.0-r4' })))
+    // Removed, although /etc/config/network still has the interface.
+    assert.isFalse(wg(caps(['config.plain_public_key'], { dnsmasq: '2.90-r1' })))
+    // An agent that does not watch it, or reports nothing: unknown.
+    assert.isNull(wg(caps([], { dnsmasq: '2.90-r1' })))
+    assert.isNull(wg(caps(['config.plain_public_key'])))
+    assert.isTrue(
+      packageInstalled(
+        caps(['upnp.delete'], { 'miniupnpd-nftables': '2.3-r1' }),
+        ['miniupnpd-nftables', 'miniupnpd'],
+        'upnp.delete'
+      )
+    )
+  })
+})

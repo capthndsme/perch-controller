@@ -427,6 +427,24 @@ export function hasFeature(caps: GatewayCapabilities | null | undefined, feature
 }
 
 /**
+ * Whether one of `names` is installed, by the agent's package report — or
+ * null (unknown) when the agent is too old to watch them (it does not
+ * announce `watchedSince`, the feature that came with watching them) or
+ * reports no packages. Config sections are no proof: OpenWrt keeps a
+ * package's conffile (`/etc/config/ddns`) after the package is removed.
+ */
+export function packageInstalled(
+  caps: GatewayCapabilities | null | undefined,
+  names: string[],
+  watchedSince: string
+): boolean | null {
+  const packages = (caps as { packages?: unknown } | null | undefined)?.packages
+  if (!packages || typeof packages !== 'object' || Array.isArray(packages)) return null
+  if (!hasFeature(caps, watchedSince)) return null
+  return names.some((n) => n in (packages as Record<string, unknown>))
+}
+
+/**
  * Whether the router lets the agent write a config: on its effective allowlist
  * (`allowedConfigs`: `managed_config` plus installed siblings' configs).
  */

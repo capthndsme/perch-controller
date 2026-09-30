@@ -54,7 +54,12 @@ import {
 } from '#services/gateway_config/native_common'
 import { readObservedFacts } from '#services/gateway_config/observed_facts'
 import type { SectionState } from '#services/gateway_config/sync_engine'
-import { configAllowed, hasFeature, type UciOptions } from '#services/gateway_config/types'
+import {
+  configAllowed,
+  hasFeature,
+  packageInstalled,
+  type UciOptions,
+} from '#services/gateway_config/types'
 import {
   clientConfigText,
   wgKeyPair,
@@ -194,8 +199,12 @@ function optionsOf(row: SectionState): UciOptions {
 }
 
 function isInstalled(ctx: Ctx): boolean {
-  const packages = (ctx.gateway.capabilities?.packages ?? {}) as Record<string, string>
-  return 'wireguard-tools' in packages || interfaceRows(ctx.states).length > 0
+  const reported = packageInstalled(
+    ctx.gateway.capabilities,
+    ['wireguard-tools'],
+    'config.plain_public_key'
+  )
+  return reported ?? interfaceRows(ctx.states).length > 0
 }
 
 function unavailable(ctx: Ctx): WgOverview['unavailableReason'] {
