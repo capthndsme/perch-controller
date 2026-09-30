@@ -5,11 +5,11 @@ import { test } from '@japa/runner'
 /**
  * The gateway-sync route skeleton (docs/design/gateway-sync/rest.md 0 and 12;
  * work package B8): every route is registered before the SPA catch-all,
- * admin-only (anonymous 401, viewer 403), and a route whose work package is
- * not built answers 501 `not_built` with the package's id.
+ * admin-only (anonymous 401, viewer 403). Every work package is built since
+ * Phase C (2026-09-30): no route answers 501 `not_built` any more.
  */
 
-const NOT_BUILT: Array<
+const PHASE_C: Array<
   [method: 'get' | 'post' | 'put' | 'patch' | 'delete', path: string, wp: string]
 > = [
   ['get', '/api/v1/gateways/1/wireguard/config', 'B2'],
@@ -40,7 +40,7 @@ const NOT_BUILT: Array<
 
 /** Every route of rest.md 12 built so far (mwan3 writes are not built: decision 12). */
 const ALL_ADMIN: Array<[method: 'get' | 'post' | 'put' | 'patch' | 'delete', path: string]> = [
-  ...NOT_BUILT.map(([m, p]) => [m, p] as [typeof m, string]),
+  ...PHASE_C.map(([m, p]) => [m, p] as [typeof m, string]),
   // B1 (Phase B): WAN and Settings → Gateway sync.
   ['get', '/api/v1/gateways/1/wan'],
   ['get', '/api/v1/gateways/1/wan/history'],
@@ -77,14 +77,15 @@ test.group('gateway sync | route skeleton', (group) => {
     }
   })
 
-  test('routes of packages not built yet answer 501 not_built', async ({ client, assert }) => {
+  test('every work package is built: no route answers 501 not_built', async ({
+    client,
+    assert,
+  }) => {
     const { adminToken } = await seedSetupComplete()
-    for (const [method, path, wp] of NOT_BUILT) {
+    for (const [method, path, wp] of PHASE_C) {
       const r = await client[method](path).bearerToken(adminToken)
-      assert.equal(r.status(), 501, `${method} ${path}`)
-      const body = r.body() as { error?: string; workPackage?: string }
-      assert.equal(body.error, 'not_built', `${method} ${path}`)
-      assert.equal(body.workPackage, wp, `${method} ${path}`)
+      assert.notEqual(r.status(), 501, `${method} ${path} (${wp})`)
+      assert.notEqual((r.body() as { error?: string }).error, 'not_built', `${method} ${path}`)
     }
   })
 
