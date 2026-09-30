@@ -8,6 +8,15 @@ import {
   upnpDomain,
 } from '#services/gateway_config/domains/upnp'
 import {
+  isWgKey,
+  prefixesOverlap,
+  roleOf,
+  wireguardDomain,
+} from '#services/gateway_config/domains/wireguard'
+import { applySectionEdits } from '#services/gateway_config/domain'
+import { wireOptions } from '#services/gateway_config/secrets'
+import { clientConfigText, wgKeyPair } from '#services/gateway_config/wireguard_keys'
+import {
   normalizeDdns,
   normalizeInterfaces,
   normalizeWireguard,
@@ -296,3 +305,174 @@ test.group('gateway sync Phase C | upnp domain', () => {
     assert.deepEqual(upnpDomain.inSync!(row('1'), { upnp: { running: null } }), [])
   })
 })
+
+test.group('gateway sync Phase C | wireguard domain', () => {
+  const pair = wgKeyPair()
+  const all = (sections: SyncedSection[]): any => ({
+    network: {
+      name: 'network',
+      hash: '',
+      sections: sections.map((x) => ({
+        name: x.name,
+        type: x.type,
+        anonymous: false,
+        options: x.options,
+      })),
+    },
+  })
+
+  test('keys: X25519 pairs are 32 bytes of base64', ({ assert }) => {
+    assert.isTrue(isWgKey(pair.privateKey))
+    assert.isTrue(isWgKey(pair.publicKey))
+    assert.notEqual(pair.privateKey, pair.publicKey)
+    assert.isFalse(isWgKey('x'.repeat(44)))
+    assert.isFalse(isWgKey(null))
+    const text = clientConfigText({
+      privateKey: pair.privateKey,
+      addresses: ['10.7.0.2/32'],
+      dns: ['10.7.0.1'],
+      serverPublicKey: pair.publicKey,
+      presharedKey: null,
+      endpoint: 'vpn.example.com:51820',
+      allowedIps: ['192.168.1.0/24'],
+      keepalive: 25,
+    })
+    assert.include(text, '[Interface]\nPrivateKey = ')
+    assert.include(text, 'PersistentKeepalive = 25')
+    assert.notInclude(text, 'PresharedKey')
+  })
+
+  test('claims wireguard interfaces and their peers only; identity by interface and key', ({
+    assert,
+  }) => {
+    const wg0 = section('network', 'wg0', 'interface', { proto: 'wireguard' })
+    const lan = section('network', 'lan', 'interface', { proto: 'static' })
+    const peer = section('network', 'p1', 'wireguard_wg0', { public_key: pair.publicKey })
+    const orphan = section('network', 'p2', 'wireguard_gone', { public_key: pair.publicKey })
+    const set = all([wg0, lan, peer, orphan])
+    assert.isTrue(wireguardDomain.claims({ ...wg0 } as any, set))
+    assert.isFalse(wireguardDomain.claims({ ...lan } as any, set))
+    assert.isTrue(wireguardDomain.claims({ ...peer } as any, set))
+    assert.isFalse(wireguardDomain.claims({ ...orphan } as any, set))
+    assert.deepEqual(wireguardDomain.identityKeys!(peer), [`wgpeer:wg0:${pair.publicKey}`])
+    assert.isNotNull(wireguardDomain.requires!({ features: [] } as any))
+    assert.isNull(wireguardDomain.requires!({ features: ['config.plain_public_key'] } as any))
+    assert.equal(roleOf({ listen_port: '51820' }, [{}]), 'server')
+    assert.equal(roleOf({}, [{ endpoint_host: 'x' }]), 'client')
+    assert.equal(roleOf({ listen_port: '1' }, [{ endpoint_host: 'x' }]), 'site')
+  })
+
+  test('validation codes', ({ assert }) => {
+    const wg = (options: SyncedSection['options']) =>
+      section('network', 'wg0', 'interface', {
+        proto: 'wireguard',
+        addresses: ['10.7.0.1/24'],
+        listen_port: '51820',
+        ...options,
+      })
+    const peer = (name: string, options: SyncedSection['options']) =>
+      section('network', name, 'wireguard_wg0', {
+        public_key: pair.publicKey,
+        allowed_ips: ['10.7.0.2/32'],
+        ...options,
+      })
+    const codes = (sections: SyncedSection[], path?: any) =>
+      wireguardDomain
+        .validate(sections, {
+          capabilities: null,
+          all: sections,
+          unmanaged: NETWORK_WITH_LAN,
+          managementPath: path,
+        })
+        .map((i) => `${i.severity}:${i.code}`)
+    assert.deepEqual(codes([wg({}), peer('a', {})]), [])
+    assert.deepEqual(codes([wg({ listen_port: '70000' })]), ['error:wg_port_invalid'])
+    assert.deepEqual(
+      codes([
+        wg({}),
+        section('network', 'wg1', 'interface', { proto: 'wireguard', listen_port: '51820' }),
+      ]),
+      ['error:wg_port_in_use']
+    )
+    assert.deepEqual(codes([wg({ addresses: ['10.7.0.999/24'] })]), ['error:wg_address_invalid'])
+    assert.deepEqual(codes([wg({ addresses: ['192.168.1.200/24'] })]), ['error:wg_subnet_overlap'])
+    assert.deepEqual(codes([wg({}), peer('a', { public_key: 'nope' })]), [
+      'error:wg_public_key_invalid',
+    ])
+    assert.deepEqual(codes([wg({}), peer('a', { allowed_ips: ['nope'] })]), [
+      'error:wg_allowed_ips_invalid',
+    ])
+    assert.deepEqual(
+      codes([
+        wg({}),
+        peer('a', {}),
+        peer('b', { public_key: wgKeyPair().publicKey, allowed_ips: ['10.7.0.0/24'] }),
+      ]),
+      ['error:wg_allowed_ips_overlap']
+    )
+    assert.deepEqual(
+      codes([wg({}), peer('a', { allowed_ips: ['0.0.0.0/0'], route_allowed_ips: '1' })]),
+      ['warning:wg_default_route']
+    )
+    assert.deepEqual(
+      codes([wg({}), peer('a', { allowed_ips: ['192.168.1.0/25'], route_allowed_ips: '1' })], {
+        network: 'lan',
+        device: 'br-lan',
+        controllerAddress: '192.168.1.10',
+      }),
+      ['error:wg_route_steals_path']
+    )
+    assert.isTrue(
+      prefixesOverlap(
+        { family: 4, address: '10.0.0.0', prefix: 8 },
+        { family: 4, address: '10.1.2.3', prefix: 32 }
+      )
+    )
+  })
+
+  test('a generated key: $generate on the wire, a gen: placeholder, imported once the router has it', ({
+    assert,
+  }) => {
+    const [after] = applySectionEdits(
+      [],
+      [
+        {
+          op: 'put',
+          perchId: null,
+          config: 'network',
+          type: 'interface',
+          name: 'wg0',
+          options: { proto: 'wireguard' },
+          secrets: { private_key: { generate: 'wg_private_key', nonce: 'abc' } },
+        },
+      ]
+    )
+    assert.deepEqual(after.secrets, {
+      private_key: { fingerprint: 'gen:abc', generate: 'wg_private_key' },
+    })
+    const wire = wireOptions({ type: 'interface', options: after.options, secrets: after.secrets })
+    assert.deepEqual(wire.options.private_key, { $generate: 'wg_private_key' })
+    assert.deepEqual(wire.refs, [])
+    const base = { type: 'interface', options: {}, secrets: after.secrets! }
+    assert.equal(wireguardDomain.authoritative!(null, { base, router: null }), 'import')
+    assert.equal(
+      wireguardDomain.authoritative!(null, {
+        base: {
+          type: 'interface',
+          options: {},
+          secrets: { private_key: { fingerprint: 'hmac:1' } },
+        },
+        router: null,
+      }),
+      'follow'
+    )
+  })
+})
+
+const NETWORK_WITH_LAN = [
+  section('network', 'lan', 'interface', {
+    proto: 'static',
+    ipaddr: '192.168.1.1',
+    netmask: '255.255.255.0',
+  }),
+]

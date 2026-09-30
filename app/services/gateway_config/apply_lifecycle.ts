@@ -771,6 +771,9 @@ async function onApplyReply(
   result: Record<string, unknown>
 ) {
   const state = typeof result.state === 'string' ? result.state : ''
+  // Gateway sync protocol.md 2: public keys of values the router generated.
+  const generated = generatedOf(result.generated)
+  if (generated.length > 0) apply.outcome = { ...(apply.outcome ?? {}), generated }
   if (state === 'pending_confirm') {
     transition(apply, 'committed')
     const deadline = typeof result.deadline === 'string' ? DateTime.fromISO(result.deadline) : null
@@ -818,6 +821,28 @@ async function onApplyReply(
     return
   }
   await failApply(gateway, apply, 'apply_failed', `unexpected apply reply state "${state}"`)
+}
+
+export type GeneratedValue = { config: string; section: string; option: string; publicKey: string }
+
+/** `generated[]` of an apply reply: public keys only (never a private value). */
+export function generatedOf(value: unknown): GeneratedValue[] {
+  if (!Array.isArray(value)) return []
+  const out: GeneratedValue[] = []
+  for (const entry of value.slice(0, 32)) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const e = entry as Record<string, unknown>
+    const text = (v: unknown, max: number) =>
+      typeof v === 'string' && v.length > 0 && v.length <= max ? v : null
+    const publicKey = text(e.publicKey, 64)
+    const config = text(e.config, 64)
+    const section = text(e.section, 64)
+    const option = text(e.option, 64)
+    if (!publicKey || !config || !section || !option) continue
+    if (!/^[A-Za-z0-9+/]{42,43}=?$/.test(publicKey)) continue
+    out.push({ config, section, option, publicKey })
+  }
+  return out
 }
 
 /** An agent's error data, bounded (it is stored and served). */

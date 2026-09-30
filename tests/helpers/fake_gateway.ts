@@ -16,7 +16,7 @@ import {
   pairingSas,
   x25519Shared,
 } from '#services/gateway_config/pairing_crypto'
-import { createHash, createHmac, randomBytes } from 'node:crypto'
+import { createHash, createHmac, generateKeyPairSync, randomBytes } from 'node:crypto'
 
 /**
  * A scripted OpenWrt gateway agent for the config plane's functional tests
@@ -133,6 +133,8 @@ export class FakeGateway {
   packages: Record<string, string> = { dnsmasq: '2.90-r1' }
   /** Gateway sync runtime RPCs it received: `gateway.ddns.update` services, `gateway.upnp.delete` mappings. */
   ddnsUpdates: string[] = []
+  /** Public keys of the `$generate` values of the apply being built (its reply's `generated`). */
+  generatedKeys: Array<{ config: string; section: string; option: string; publicKey: string }> = []
   upnpDeletes: Array<{ proto: string; extPort: number }> = []
   /** Packages `gateway.package.install` may install. */
   installAllowlist = ['sqm-scripts', 'kmod-sched-cake', 'opennds']
@@ -779,19 +781,48 @@ export class FakeGateway {
         }
         owned.add(`${op.config}/${op.section}`)
         const options: Record<string, string | string[]> = {}
+        const keptSecrets: Record<string, string> = {}
         for (const [k, v] of Object.entries(op.options as Record<string, any>)) {
           if (v && typeof v === 'object' && !Array.isArray(v)) {
             if (v.$keep && existing?.options[k] !== undefined) options[k] = existing.options[k]
+            if (v.$keep && existing?.secrets?.[k] !== undefined)
+              keptSecrets[k] = existing.secrets[k]
             if (v.$secret) options[k] = secrets[v.$secret] ?? ''
+            if (v.$generate) {
+              // Gateway sync protocol.md 2: a WireGuard key made on the router; only
+              // its fingerprint is ever read back, its public key goes in `generated`.
+              if (v.$generate !== 'wg_private_key' || k !== 'private_key') {
+                undo()
+                fail('bad_params', 'generate not allowed', { reason: 'generate_not_allowed' })
+              }
+              const key = generateKeyPairSync('x25519')
+              const jwk = key.privateKey.export({ format: 'jwk' }) as { d: string; x: string }
+              keptSecrets[k] =
+                `hmac:${createHash('sha256').update(jwk.d).digest('hex').slice(0, 32)}`
+              this.generatedKeys.push({
+                config: op.config,
+                section: op.section,
+                option: k,
+                publicKey: Buffer.from(jwk.x, 'base64url').toString('base64'),
+              })
+            }
           } else {
             options[k] = v
           }
         }
+        const secretsAfter = Object.keys(keptSecrets).length > 0 ? keptSecrets : undefined
         if (existing) {
           existing.type = op.type
           existing.options = options
+          if (secretsAfter) existing.secrets = secretsAfter
+          else delete existing.secrets
         } else {
-          sections.push({ name: op.section, type: op.type, options })
+          sections.push({
+            name: op.section,
+            type: op.type,
+            options,
+            ...(secretsAfter ? { secrets: secretsAfter } : {}),
+          })
         }
         if (op.position) {
           const ref = op.position.after ?? op.position.before
@@ -887,12 +918,14 @@ export class FakeGateway {
         void this.redial()
       }, 30)
     }
+    const generated = this.generatedKeys.splice(0)
     return {
       state: 'pending_confirm',
       applyId,
       deadline: deadline.toISOString(),
       confirmTimeoutSeconds: Math.round(confirmMs / 1000),
       hashes: this.hashes(),
+      ...(generated.length > 0 ? { generated } : {}),
       ...(this.pending.checks
         ? {
             checks: {

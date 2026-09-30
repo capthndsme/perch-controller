@@ -51,7 +51,19 @@ export interface LedgerEntry {
 export interface SecretSlot {
   fingerprint: string
   ref?: string
+  /**
+   * Gateway sync (domains.md 1.6): the router generates this value
+   * (`{"$generate": …}`); `fingerprint` is a unique `gen:` placeholder until
+   * the router's own fingerprint is imported on the next read.
+   */
+  generate?: GeneratedSecretKind
 }
+
+/** What the agent can generate (protocol.md 2): only WireGuard private keys. */
+export type GeneratedSecretKind = 'wg_private_key'
+
+/** The `gen:` placeholder a generated slot carries until the router's fingerprint replaces it. */
+export const GENERATED_FINGERPRINT_PREFIX = 'gen:'
 
 /**
  * Canonical content of one section, as stored in `gateway_sections`
@@ -324,7 +336,11 @@ export interface Issue {
 }
 
 /** A value in an apply op: plain, a secret to resolve from `secrets`, or "leave the router's". */
-export type WireValue = UciValue | { $secret: string } | { $keep: true }
+export type WireValue =
+  | UciValue
+  | { $secret: string }
+  | { $keep: true }
+  | { $generate: GeneratedSecretKind }
 
 /** Where a created or moved section goes (section 4 `position`). */
 export interface OpPosition {

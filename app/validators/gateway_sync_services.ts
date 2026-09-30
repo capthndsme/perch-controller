@@ -108,3 +108,97 @@ export const upnpMappingsDeleteValidator = vine.compile(
 
 /** `PUT /gateways/:id/upnp/devices/:mac` (rest.md 8). */
 export const upnpDeviceBlockValidator = vine.compile(vine.object({ blocked: vine.boolean() }))
+
+const wgAddresses = () =>
+  vine.array(vine.string().trim().minLength(3).maxLength(49)).minLength(1).maxLength(8)
+const wgEndpoint = () =>
+  vine.object({
+    host: vine.string().trim().minLength(1).maxLength(253),
+    port: vine.number().withoutDecimals().min(1).max(65535),
+  })
+
+/** `POST /gateways/:id/wireguard/interfaces` (rest.md 4). */
+export const wgInterfaceCreateValidator = vine.compile(
+  vine.object({
+    network: vine.string().trim().minLength(1).maxLength(15),
+    role: vine.enum(['server', 'client'] as const),
+    listenPort: vine.number().withoutDecimals().min(1).max(65535).optional(),
+    addresses: wgAddresses(),
+    mtu: vine.number().withoutDecimals().min(1280).max(9000).optional(),
+    zone: vine.string().trim().minLength(1).maxLength(32).nullable().optional(),
+    createZone: vine.boolean().optional(),
+    openPort: vine.boolean().optional(),
+    privateKey: vine.string().trim().maxLength(64).optional(),
+    currentPassword: vine.string().maxLength(256).optional(),
+  })
+)
+
+/** `PATCH /gateways/:id/wireguard/interfaces/:perchId` (rest.md 4). */
+export const wgInterfacePatchValidator = vine.compile(
+  vine.object({
+    enabled: vine.boolean().optional(),
+    listenPort: vine.number().withoutDecimals().min(1).max(65535).nullable().optional(),
+    addresses: wgAddresses().optional(),
+    mtu: vine.number().withoutDecimals().min(1280).max(9000).nullable().optional(),
+    openPort: vine.boolean().optional(),
+  })
+)
+
+/** `DELETE /gateways/:id/wireguard/interfaces/:perchId` (the network's name). */
+export const wgConfirmValidator = vine.compile(
+  vine.object({ confirm: vine.string().trim().minLength(1).maxLength(32) })
+)
+
+/** `POST /gateways/:id/wireguard/interfaces/:perchId/rotate-key` (rest.md 4). */
+export const wgRotateValidator = vine.compile(
+  vine.object({
+    confirm: vine.string().trim().minLength(1).maxLength(32),
+    currentPassword: vine.string().maxLength(256).optional(),
+  })
+)
+
+/** `POST /gateways/:id/wireguard/interfaces/:perchId/peers` (rest.md 4). */
+export const wgPeerCreateValidator = vine.compile(
+  vine.object({
+    label: vine.string().trim().minLength(1).maxLength(64),
+    publicKey: vine.string().trim().maxLength(64).optional(),
+    generateKeys: vine.boolean().optional(),
+    presharedKey: vine.enum(['generate', 'none'] as const).optional(),
+    allowedIps: vine
+      .array(vine.string().trim().minLength(3).maxLength(49))
+      .minLength(1)
+      .maxLength(32)
+      .optional(),
+    endpoint: wgEndpoint().optional(),
+    keepalive: vine.number().withoutDecimals().min(1).max(65535).optional(),
+    routeAllowedIps: vine.boolean().optional(),
+    deviceMac: vine.string().trim().maxLength(17).optional(),
+    client: vine
+      .object({
+        dns: vine.array(vine.string().trim().minLength(2).maxLength(45)).maxLength(4).optional(),
+        allowedIps: vine
+          .array(vine.string().trim().minLength(3).maxLength(49))
+          .maxLength(32)
+          .optional(),
+        endpointHost: vine.string().trim().minLength(1).maxLength(253).optional(),
+      })
+      .optional(),
+    currentPassword: vine.string().maxLength(256).optional(),
+  })
+)
+
+/** `PATCH /gateways/:id/wireguard/peers/:perchId` (rest.md 4). */
+export const wgPeerPatchValidator = vine.compile(
+  vine.object({
+    label: vine.string().trim().minLength(1).maxLength(64).optional(),
+    allowedIps: vine
+      .array(vine.string().trim().minLength(3).maxLength(49))
+      .minLength(1)
+      .maxLength(32)
+      .optional(),
+    endpoint: wgEndpoint().nullable().optional(),
+    keepalive: vine.number().withoutDecimals().min(1).max(65535).nullable().optional(),
+    routeAllowedIps: vine.boolean().optional(),
+    deviceMac: vine.string().trim().maxLength(17).nullable().optional(),
+  })
+)
