@@ -105,6 +105,19 @@ export type AgentUpdateDevice = {
   lastJob: AgentUpdateJobSummary | null
   /** When !selfUpdate.supported and a command can be built. */
   manualCommand: ManualCommand | null
+  /**
+   * The open rollout that still has to update this device (it is pending or
+   * running there): `state` is the rollout's, `deviceState` the device's in
+   * it. Manual updates answer 409 `rollout_owns_device` meanwhile.
+   */
+  rollout: RolloutMembership | null
+}
+
+export type RolloutMembership = {
+  id: number
+  state: RolloutState
+  deviceState: 'pending' | 'running'
+  isCanary: boolean
 }
 
 export type ManualCommand = {
@@ -126,7 +139,21 @@ export type AgentFleet = {
   controller: { version: string; apdVersion: string; collectorVersion: string }
   lastGithubCheckAt: string | null
   githubCheck: boolean
-  window: { enabled: boolean; open: boolean; nextStart: string | null; timezone: string }
+  /**
+   * The maintenance window, readable by every viewer (the settings are
+   * admin-only): whether it is open, when it opens next or (while open)
+   * closes, its days (0 = Sunday … 6) and HH:MM hours in `timezone`.
+   */
+  window: {
+    enabled: boolean
+    open: boolean
+    nextStart: string | null
+    closesAt: string | null
+    days: number[]
+    start: string
+    end: string
+    timezone: string
+  }
   openRollouts: { id: number; product: AgentProduct; version: string; state: string }[]
 }
 
@@ -214,13 +241,26 @@ export type AgentPreflight = {
 
 export type RolloutState = 'canary' | 'observing' | 'rolling' | 'paused' | 'completed' | 'cancelled'
 export type RolloutDeviceState = 'pending' | 'running' | 'confirmed' | 'failed' | 'skipped'
+export type RolloutSkipReason = 'offline' | 'pinned' | 'unsupported' | 'up_to_date' | 'admin' | 'failed'
+export type RolloutPausedReason =
+  | 'device_failed'
+  | 'admin'
+  | 'release_withdrawn'
+  | 'controller_too_old'
+  | 'canary_offline'
+  | 'canary_changed'
 
 export type AgentRolloutDevice = {
   device: DeviceRef
   position: number
   isCanary: boolean
   state: RolloutDeviceState
-  skipReason: string | null
+  skipReason: RolloutSkipReason | null
+  /** Why it failed or was skipped, in words. */
+  detail: string | null
+  /** What the device runs now. */
+  version: string | null
+  online: boolean
   job: AgentUpdateJobSummary | null
 }
 
@@ -228,7 +268,8 @@ export type AgentRollout = {
   id: number
   product: AgentProduct
   version: string
-  releaseId: number
+  /** null once the release was deleted (the rollout keeps its version). */
+  releaseId: number | null
   state: RolloutState
   method: 'auto' | UpdateMethod
   batchSize: number
@@ -237,17 +278,22 @@ export type AgentRollout = {
   offlineWaitMinutes: number
   stopOnFailure: boolean
   respectWindow: boolean
+  acceptUnrecoverable: boolean
   auto: boolean
+  /** Open rollouts only. */
   waitingFor: 'window' | 'gap' | 'observe' | 'online' | 'busy' | null
-  pausedReason: string | null
+  pausedReason: RolloutPausedReason | null
   pausedDetail: string | null
   counts: { total: number; confirmed: number; failed: number; skipped: number; pending: number; running: number }
-  /** Only in GET /rollouts/:id. */
+  canary: { key: string; name: string } | null
+  /** Only in GET /rollouts/:id and the answers of the writes. */
   devices?: AgentRolloutDevice[]
   createdBy: { userId: number; name: string } | { system: 'auto_update' } | null
   createdAt: string
   startedAt: string | null
+  canaryConfirmedAt: string | null
   finishedAt: string | null
+  /** Open rollouts only: when the next step may start (observe end, batch gap). */
   nextActionAt: string | null
 }
 
@@ -309,14 +355,25 @@ type NumericKeys<T> = { [K in keyof T]: T[K] extends number ? K : never }[keyof 
 export type AgentUpdateNumericSetting = NumericKeys<AgentUpdateSettings>
 
 /**
- * `GET` / `PATCH /api/v1/settings/agent-updates`. Only the numeric settings'
- * limits are read (`{min, max}`); whatever the server sends for the other keys
- * is ignored.
+ * Limits per setting: numbers `{min, max}`, choices `{options}`, times
+ * `{pattern: 'HH:MM'}`, the window days `{min, max, maxItems}`, the extra keys
+ * `{max}` (entries). Booleans have none.
  */
+export type AgentUpdateLimits = Partial<Record<AgentUpdateNumericSetting, { min: number; max: number }>> & {
+  defaultChannel?: { options: Channel[] }
+  autoUpdateAp?: { options: AutoUpdate[] }
+  autoUpdateCollector?: { options: AutoUpdate[] }
+  windowStart?: { pattern: 'HH:MM' }
+  windowEnd?: { pattern: 'HH:MM' }
+  windowDays?: { min: number; max: number; maxItems: number }
+  extraTrustedKeys?: { max: number }
+}
+
+/** `GET` / `PATCH /api/v1/settings/agent-updates`. */
 export type AgentUpdateSettingsView = {
   settings: AgentUpdateSettings
   defaults: AgentUpdateSettings
-  limits: Partial<Record<AgentUpdateNumericSetting, { min: number; max: number }>>
+  limits: AgentUpdateLimits
 }
 
 // Request bodies (section 9.2).
@@ -363,6 +420,8 @@ export type CreateRolloutRequest = {
 }
 
 export type JobsQuery = { deviceKey?: string; state?: 'open' | 'final' | 'all'; limit?: number; before?: number }
+
+export type RolloutsQuery = { state?: 'open' | 'all'; product?: AgentProduct }
 export type JobsPage = { jobs: AgentUpdateJobListItem[]; nextBefore: number | null }
 
 export type EventsQuery = {

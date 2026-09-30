@@ -2,7 +2,6 @@ import {
   keepPreviousData,
   useInfiniteQuery,
   useMutation,
-  useQueries,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
@@ -110,10 +109,11 @@ export function useAgentRelease(id: number | null) {
   })
 }
 
-export function useAgentRollouts(state: 'open' | 'all' = 'all') {
+export function useAgentRollouts(state: 'open' | 'all' = 'all', product?: AgentProduct | null) {
   return useQuery({
-    queryKey: [...agentUpdatesQueryKey, 'rollouts', state],
-    queryFn: () => apiFetch<{ rollouts: AgentRollout[] }>(`${BASE}/rollouts${qs({ state })}`).then((r) => r.rollouts),
+    queryKey: [...agentUpdatesQueryKey, 'rollouts', state, product ?? null],
+    queryFn: () =>
+      apiFetch<{ rollouts: AgentRollout[] }>(`${BASE}/rollouts${qs({ state, product })}`).then((r) => r.rollouts),
     refetchInterval: (q) => (q.state.data?.some((r) => isOpenRollout(r.state)) ? LIVE_MS : IDLE_MS),
   })
 }
@@ -130,26 +130,17 @@ export function useAgentRollout(id: number | null) {
 export type RolloutMember = { rolloutId: number; state: 'pending' | 'running'; isCanary: boolean }
 
 /**
- * Which devices an open rollout still has to update (the fleet row does not
- * say): device key → its rollout. Shares the cache of `useAgentRollout`.
+ * Which devices an open rollout still has to update: device key → its
+ * rollout, from the fleet rows' `rollout` (no request per rollout). `ids`
+ * limits it to those rollouts.
  */
 export function useOpenRolloutMembers(ids: number[]): Map<string, RolloutMember> {
-  const results = useQueries({
-    queries: ids.map((id) => ({
-      queryKey: [...agentUpdatesQueryKey, 'rollout', id],
-      queryFn: () => apiFetch<AgentRollout>(`${BASE}/rollouts/${id}`),
-      refetchInterval: LIVE_MS,
-    })),
-  })
+  const fleet = useAgentFleet()
   const members = new Map<string, RolloutMember>()
-  for (const result of results) {
-    const rollout = result.data
-    if (!rollout || !isOpenRollout(rollout.state)) continue
-    for (const d of rollout.devices ?? []) {
-      if (d.state === 'pending' || d.state === 'running') {
-        members.set(d.device.key, { rolloutId: rollout.id, state: d.state, isCanary: d.isCanary })
-      }
-    }
+  for (const device of fleet.data?.devices ?? []) {
+    const r = device.rollout
+    if (!r || !isOpenRollout(r.state) || !ids.includes(r.id)) continue
+    members.set(device.key, { rolloutId: r.id, state: r.deviceState, isCanary: r.isCanary })
   }
   return members
 }
