@@ -6,6 +6,7 @@ import type { Config } from '@japa/runner/types'
 import { pluginAdonisJS } from '@japa/plugin-adonisjs'
 import { dbAssertions } from '@adonisjs/lucid/plugins/db'
 import testUtils from '@adonisjs/core/services/test_utils'
+import { TestUtils } from '@adonisjs/core/test_utils'
 import { authApiClient } from '@adonisjs/auth/plugins/api_client'
 import { sessionApiClient } from '@adonisjs/session/plugins/api_client'
 import type { Registry } from '../.adonisjs/client/registry/schema.d.ts'
@@ -78,6 +79,51 @@ async function migrateTestDatabase() {
   return () => run('migration:reset')
 }
 
+/**
+ * `testUtils.db()` without per-test migrations. Lucid's `truncate()` runs
+ * `migration:run` before every group, which takes the same server-wide lock:
+ * parallel suites refused each other, and under load the lock was released on
+ * another pooled connection ("unable to release database lock"), after which
+ * every later setup failed and the teardown hung. The suite migrates once
+ * above; truncating needs no migration, and `migrate()` runs without the lock.
+ */
+async function locklessDatabaseUtils() {
+  await app.container.make('testUtils')
+  const ace = await app.container.make('ace')
+  const run = async (name: string, args: string[], connectionName?: string) => {
+    const command = await ace.exec(
+      name,
+      connectionName ? [...args, `--connection=${connectionName}`] : args
+    )
+    if (!command.exitCode) return
+    throw command.error ?? new Error(`"${name}" failed`)
+  }
+  const quiet = ['--compact-output', '--no-schema-generate', '--disable-locks']
+  TestUtils.macro('db', (connectionName?: string) => {
+    const utils = {
+      async truncate() {
+        return () => run('db:truncate', [], connectionName)
+      },
+      async migrate() {
+        await run('migration:run', quiet, connectionName)
+        return () => run('migration:reset', quiet, connectionName)
+      },
+      async seed() {
+        await run('db:seed', ['--compact-output'], connectionName)
+      },
+      async wrapInGlobalTransaction() {
+        const db = await app.container.make('lucid.db')
+        await db.beginGlobalTransaction(connectionName)
+        return () => db.rollbackGlobalTransaction(connectionName)
+      },
+    }
+    return {
+      ...utils,
+      withGlobalTransaction: utils.wrapInGlobalTransaction,
+    } as unknown as ReturnType<TestUtils['db']>
+  })
+}
+
 export const runnerHooks: Required<Pick<Config, 'setup' | 'teardown'>> = {
   /**
    * Migrate the test database before the suite runs and roll back at
@@ -86,7 +132,7 @@ export const runnerHooks: Required<Pick<Config, 'setup' | 'teardown'>> = {
    * is always brought to the latest schema before tests execute and
    * left clean afterwards.
    */
-  setup: [migrateTestDatabase],
+  setup: [migrateTestDatabase, locklessDatabaseUtils],
   teardown: [],
 }
 
