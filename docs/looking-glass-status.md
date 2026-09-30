@@ -3030,4 +3030,5 @@ Fixed on the way (each with tests):
    under `perch_<id>`; the plan now lists the rename (`renamedFrom`, "renamed from …" in the diff). Controller aceded1.
 
 Not covered in the lab yet (owner actions): the Wi-Fi plane (needs `mac80211_hwsim`), agent updates (needs the release
-key), Web Push (a phone). Open: DDNS shows the last error line of a run, not its cause.
+key), Web Push (a phone). Also: DDNS showed the generic last line of a failed run instead of its cause (collector
+f52956e).
