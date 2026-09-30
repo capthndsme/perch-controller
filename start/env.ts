@@ -171,4 +171,16 @@ export default await Env.create(new URL('../', import.meta.url), {
   */
   PERCH_APD_VERSION: Env.schema.string.optional(),
   PERCH_COLLECTOR_VERSION: Env.schema.string.optional(),
+
+  /*
+  |----------------------------------------------------------
+  | Alert delivery (docs/design/alerts/delivery.md section 7)
+  |----------------------------------------------------------
+  | ALERTS_DELIVERY=off: alerts are still recorded and routed, but nothing is
+  | sent (due deliveries become `collapsed`, test buttons answer 409). For a
+  | restored copy of a production database (lab, disaster-recovery tests),
+  | which would otherwise push to the owner's phone with the owner's keys.
+  | Default: on.
+  */
+  ALERTS_DELIVERY: Env.schema.enum.optional(['on', 'off'] as const),
 })

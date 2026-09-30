@@ -7,6 +7,350 @@
 import { BaseModel, column } from '@adonisjs/lucid/orm'
 import { DateTime } from 'luxon'
 
+export class AlertSchema extends BaseModel {
+  static $columns = ['ackNote', 'acknowledgedAt', 'acknowledgedByUserId', 'activeKey', 'body', 'bumpedAt', 'category', 'createdAt', 'dedupeKey', 'eventCount', 'firstRaisedAt', 'flapping', 'id', 'kind', 'lastEventAt', 'lastTransitionAt', 'muted', 'nextReminderAt', 'notified', 'notifyAt', 'openedAt', 'path', 'payload', 'quietResolve', 'raisedAt', 'recoveryDueAt', 'resolvedAt', 'resolvedByUserId', 'severity', 'state', 'subjectKind', 'subjectLabel', 'subjectRef', 'title', 'transitions', 'type', 'updatedAt'] as const
+  $columns = AlertSchema.$columns
+  @column()
+  declare ackNote: string | null
+  @column.dateTime()
+  declare acknowledgedAt: DateTime | null
+  @column()
+  declare acknowledgedByUserId: number | null
+  @column()
+  declare activeKey: string | null
+  @column()
+  declare body: string
+  @column.dateTime()
+  declare bumpedAt: DateTime
+  @column()
+  declare category: string
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare dedupeKey: string
+  @column()
+  declare eventCount: number
+  @column.dateTime()
+  declare firstRaisedAt: DateTime
+  @column()
+  declare flapping: boolean
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare kind: string
+  @column.dateTime()
+  declare lastEventAt: DateTime
+  @column.dateTime()
+  declare lastTransitionAt: DateTime | null
+  @column()
+  declare muted: boolean
+  @column.dateTime()
+  declare nextReminderAt: DateTime | null
+  @column()
+  declare notified: boolean
+  @column.dateTime()
+  declare notifyAt: DateTime | null
+  @column.dateTime()
+  declare openedAt: DateTime | null
+  @column()
+  declare path: string | null
+  @column()
+  declare payload: string | null
+  @column()
+  declare quietResolve: boolean
+  @column.dateTime()
+  declare raisedAt: DateTime
+  @column.dateTime()
+  declare recoveryDueAt: DateTime | null
+  @column.dateTime()
+  declare resolvedAt: DateTime | null
+  @column()
+  declare resolvedByUserId: number | null
+  @column()
+  declare severity: string
+  @column()
+  declare state: string
+  @column()
+  declare subjectKind: string
+  @column()
+  declare subjectLabel: string | null
+  @column()
+  declare subjectRef: string
+  @column()
+  declare title: string
+  @column()
+  declare transitions: number
+  @column()
+  declare type: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class AlertDeliverySchema extends BaseModel {
+  static $columns = ['alertId', 'attempts', 'createdAt', 'destinationKind', 'expiresAt', 'groupKey', 'holdReason', 'id', 'items', 'lastError', 'lastStatusCode', 'messageId', 'nextAttemptAt', 'pushSubscriptionId', 'sendAfter', 'sentAt', 'severity', 'status', 'transition', 'updatedAt', 'webhookId'] as const
+  $columns = AlertDeliverySchema.$columns
+  @column()
+  declare alertId: bigint | number | null
+  @column()
+  declare attempts: number
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare destinationKind: string
+  @column.dateTime()
+  declare expiresAt: DateTime
+  @column()
+  declare groupKey: string | null
+  @column()
+  declare holdReason: string | null
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare items: string | null
+  @column()
+  declare lastError: string | null
+  @column()
+  declare lastStatusCode: number | null
+  @column()
+  declare messageId: string
+  @column.dateTime()
+  declare nextAttemptAt: DateTime | null
+  @column()
+  declare pushSubscriptionId: number | null
+  @column.dateTime()
+  declare sendAfter: DateTime
+  @column.dateTime()
+  declare sentAt: DateTime | null
+  @column()
+  declare severity: string
+  @column()
+  declare status: string
+  @column()
+  declare transition: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+  @column()
+  declare webhookId: number | null
+}
+
+export class AlertDeliveryAttemptSchema extends BaseModel {
+  static $columns = ['attemptedAt', 'deliveryId', 'durationMs', 'error', 'id', 'outcome', 'responseExcerpt', 'statusCode'] as const
+  $columns = AlertDeliveryAttemptSchema.$columns
+  @column.dateTime()
+  declare attemptedAt: DateTime
+  @column()
+  declare deliveryId: bigint | number
+  @column()
+  declare durationMs: number
+  @column()
+  declare error: string | null
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column()
+  declare outcome: string
+  @column()
+  declare responseExcerpt: string | null
+  @column()
+  declare statusCode: number | null
+}
+
+export class AlertDetectorStateSchema extends BaseModel {
+  static $columns = ['detector', 'stateKey', 'updatedAt', 'value'] as const
+  $columns = AlertDetectorStateSchema.$columns
+  @column({ isPrimary: true })
+  declare detector: string
+  @column()
+  declare stateKey: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+  @column()
+  declare value: string
+}
+
+export class AlertEventSchema extends BaseModel {
+  static $columns = ['alertId', 'category', 'dedupeKey', 'id', 'occurredAt', 'outcome', 'payload', 'phase', 'recordedAt', 'severity', 'source', 'subjectKind', 'subjectRef', 'type'] as const
+  $columns = AlertEventSchema.$columns
+  @column()
+  declare alertId: bigint | number | null
+  @column()
+  declare category: string
+  @column()
+  declare dedupeKey: string
+  @column({ isPrimary: true })
+  declare id: bigint | number
+  @column.dateTime()
+  declare occurredAt: DateTime
+  @column()
+  declare outcome: string
+  @column()
+  declare payload: string | null
+  @column()
+  declare phase: string
+  @column.dateTime()
+  declare recordedAt: DateTime
+  @column()
+  declare severity: string
+  @column()
+  declare source: string | null
+  @column()
+  declare subjectKind: string
+  @column()
+  declare subjectRef: string
+  @column()
+  declare type: string
+}
+
+export class AlertMuteSchema extends BaseModel {
+  static $columns = ['createdAt', 'createdByUserId', 'id', 'note', 'reason', 'source', 'subjectKind', 'subjectRef', 'type', 'until'] as const
+  $columns = AlertMuteSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdByUserId: number | null
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare note: string | null
+  @column()
+  declare reason: string
+  @column()
+  declare source: string | null
+  @column()
+  declare subjectKind: string | null
+  @column()
+  declare subjectRef: string | null
+  @column()
+  declare type: string | null
+  @column.dateTime()
+  declare until: DateTime | null
+}
+
+export class AlertPushSubscriptionSchema extends BaseModel {
+  static $columns = ['auth', 'consecutiveFailures', 'createdAt', 'enabled', 'endpoint', 'endpointHash', 'expirationAt', 'filters', 'id', 'label', 'lastError', 'lastFailureAt', 'lastSuccessAt', 'p256Dh', 'platform', 'pushService', 'renewTokenHash', 'state', 'updatedAt', 'userId', 'vapidKeyId'] as const
+  $columns = AlertPushSubscriptionSchema.$columns
+  @column()
+  declare auth: string
+  @column()
+  declare consecutiveFailures: number
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare enabled: boolean
+  @column()
+  declare endpoint: string
+  @column()
+  declare endpointHash: string
+  @column.dateTime()
+  declare expirationAt: DateTime | null
+  @column()
+  declare filters: string
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare label: string | null
+  @column()
+  declare lastError: string | null
+  @column.dateTime()
+  declare lastFailureAt: DateTime | null
+  @column.dateTime()
+  declare lastSuccessAt: DateTime | null
+  @column()
+  declare p256Dh: string
+  @column()
+  declare platform: string | null
+  @column()
+  declare pushService: string
+  @column()
+  declare renewTokenHash: string | null
+  @column()
+  declare state: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+  @column()
+  declare userId: number
+  @column()
+  declare vapidKeyId: string
+}
+
+export class AlertUserStateSchema extends BaseModel {
+  static $columns = ['readAt', 'updatedAt', 'userId'] as const
+  $columns = AlertUserStateSchema.$columns
+  @column.dateTime()
+  declare readAt: DateTime | null
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+  @column({ isPrimary: true })
+  declare userId: number
+}
+
+export class AlertWatchSchema extends BaseModel {
+  static $columns = ['createdAt', 'createdByUserId', 'id', 'mode', 'params', 'subjectKind', 'subjectRef', 'updatedAt'] as const
+  $columns = AlertWatchSchema.$columns
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdByUserId: number | null
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare mode: string
+  @column()
+  declare params: string | null
+  @column()
+  declare subjectKind: string
+  @column()
+  declare subjectRef: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+}
+
+export class AlertWebhookSchema extends BaseModel {
+  static $columns = ['authEncrypted', 'consecutiveFailures', 'createdAt', 'createdByUserId', 'detail', 'enabled', 'filters', 'format', 'id', 'lastError', 'lastFailureAt', 'lastSuccessAt', 'name', 'options', 'preset', 'respectQuietHours', 'secretEncrypted', 'state', 'updatedAt', 'urlDisplay', 'urlEncrypted'] as const
+  $columns = AlertWebhookSchema.$columns
+  @column()
+  declare authEncrypted: string | null
+  @column()
+  declare consecutiveFailures: number
+  @column.dateTime({ autoCreate: true })
+  declare createdAt: DateTime
+  @column()
+  declare createdByUserId: number | null
+  @column()
+  declare detail: string
+  @column()
+  declare enabled: boolean
+  @column()
+  declare filters: string
+  @column()
+  declare format: string
+  @column({ isPrimary: true })
+  declare id: number
+  @column()
+  declare lastError: string | null
+  @column.dateTime()
+  declare lastFailureAt: DateTime | null
+  @column.dateTime()
+  declare lastSuccessAt: DateTime | null
+  @column()
+  declare name: string
+  @column()
+  declare options: string | null
+  @column()
+  declare preset: string | null
+  @column()
+  declare respectQuietHours: boolean
+  @column()
+  declare secretEncrypted: string | null
+  @column()
+  declare state: string
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  declare updatedAt: DateTime | null
+  @column()
+  declare urlDisplay: string
+  @column()
+  declare urlEncrypted: string
+}
+
 export class ApGroupStateSchema extends BaseModel {
   static $columns = ['apId', 'appliedRevision', 'converted', 'error', 'fingerprint', 'reportedAt', 'revision', 'state', 'trunkOverride', 'trunkPort', 'updatedAt'] as const
   $columns = ApGroupStateSchema.$columns

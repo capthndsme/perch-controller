@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 're
 import { flushSync } from 'react-dom'
 import { Link, useLocation } from 'react-router-dom'
 import { MagnifyingGlass, Moon, SignOut, Sun, Monitor as MonitorIcon, UserCircle } from '@phosphor-icons/react'
+import { AlertsBell } from '@/components/alerts/alerts-bell'
 import { GlobalSearch } from '@/components/layout/global-search'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -162,7 +163,7 @@ type TopbarProps = {
 }
 
 /**
- * Sticky top bar: global search, theme, user menu. Below lg, where the
+ * Sticky top bar: global search, the alerts bell, theme, user menu. Below lg, where the
  * sidebar is hidden, it also carries the brand mark; on a phone the name
  * "Perch" next to it gives way to the page's title once that has scrolled
  * away, and the search sits behind an icon: tapped, the field grows out of it
@@ -274,6 +275,7 @@ export function Topbar({ className }: TopbarProps) {
         >
           <MagnifyingGlass className="size-5" />
         </Button>
+        <AlertsBell />
         <ThemeToggle />
         <UserMenu />
       </div>

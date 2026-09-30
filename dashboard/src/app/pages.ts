@@ -77,6 +77,12 @@ export const pages = {
   gatewayDns: lazyPage(() => import('@/pages/gateway-dns-page').then((m) => m.GatewayDnsPage)),
   gatewayRouting: lazyPage(() => import('@/pages/gateway-routing-page').then((m) => m.GatewayRoutingPage)),
   gatewaySystem: lazyPage(() => import('@/pages/gateway-system-page').then((m) => m.GatewaySystemPage)),
+  alerts: lazyPage(() => import('@/pages/alerts-page').then((m) => m.AlertsPage)),
+  alert: lazyPage(() => import('@/pages/alert-page').then((m) => m.AlertPage)),
+  settingsAlerts: lazyPage(() => import('@/pages/alerts-settings-page').then((m) => m.AlertsSettingsPage)),
+  settingsNotifications: lazyPage(() =>
+    import('@/pages/notifications-settings-page').then((m) => m.NotificationsSettingsPage),
+  ),
   notFound: lazyPage(() => import('@/pages/not-found-page').then((m) => m.NotFoundPage)),
 }
 

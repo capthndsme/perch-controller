@@ -6,6 +6,12 @@
 export const controllers = {
   AccessTokens: () => import('#controllers/access_tokens_controller'),
   AgentSockets: () => import('#controllers/agent_sockets_controller'),
+  AlertDeliveries: () => import('#controllers/alert_deliveries_controller'),
+  AlertMutes: () => import('#controllers/alert_mutes_controller'),
+  AlertPush: () => import('#controllers/alert_push_controller'),
+  AlertSettings: () => import('#controllers/alert_settings_controller'),
+  AlertWebhooks: () => import('#controllers/alert_webhooks_controller'),
+  Alerts: () => import('#controllers/alerts_controller'),
   ApAgents: () => import('#controllers/ap_agents_controller'),
   ApJoinTokens: () => import('#controllers/ap_join_tokens_controller'),
   Collectors: () => import('#controllers/collectors_controller'),

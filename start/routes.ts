@@ -14,6 +14,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import { middleware } from '#start/kernel'
 import router from '@adonisjs/core/services/router'
 import { controllers } from '#generated/controllers'
+import '#start/routes/alerts'
 
 /**
  * The setup controller isn't in the auto-generated `controllers` registry

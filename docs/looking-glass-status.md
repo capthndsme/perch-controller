@@ -2836,3 +2836,37 @@ tsc, eslint and build pass.
 
 Needs a real phone: flick thresholds, the momentum feel, the cost of two blurred bars on mid-range Android,
 iOS pull-down hand-off inside sheets, and dot speeds at 120 Hz.
+
+## 2026-09-30 — Alerts WP-A1 + WP-A2: event core, inbox, routing and delivery (branch `alerts/build`, not live)
+
+Design: `docs/design/alerts/` (README §2–4, events.md, api.md, delivery.md). Local only, nothing deployed.
+
+- **Event API** (`app/services/alerts/emit.ts`, published first as a no-op, then on the engine):
+  `emitAlertEvent(input): void` (never throws, never waits; with `trx` queued only after the commit),
+  `reconcileConditions(types, current, { scope? }): Promise<void>`, `suppressAlerts(...) → mute id`,
+  `endSuppression(id)` (still-active alerts it kept silent notify then). Types register per area in
+  `catalogue/<area>.ts` (`defineAlertTypes`), detectors with `registerDetector`; tests use
+  `captureAlertEvents()` (`tests/helpers/alerts.ts`).
+- **Engine** (`engine.ts`): bounded queue (2000, oldest `info` dropped first), one serial worker, 5 s tick.
+  Hold, blip, reopen in the flap window and in the recovery hold, flap damping (one `flapping`, "stable" a window
+  later), escalation, recovery hold, notice dedupe, reminders, mutes, boot grace (`bootGrace` on the type),
+  withholding (`withheldBy`, the mass-offline guard), manual resolve hooks (`onManualResolve`).
+- **Data**: migrations 165–174 (`alerts` gains `raised_at`, the episode start the "was down 14:02–14:09" texts
+  need), models, `web-push` 3.6.7, `@types/web-push` 3.6.4, `standardwebhooks` 1.1.1.
+- **Catalogue**: every type of events.md with its texts, params and defaults; empty files for wifi,
+  gateway-sync and agent-updates.
+- **Delivery**: routing as the engine's notifier (filters × channels × mutes × `maxPerHour`, grouping, collapse
+  on resolve, recovery to the destinations that saw the outage, digests), the delivery worker (quiet hours in the
+  instance zone, per-destination rate limit, backoff with `Retry-After`, destination health and
+  `system.delivery_failing`, `ALERTS_DELIVERY=off`), the `Sender` seam with stub push/webhook senders for WP-A3/A4,
+  retention at 03:55, Settings → Alerts and the delivery log.
+- **API**: `start/routes/alerts.ts` (the whole table; push and webhooks answer 501 until WP-A3/A4).
+- **Route registry** (`.adonisjs/client/registry`) regenerated with a short `node ace serve` against a `_test`
+  database: the committed one predated device groups (288 of 339 routes). Two older specs (`device_groups`,
+  `port_traffic`) now read bodies untyped where the registry types a route `void | …`; alerts specs call the
+  client through `apiLoose()` (a typed call with a non-literal path turned other suites' `.json()` into `never`).
+- **Tests**: 49 (A1) + 31 (A2) new, run against a private `_test` database and port (several agents share the
+  MariaDB server). The alerts specs empty tables with `truncateAllTables()` instead of `testUtils.db().truncate()`:
+  that one runs `migration:run` per test, whose advisory lock (`GET_LOCK('1')`) is sometimes released on another
+  pooled connection ("Migration completed, but unable to release database lock"), after which every later test's
+  setup fails and the teardown hangs.

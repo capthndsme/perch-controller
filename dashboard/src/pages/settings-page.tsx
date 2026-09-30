@@ -63,6 +63,26 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
+      <Card className="rounded-xl shadow-sm">
+        <CardHeader className="border-b">
+          <CardTitle className="text-lg">Notifications</CardTitle>
+          <CardDescription>Get alerts on this phone or computer, even with Perch closed.</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Notifications</p>
+              <p className="text-xs text-muted-foreground">
+                Push to your devices{isAdmin ? ', and webhooks (ntfy, Home Assistant, Telegram…)' : ''}.
+              </p>
+            </div>
+            <Button asChild variant="outline" size="sm">
+              <Link to="/settings/notifications">Open</Link>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <ChangePasswordCard />
 
       <Card className="rounded-xl shadow-sm">
@@ -90,6 +110,17 @@ export function SettingsPage() {
                 </div>
                 <Button asChild variant="outline" size="sm">
                   <Link to="/settings/collectors">Open</Link>
+                </Button>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Alerts</p>
+                  <p className="text-xs text-muted-foreground">
+                    Rules for every alert type, quiet hours, the heartbeat and the push keys.
+                  </p>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/settings/alerts">Open</Link>
                 </Button>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">

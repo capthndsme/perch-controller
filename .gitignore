@@ -29,5 +29,6 @@ yarn-error.log
 # Site-specific production overrides (template: .env.production.example)
 .env.production
 
-# Built dashboard (dashboard/ builds into public/, node ace build copies it into build/public)
-public/
+# Built dashboard (dashboard/ builds into public/, node ace build copies it into build/public).
+# Anchored: dashboard/public/ is source (the web app manifest, service worker and icons).
+/public/

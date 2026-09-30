@@ -7,6 +7,402 @@ import type { InferInput, SimpleError } from '@vinejs/vine/types'
 export type ParamValue = string | number | bigint | boolean
 
 export interface Registry {
+  'alerts.push.renew': {
+    methods: ["POST"]
+    pattern: '/api/v1/alerts/push/renew'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['renew']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['renew']>>>
+    }
+  }
+  'alerts.summary': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/alerts/summary'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alerts_controller').default['summary']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alerts_controller').default['summary']>>>
+    }
+  }
+  'alerts.catalogue': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/alerts/catalogue'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alerts_controller').default['catalogue']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alerts_controller').default['catalogue']>>>
+    }
+  }
+  'alerts.read': {
+    methods: ["POST"]
+    pattern: '/api/v1/alerts/read'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/alerts').alertReadValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/alerts').alertReadValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alerts_controller').default['read']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alerts_controller').default['read']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'alerts.mutes.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/alerts/mutes'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_mutes_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_mutes_controller').default['index']>>>
+    }
+  }
+  'alerts.watches.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/alerts/watches'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/alerts').alertWatchListValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_mutes_controller').default['watches']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_mutes_controller').default['watches']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'alerts.push.config': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/alerts/push/config'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['config']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['config']>>>
+    }
+  }
+  'alerts.push.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/alerts/push/subscriptions'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['index']>>>
+    }
+  }
+  'alerts.push.store': {
+    methods: ["POST"]
+    pattern: '/api/v1/alerts/push/subscriptions'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['store']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['store']>>>
+    }
+  }
+  'alerts.push.unsubscribe': {
+    methods: ["POST"]
+    pattern: '/api/v1/alerts/push/subscriptions/unsubscribe'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['unsubscribe']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['unsubscribe']>>>
+    }
+  }
+  'alerts.push.update': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/alerts/push/subscriptions/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['update']>>>
+    }
+  }
+  'alerts.push.destroy': {
+    methods: ["DELETE"]
+    pattern: '/api/v1/alerts/push/subscriptions/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['destroy']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['destroy']>>>
+    }
+  }
+  'alerts.push.test': {
+    methods: ["POST"]
+    pattern: '/api/v1/alerts/push/subscriptions/:id/test'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['test']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['test']>>>
+    }
+  }
+  'alerts.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/alerts'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/alerts').alertListValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alerts_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alerts_controller').default['index']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'alerts.show': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/alerts/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alerts_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alerts_controller').default['show']>>>
+    }
+  }
+  'alerts.mutes.store': {
+    methods: ["POST"]
+    pattern: '/api/v1/alerts/mutes'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/alerts').alertMuteValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/alerts').alertMuteValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_mutes_controller').default['store']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_mutes_controller').default['store']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'alerts.mutes.destroy': {
+    methods: ["DELETE"]
+    pattern: '/api/v1/alerts/mutes/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_mutes_controller').default['destroy']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_mutes_controller').default['destroy']>>>
+    }
+  }
+  'alerts.watches.update': {
+    methods: ["PUT"]
+    pattern: '/api/v1/alerts/watches/devices/:mac'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/alerts').alertWatchValidator)>>
+      paramsTuple: [ParamValue]
+      params: { mac: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/alerts').alertWatchValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_mutes_controller').default['updateWatch']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_mutes_controller').default['updateWatch']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'alerts.deliveries.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/alerts/deliveries'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/alert_settings').alertDeliveryListValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_deliveries_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_deliveries_controller').default['index']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'alerts.deliveries.show': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/alerts/deliveries/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_deliveries_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_deliveries_controller').default['show']>>>
+    }
+  }
+  'alerts.acknowledge': {
+    methods: ["POST"]
+    pattern: '/api/v1/alerts/:id/acknowledge'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/alerts').alertNoteValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/alerts').alertNoteValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alerts_controller').default['acknowledge']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alerts_controller').default['acknowledge']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'alerts.resolve': {
+    methods: ["POST"]
+    pattern: '/api/v1/alerts/:id/resolve'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/alerts').alertNoteValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/alerts').alertNoteValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alerts_controller').default['resolve']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alerts_controller').default['resolve']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'settings.alerts.show': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/settings/alerts'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_settings_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_settings_controller').default['show']>>>
+    }
+  }
+  'settings.alerts.update': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/settings/alerts'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/alert_settings').alertSettingsUpdateValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/alert_settings').alertSettingsUpdateValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_settings_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_settings_controller').default['update']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'settings.alerts.test': {
+    methods: ["POST"]
+    pattern: '/api/v1/settings/alerts/test'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/alert_settings').alertTestValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/alert_settings').alertTestValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_settings_controller').default['test']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_settings_controller').default['test']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'settings.alerts.vapid.rotate': {
+    methods: ["POST"]
+    pattern: '/api/v1/settings/alerts/vapid/rotate'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['rotate']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['rotate']>>>
+    }
+  }
+  'settings.alerts.webhooks.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/settings/alerts/webhooks'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['index']>>>
+    }
+  }
+  'settings.alerts.webhooks.store': {
+    methods: ["POST"]
+    pattern: '/api/v1/settings/alerts/webhooks'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['store']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['store']>>>
+    }
+  }
+  'settings.alerts.webhooks.show': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/settings/alerts/webhooks/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['show']>>>
+    }
+  }
+  'settings.alerts.webhooks.update': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/settings/alerts/webhooks/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['update']>>>
+    }
+  }
+  'settings.alerts.webhooks.destroy': {
+    methods: ["DELETE"]
+    pattern: '/api/v1/settings/alerts/webhooks/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['destroy']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['destroy']>>>
+    }
+  }
+  'settings.alerts.webhooks.test': {
+    methods: ["POST"]
+    pattern: '/api/v1/settings/alerts/webhooks/:id/test'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['test']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['test']>>>
+    }
+  }
+  'settings.alerts.webhooks.rotateSecret': {
+    methods: ["POST"]
+    pattern: '/api/v1/settings/alerts/webhooks/:id/rotate-secret'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['rotateSecret']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['rotateSecret']>>>
+    }
+  }
   'setup.status': {
     methods: ["GET","HEAD"]
     pattern: '/api/v1/setup/status'
@@ -655,6 +1051,30 @@ export interface Registry {
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/collectors_controller').default['dismiss']>>>
     }
   }
+  'settings.deviceGroups': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/settings/device-groups'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['settings']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['settings']>>>
+    }
+  }
+  'settings.updateDeviceGroups': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/settings/device-groups'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/device_groups').deviceGroupSettingsValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/device_groups').deviceGroupSettingsValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['updateSettings']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['updateSettings']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
   'settings.portal': {
     methods: ["GET","HEAD"]
     pattern: '/api/v1/settings/portal'
@@ -1099,6 +1519,18 @@ export interface Registry {
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_firewall_controller').default['showWanAccess']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
+  'devices.group': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/devices/:mac/group'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { mac: ParamValue }
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/device_groups').deviceGroupOfQueryValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['deviceGroup']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['deviceGroup']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
   'devices.putWanAccess': {
     methods: ["PUT"]
     pattern: '/api/v1/devices/:mac/wan-access'
@@ -1361,6 +1793,42 @@ export interface Registry {
       query: {}
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/infra_controller').default['state']>>>
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/infra_controller').default['state']>>>
+    }
+  }
+  'infra.ports.traffic': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/infra/ports/:id/traffic'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/infra').infraTrafficQueryValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/infra_controller').default['portTraffic']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/infra_controller').default['portTraffic']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'infra.links.traffic': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/infra/links/:id/traffic'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/infra').infraTrafficQueryValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/infra_controller').default['linkTraffic']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/infra_controller').default['linkTraffic']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'infra.nodes.traffic': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/infra/nodes/:id/traffic'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/infra').infraTrafficQueryValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/infra_controller').default['nodeTraffic']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/infra_controller').default['nodeTraffic']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'infra.nodes.store': {
@@ -2345,6 +2813,150 @@ export interface Registry {
       query: ExtractQuery<InferInput<(typeof import('#validators/portal').dismissCheckoutValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['dismiss']>>>
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/portal_hotspot_controller').default['dismiss']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'deviceGroups.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/device-groups'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/device_groups').deviceGroupsQueryValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['index']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'deviceGroups.aps': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/device-groups/aps'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['aps']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['aps']>>>
+    }
+  }
+  'deviceGroups.show': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/device-groups/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['show']>>>
+    }
+  }
+  'deviceGroups.store': {
+    methods: ["POST"]
+    pattern: '/api/v1/device-groups'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/device_groups').createDeviceGroupValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/device_groups').createDeviceGroupValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['store']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['store']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'deviceGroups.aps.update': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/device-groups/aps/:apId'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/device_groups').apTrunkValidator)>>
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/device_groups').apTrunkValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['updateAp']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['updateAp']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'deviceGroups.update': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/device-groups/:id'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/device_groups').updateDeviceGroupValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/device_groups').updateDeviceGroupValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['update']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'deviceGroups.destroy': {
+    methods: ["DELETE"]
+    pattern: '/api/v1/device-groups/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['destroy']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['destroy']>>>
+    }
+  }
+  'deviceGroups.members.store': {
+    methods: ["POST"]
+    pattern: '/api/v1/device-groups/:id/members'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/device_groups').addMemberValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/device_groups').addMemberValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['addMember']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['addMember']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'deviceGroups.members.destroy': {
+    methods: ["DELETE"]
+    pattern: '/api/v1/device-groups/:id/members/:mac'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; mac: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['removeMember']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['removeMember']>>>
+    }
+  }
+  'deviceGroups.keys.store': {
+    methods: ["POST"]
+    pattern: '/api/v1/device-groups/:id/keys'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/device_groups').createKeyValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/device_groups').createKeyValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['createKey']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['createKey']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'deviceGroups.keys.reveal': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/device-groups/:id/keys/:keyId/passphrase'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; keyId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['revealKey']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['revealKey']>>>
+    }
+  }
+  'deviceGroups.keys.destroy': {
+    methods: ["DELETE"]
+    pattern: '/api/v1/device-groups/:id/keys/:keyId'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; keyId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['destroyKey']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/device_groups_controller').default['destroyKey']>>>
     }
   }
   'qos.overview': {
