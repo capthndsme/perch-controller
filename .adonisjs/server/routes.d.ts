@@ -4,6 +4,47 @@ type ParamValue = string | number | bigint | boolean
 
 export type ScannedRoutes = {
   ALL: {
+    'gatewaySync.wan': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.wanHistory': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.wanOrder': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.wanCreate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.wanAliasUpdate': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wanAliasDelete': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wanShow': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wanUpdate': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wanDelete': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wanAliasCreate': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wireguardConfig': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.wireguardInterfaceCreate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.wireguardInterfaceUpdate': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wireguardInterfaceDelete': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wireguardRotateKey': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wireguardPeerCreate': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wireguardPeerUpdate': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wireguardPeerDelete': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.ipv6': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.ipv6Update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.ipv6LanUpdate': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'network': ParamValue} }
+    'gatewaySync.ambiguities': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.ambiguitiesResolve': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.firewallDefaults': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.firewallDefaultsUpdate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.upnpConfig': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.upnpConfigUpdate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.upnpAclOrder': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.upnpAclCreate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.upnpAclUpdate': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.upnpAclDelete': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.upnpMappingsDelete': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.upnpDeviceBlock': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'mac': ParamValue} }
+    'gatewaySync.ddns': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.ddnsServiceCreate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.ddnsServiceUpdate': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.ddnsServiceDelete': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.ddnsUpdateNow': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.multiwan': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySyncSettings.show': { paramsTuple?: []; params?: {} }
+    'gatewaySyncSettings.update': { paramsTuple?: []; params?: {} }
     'alerts.push.renew': { paramsTuple?: []; params?: {} }
     'alerts.summary': { paramsTuple?: []; params?: {} }
     'alerts.catalogue': { paramsTuple?: []; params?: {} }
@@ -37,6 +78,32 @@ export type ScannedRoutes = {
     'settings.alerts.webhooks.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'settings.alerts.webhooks.test': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'settings.alerts.webhooks.rotateSecret': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.download': { paramsTuple: [ParamValue,ParamValue]; params: {'artefactId': ParamValue,'file': ParamValue} }
+    'agentUpdates.fleet': { paramsTuple?: []; params?: {} }
+    'agentUpdates.jobs': { paramsTuple?: []; params?: {} }
+    'agentUpdates.job': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.events': { paramsTuple?: []; params?: {} }
+    'agentUpdates.releases': { paramsTuple?: []; params?: {} }
+    'agentUpdates.release': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.rollouts': { paramsTuple?: []; params?: {} }
+    'agentUpdates.rollout': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.updateDevice': { paramsTuple: [ParamValue,ParamValue]; params: {'kind': ParamValue,'id': ParamValue} }
+    'agentUpdates.refreshDevice': { paramsTuple: [ParamValue,ParamValue]; params: {'kind': ParamValue,'id': ParamValue} }
+    'agentUpdates.preflightDevice': { paramsTuple: [ParamValue,ParamValue]; params: {'kind': ParamValue,'id': ParamValue} }
+    'agentUpdates.updateDeviceVersion': { paramsTuple: [ParamValue,ParamValue]; params: {'kind': ParamValue,'id': ParamValue} }
+    'agentUpdates.rollbackDevice': { paramsTuple: [ParamValue,ParamValue]; params: {'kind': ParamValue,'id': ParamValue} }
+    'agentUpdates.abortJob': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.checkReleases': { paramsTuple?: []; params?: {} }
+    'agentUpdates.storeRelease': { paramsTuple?: []; params?: {} }
+    'agentUpdates.uploadReleaseFile': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'file': ParamValue} }
+    'agentUpdates.updateRelease': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.destroyRelease': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.storeRollout': { paramsTuple?: []; params?: {} }
+    'agentUpdates.pauseRollout': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.resumeRollout': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.cancelRollout': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.agentUpdates': { paramsTuple?: []; params?: {} }
+    'settings.updateAgentUpdates': { paramsTuple?: []; params?: {} }
     'setup.status': { paramsTuple?: []; params?: {} }
     'setup.admin': { paramsTuple?: []; params?: {} }
     'setup.login': { paramsTuple?: []; params?: {} }
@@ -343,110 +410,72 @@ export type ScannedRoutes = {
     'gateways.createFirewallRule': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'gateways.updateFirewallRule': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
     'gateways.deleteFirewallRule': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
-  }
-  POST: {
-    'alerts.push.renew': { paramsTuple?: []; params?: {} }
-    'alerts.read': { paramsTuple?: []; params?: {} }
-    'alerts.push.store': { paramsTuple?: []; params?: {} }
-    'alerts.push.unsubscribe': { paramsTuple?: []; params?: {} }
-    'alerts.push.test': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'alerts.mutes.store': { paramsTuple?: []; params?: {} }
-    'alerts.acknowledge': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'alerts.resolve': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'settings.alerts.test': { paramsTuple?: []; params?: {} }
-    'settings.alerts.vapid.rotate': { paramsTuple?: []; params?: {} }
-    'settings.alerts.webhooks.store': { paramsTuple?: []; params?: {} }
-    'settings.alerts.webhooks.test': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'settings.alerts.webhooks.rotateSecret': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'setup.admin': { paramsTuple?: []; params?: {} }
-    'setup.login': { paramsTuple?: []; params?: {} }
-    'setup.instance': { paramsTuple?: []; params?: {} }
-    'setup.collector': { paramsTuple?: []; params?: {} }
-    'setup.collector.skip': { paramsTuple?: []; params?: {} }
-    'setup.collector.adopt': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'collectors.announce': { paramsTuple?: []; params?: {} }
-    'apAgent.join': { paramsTuple?: []; params?: {} }
-    'auth.new_account.store': { paramsTuple?: []; params?: {} }
-    'auth.access_tokens.store': { paramsTuple?: []; params?: {} }
-    'profile.access_tokens.destroy': { paramsTuple?: []; params?: {} }
-    'settings.settings.probe_wifi_source_draft': { paramsTuple?: []; params?: {} }
-    'settings.settings.create_wifi_source': { paramsTuple?: []; params?: {} }
-    'settings.settings.probe_wifi_source': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'settings.wifiSources.agentPing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'settings.apJoinTokens.store': { paramsTuple?: []; params?: {} }
-    'settings.apJoinTokens.reveal': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'settings.collectors.store': { paramsTuple?: []; params?: {} }
-    'settings.collectors.probeDraft': { paramsTuple?: []; params?: {} }
-    'settings.collectors.probe': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'settings.collectors.adopt': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'settings.collectors.dismiss': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'settings.users.store': { paramsTuple?: []; params?: {} }
-    'wifi.wifi.kick_client': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
-    'wifi.wifi.steer_client': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
-    'wifi.wifi.reboot_ap': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'wifi.wifi.locate_ap': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'infra.nodes.store': { paramsTuple?: []; params?: {} }
-    'infra.nodes.bind': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'infra.nodes.ports.store': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'infra.links.store': { paramsTuple?: []; params?: {} }
-    'gatewayObservations.gateway_observations.observe': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
-    'gatewayObservations.gateway_observations.create_backup': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
-    'portal.authorizations.store': { paramsTuple?: []; params?: {} }
-    'portal.priceTables.quote': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.portals.store': { paramsTuple?: []; params?: {} }
-    'portal.gateways.rotateKey': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
-    'portal.grants.extend': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.grants.revoke': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.templates.store': { paramsTuple?: []; params?: {} }
-    'portal.templates.duplicate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.voucherBatches.store': { paramsTuple?: []; params?: {} }
-    'portal.voucherBatches.revoke': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.vouchers.lookup': { paramsTuple?: []; params?: {} }
-    'portal.vouchers.revoke': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.users.store': { paramsTuple?: []; params?: {} }
-    'portal.apiClients.store': { paramsTuple?: []; params?: {} }
-    'portal.apiClients.rotate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.priceTables.store': { paramsTuple?: []; params?: {} }
-    'portal.terminals.store': { paramsTuple?: []; params?: {} }
-    'portal.terminals.rotate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.checkouts.void': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.checkouts.credit': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.checkouts.dismiss': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'deviceGroups.store': { paramsTuple?: []; params?: {} }
-    'deviceGroups.members.store': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'deviceGroups.keys.store': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'qos.wanQueues.store': { paramsTuple?: []; params?: {} }
-    'qos.policies.store': { paramsTuple?: []; params?: {} }
-    'qos.groups.store': { paramsTuple?: []; params?: {} }
-    'qos.assignments.store': { paramsTuple?: []; params?: {} }
-    'qos.schedules.store': { paramsTuple?: []; params?: {} }
-    'qos.assignments.resetQuota': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'qos.pause': { paramsTuple?: []; params?: {} }
-    'qos.resume': { paramsTuple?: []; params?: {} }
-    'gateways.createNetwork': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.bind': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.refresh': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.resolve': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.createApply': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.installPackages': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.startPairing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.confirmPairing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.confirmApply': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'applyId': ParamValue} }
-    'gateways.revertApply': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'applyId': ParamValue} }
-    'gateways.restoreRevision': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'number': ParamValue} }
-    'gateways.dismissRejoin': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.acceptDrift': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.revertDrift': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.resumeEnforcement': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.createRecord': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.applyLabelNames': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.createDhcpTag': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.createRoute': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.resolveFirewallOrder': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.createPortForward': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.createFirewallRule': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'wifiConfig.overview': { paramsTuple?: []; params?: {} }
+    'wifiConfig.aps.index': { paramsTuple?: []; params?: {} }
+    'wifiConfig.aps.show': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.health': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.syncStatus': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.sections': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.section': { paramsTuple: [ParamValue,ParamValue]; params: {'apId': ParamValue,'perchId': ParamValue} }
+    'wifiConfig.aps.draft': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.applies': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.apply': { paramsTuple: [ParamValue,ParamValue]; params: {'apId': ParamValue,'applyId': ParamValue} }
+    'wifiConfig.aps.revisions': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.revision': { paramsTuple: [ParamValue,ParamValue]; params: {'apId': ParamValue,'number': ParamValue} }
+    'wifiConfig.aps.events': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.pairing': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.update': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.refresh': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.rejoin': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.dismissRejoin': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.updateSection': { paramsTuple: [ParamValue,ParamValue]; params: {'apId': ParamValue,'perchId': ParamValue} }
+    'wifiConfig.aps.resolve': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.discardDraft': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.confirmApply': { paramsTuple: [ParamValue,ParamValue]; params: {'apId': ParamValue,'applyId': ParamValue} }
+    'wifiConfig.aps.revertApply': { paramsTuple: [ParamValue,ParamValue]; params: {'apId': ParamValue,'applyId': ParamValue} }
+    'wifiConfig.aps.restoreRevision': { paramsTuple: [ParamValue,ParamValue]; params: {'apId': ParamValue,'number': ParamValue} }
+    'wifiConfig.aps.acceptDrift': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.revertDrift': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.resumeEnforcement': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.startPairing': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.confirmPairing': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.unpair': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.updateRadio': { paramsTuple: [ParamValue,ParamValue]; params: {'apId': ParamValue,'section': ParamValue} }
+    'wifiConfig.radios.index': { paramsTuple?: []; params?: {} }
+    'wifiConfig.networks.index': { paramsTuple?: []; params?: {} }
+    'wifiConfig.networks.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'wifiConfig.networks.store': { paramsTuple?: []; params?: {} }
+    'wifiConfig.networks.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'wifiConfig.networks.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'wifiConfig.networks.setPassphrase': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'wifiConfig.networks.revealPassphrase': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'wifiConfig.networks.putAp': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'apId': ParamValue} }
+    'wifiConfig.networks.resetAp': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'apId': ParamValue} }
+    'wifiConfig.divergences.index': { paramsTuple?: []; params?: {} }
+    'wifiConfig.adoption.show': { paramsTuple?: []; params?: {} }
+    'wifiConfig.divergences.resolve': { paramsTuple?: []; params?: {} }
+    'wifiConfig.adoption.accept': { paramsTuple?: []; params?: {} }
+    'wifiConfig.rollouts.index': { paramsTuple?: []; params?: {} }
+    'wifiConfig.rollouts.current': { paramsTuple?: []; params?: {} }
+    'wifiConfig.rollouts.show': { paramsTuple: [ParamValue]; params: {'rolloutId': ParamValue} }
+    'wifiConfig.rollouts.preview': { paramsTuple?: []; params?: {} }
+    'wifiConfig.rollouts.store': { paramsTuple?: []; params?: {} }
+    'wifiConfig.rollouts.action': { paramsTuple: [ParamValue,ParamValue]; params: {'rolloutId': ParamValue,'action': ParamValue} }
+    'wifiConfigSettings.show': { paramsTuple?: []; params?: {} }
+    'wifiConfigSettings.update': { paramsTuple?: []; params?: {} }
   }
   GET: {
+    'gatewaySync.wan': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.wanHistory': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.wanShow': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wireguardConfig': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.ipv6': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.ambiguities': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.firewallDefaults': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.upnpConfig': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.ddns': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.multiwan': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySyncSettings.show': { paramsTuple?: []; params?: {} }
     'alerts.summary': { paramsTuple?: []; params?: {} }
     'alerts.catalogue': { paramsTuple?: []; params?: {} }
     'alerts.mutes.index': { paramsTuple?: []; params?: {} }
@@ -460,6 +489,16 @@ export type ScannedRoutes = {
     'settings.alerts.show': { paramsTuple?: []; params?: {} }
     'settings.alerts.webhooks.index': { paramsTuple?: []; params?: {} }
     'settings.alerts.webhooks.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.download': { paramsTuple: [ParamValue,ParamValue]; params: {'artefactId': ParamValue,'file': ParamValue} }
+    'agentUpdates.fleet': { paramsTuple?: []; params?: {} }
+    'agentUpdates.jobs': { paramsTuple?: []; params?: {} }
+    'agentUpdates.job': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.events': { paramsTuple?: []; params?: {} }
+    'agentUpdates.releases': { paramsTuple?: []; params?: {} }
+    'agentUpdates.release': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.rollouts': { paramsTuple?: []; params?: {} }
+    'agentUpdates.rollout': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.agentUpdates': { paramsTuple?: []; params?: {} }
     'setup.status': { paramsTuple?: []; params?: {} }
     'setup.collector.candidates': { paramsTuple?: []; params?: {} }
     'version': { paramsTuple?: []; params?: {} }
@@ -593,8 +632,43 @@ export type ScannedRoutes = {
     'gateways.dhcp': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'gateways.routing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'gateways.firewall': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'wifiConfig.overview': { paramsTuple?: []; params?: {} }
+    'wifiConfig.aps.index': { paramsTuple?: []; params?: {} }
+    'wifiConfig.aps.show': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.health': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.syncStatus': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.sections': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.section': { paramsTuple: [ParamValue,ParamValue]; params: {'apId': ParamValue,'perchId': ParamValue} }
+    'wifiConfig.aps.draft': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.applies': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.apply': { paramsTuple: [ParamValue,ParamValue]; params: {'apId': ParamValue,'applyId': ParamValue} }
+    'wifiConfig.aps.revisions': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.revision': { paramsTuple: [ParamValue,ParamValue]; params: {'apId': ParamValue,'number': ParamValue} }
+    'wifiConfig.aps.events': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.pairing': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.radios.index': { paramsTuple?: []; params?: {} }
+    'wifiConfig.networks.index': { paramsTuple?: []; params?: {} }
+    'wifiConfig.networks.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'wifiConfig.networks.revealPassphrase': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'wifiConfig.divergences.index': { paramsTuple?: []; params?: {} }
+    'wifiConfig.adoption.show': { paramsTuple?: []; params?: {} }
+    'wifiConfig.rollouts.index': { paramsTuple?: []; params?: {} }
+    'wifiConfig.rollouts.current': { paramsTuple?: []; params?: {} }
+    'wifiConfig.rollouts.show': { paramsTuple: [ParamValue]; params: {'rolloutId': ParamValue} }
+    'wifiConfigSettings.show': { paramsTuple?: []; params?: {} }
   }
   HEAD: {
+    'gatewaySync.wan': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.wanHistory': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.wanShow': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wireguardConfig': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.ipv6': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.ambiguities': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.firewallDefaults': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.upnpConfig': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.ddns': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.multiwan': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySyncSettings.show': { paramsTuple?: []; params?: {} }
     'alerts.summary': { paramsTuple?: []; params?: {} }
     'alerts.catalogue': { paramsTuple?: []; params?: {} }
     'alerts.mutes.index': { paramsTuple?: []; params?: {} }
@@ -608,6 +682,16 @@ export type ScannedRoutes = {
     'settings.alerts.show': { paramsTuple?: []; params?: {} }
     'settings.alerts.webhooks.index': { paramsTuple?: []; params?: {} }
     'settings.alerts.webhooks.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.download': { paramsTuple: [ParamValue,ParamValue]; params: {'artefactId': ParamValue,'file': ParamValue} }
+    'agentUpdates.fleet': { paramsTuple?: []; params?: {} }
+    'agentUpdates.jobs': { paramsTuple?: []; params?: {} }
+    'agentUpdates.job': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.events': { paramsTuple?: []; params?: {} }
+    'agentUpdates.releases': { paramsTuple?: []; params?: {} }
+    'agentUpdates.release': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.rollouts': { paramsTuple?: []; params?: {} }
+    'agentUpdates.rollout': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.agentUpdates': { paramsTuple?: []; params?: {} }
     'setup.status': { paramsTuple?: []; params?: {} }
     'setup.collector.candidates': { paramsTuple?: []; params?: {} }
     'version': { paramsTuple?: []; params?: {} }
@@ -741,11 +825,209 @@ export type ScannedRoutes = {
     'gateways.dhcp': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'gateways.routing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'gateways.firewall': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'wifiConfig.overview': { paramsTuple?: []; params?: {} }
+    'wifiConfig.aps.index': { paramsTuple?: []; params?: {} }
+    'wifiConfig.aps.show': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.health': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.syncStatus': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.sections': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.section': { paramsTuple: [ParamValue,ParamValue]; params: {'apId': ParamValue,'perchId': ParamValue} }
+    'wifiConfig.aps.draft': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.applies': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.apply': { paramsTuple: [ParamValue,ParamValue]; params: {'apId': ParamValue,'applyId': ParamValue} }
+    'wifiConfig.aps.revisions': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.revision': { paramsTuple: [ParamValue,ParamValue]; params: {'apId': ParamValue,'number': ParamValue} }
+    'wifiConfig.aps.events': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.pairing': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.radios.index': { paramsTuple?: []; params?: {} }
+    'wifiConfig.networks.index': { paramsTuple?: []; params?: {} }
+    'wifiConfig.networks.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'wifiConfig.networks.revealPassphrase': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'wifiConfig.divergences.index': { paramsTuple?: []; params?: {} }
+    'wifiConfig.adoption.show': { paramsTuple?: []; params?: {} }
+    'wifiConfig.rollouts.index': { paramsTuple?: []; params?: {} }
+    'wifiConfig.rollouts.current': { paramsTuple?: []; params?: {} }
+    'wifiConfig.rollouts.show': { paramsTuple: [ParamValue]; params: {'rolloutId': ParamValue} }
+    'wifiConfigSettings.show': { paramsTuple?: []; params?: {} }
+  }
+  PUT: {
+    'gatewaySync.wanOrder': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.upnpAclOrder': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.upnpDeviceBlock': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'mac': ParamValue} }
+    'alerts.watches.update': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'agentUpdates.uploadReleaseFile': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'file': ParamValue} }
+    'settings.settings.update_wifi_source': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.collectors.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'devices.putWanAccess': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.putReservation': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'infra.positions': { paramsTuple?: []; params?: {} }
+    'portal.templates.files.put': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'name': ParamValue} }
+    'portal.users.password': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.setSignKey': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.orderFirewallRules': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.orderPortForwards': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'wifiConfig.networks.putAp': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'apId': ParamValue} }
+  }
+  POST: {
+    'gatewaySync.wanCreate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.wanAliasCreate': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wireguardInterfaceCreate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.wireguardRotateKey': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wireguardPeerCreate': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.ambiguitiesResolve': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.upnpAclCreate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.upnpMappingsDelete': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.ddnsServiceCreate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.ddnsUpdateNow': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'alerts.push.renew': { paramsTuple?: []; params?: {} }
+    'alerts.read': { paramsTuple?: []; params?: {} }
+    'alerts.push.store': { paramsTuple?: []; params?: {} }
+    'alerts.push.unsubscribe': { paramsTuple?: []; params?: {} }
+    'alerts.push.test': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'alerts.mutes.store': { paramsTuple?: []; params?: {} }
+    'alerts.acknowledge': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'alerts.resolve': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.alerts.test': { paramsTuple?: []; params?: {} }
+    'settings.alerts.vapid.rotate': { paramsTuple?: []; params?: {} }
+    'settings.alerts.webhooks.store': { paramsTuple?: []; params?: {} }
+    'settings.alerts.webhooks.test': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.alerts.webhooks.rotateSecret': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.refreshDevice': { paramsTuple: [ParamValue,ParamValue]; params: {'kind': ParamValue,'id': ParamValue} }
+    'agentUpdates.preflightDevice': { paramsTuple: [ParamValue,ParamValue]; params: {'kind': ParamValue,'id': ParamValue} }
+    'agentUpdates.updateDeviceVersion': { paramsTuple: [ParamValue,ParamValue]; params: {'kind': ParamValue,'id': ParamValue} }
+    'agentUpdates.rollbackDevice': { paramsTuple: [ParamValue,ParamValue]; params: {'kind': ParamValue,'id': ParamValue} }
+    'agentUpdates.abortJob': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.checkReleases': { paramsTuple?: []; params?: {} }
+    'agentUpdates.storeRelease': { paramsTuple?: []; params?: {} }
+    'agentUpdates.storeRollout': { paramsTuple?: []; params?: {} }
+    'agentUpdates.pauseRollout': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.resumeRollout': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.cancelRollout': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'setup.admin': { paramsTuple?: []; params?: {} }
+    'setup.login': { paramsTuple?: []; params?: {} }
+    'setup.instance': { paramsTuple?: []; params?: {} }
+    'setup.collector': { paramsTuple?: []; params?: {} }
+    'setup.collector.skip': { paramsTuple?: []; params?: {} }
+    'setup.collector.adopt': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'collectors.announce': { paramsTuple?: []; params?: {} }
+    'apAgent.join': { paramsTuple?: []; params?: {} }
+    'auth.new_account.store': { paramsTuple?: []; params?: {} }
+    'auth.access_tokens.store': { paramsTuple?: []; params?: {} }
+    'profile.access_tokens.destroy': { paramsTuple?: []; params?: {} }
+    'settings.settings.probe_wifi_source_draft': { paramsTuple?: []; params?: {} }
+    'settings.settings.create_wifi_source': { paramsTuple?: []; params?: {} }
+    'settings.settings.probe_wifi_source': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.wifiSources.agentPing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.apJoinTokens.store': { paramsTuple?: []; params?: {} }
+    'settings.apJoinTokens.reveal': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.collectors.store': { paramsTuple?: []; params?: {} }
+    'settings.collectors.probeDraft': { paramsTuple?: []; params?: {} }
+    'settings.collectors.probe': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.collectors.adopt': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.collectors.dismiss': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.users.store': { paramsTuple?: []; params?: {} }
+    'wifi.wifi.kick_client': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'wifi.wifi.steer_client': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'wifi.wifi.reboot_ap': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'wifi.wifi.locate_ap': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'infra.nodes.store': { paramsTuple?: []; params?: {} }
+    'infra.nodes.bind': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'infra.nodes.ports.store': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'infra.links.store': { paramsTuple?: []; params?: {} }
+    'gatewayObservations.gateway_observations.observe': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.create_backup': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'portal.authorizations.store': { paramsTuple?: []; params?: {} }
+    'portal.priceTables.quote': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.portals.store': { paramsTuple?: []; params?: {} }
+    'portal.gateways.rotateKey': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'portal.grants.extend': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.grants.revoke': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.templates.store': { paramsTuple?: []; params?: {} }
+    'portal.templates.duplicate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.voucherBatches.store': { paramsTuple?: []; params?: {} }
+    'portal.voucherBatches.revoke': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.vouchers.lookup': { paramsTuple?: []; params?: {} }
+    'portal.vouchers.revoke': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.users.store': { paramsTuple?: []; params?: {} }
+    'portal.apiClients.store': { paramsTuple?: []; params?: {} }
+    'portal.apiClients.rotate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.priceTables.store': { paramsTuple?: []; params?: {} }
+    'portal.terminals.store': { paramsTuple?: []; params?: {} }
+    'portal.terminals.rotate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.checkouts.void': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.checkouts.credit': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.checkouts.dismiss': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'deviceGroups.store': { paramsTuple?: []; params?: {} }
+    'deviceGroups.members.store': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'deviceGroups.keys.store': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.wanQueues.store': { paramsTuple?: []; params?: {} }
+    'qos.policies.store': { paramsTuple?: []; params?: {} }
+    'qos.groups.store': { paramsTuple?: []; params?: {} }
+    'qos.assignments.store': { paramsTuple?: []; params?: {} }
+    'qos.schedules.store': { paramsTuple?: []; params?: {} }
+    'qos.assignments.resetQuota': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.pause': { paramsTuple?: []; params?: {} }
+    'qos.resume': { paramsTuple?: []; params?: {} }
+    'gateways.createNetwork': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.bind': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.refresh': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.resolve': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createApply': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.installPackages': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.startPairing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.confirmPairing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.confirmApply': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'applyId': ParamValue} }
+    'gateways.revertApply': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'applyId': ParamValue} }
+    'gateways.restoreRevision': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'number': ParamValue} }
+    'gateways.dismissRejoin': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.acceptDrift': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.revertDrift': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.resumeEnforcement': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createRecord': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.applyLabelNames': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createDhcpTag': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createRoute': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.resolveFirewallOrder': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createPortForward': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createFirewallRule': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'wifiConfig.aps.refresh': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.rejoin': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.dismissRejoin': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.resolve': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.confirmApply': { paramsTuple: [ParamValue,ParamValue]; params: {'apId': ParamValue,'applyId': ParamValue} }
+    'wifiConfig.aps.revertApply': { paramsTuple: [ParamValue,ParamValue]; params: {'apId': ParamValue,'applyId': ParamValue} }
+    'wifiConfig.aps.restoreRevision': { paramsTuple: [ParamValue,ParamValue]; params: {'apId': ParamValue,'number': ParamValue} }
+    'wifiConfig.aps.acceptDrift': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.revertDrift': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.resumeEnforcement': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.startPairing': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.confirmPairing': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.networks.store': { paramsTuple?: []; params?: {} }
+    'wifiConfig.networks.setPassphrase': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'wifiConfig.divergences.resolve': { paramsTuple?: []; params?: {} }
+    'wifiConfig.adoption.accept': { paramsTuple?: []; params?: {} }
+    'wifiConfig.rollouts.preview': { paramsTuple?: []; params?: {} }
+    'wifiConfig.rollouts.store': { paramsTuple?: []; params?: {} }
+    'wifiConfig.rollouts.action': { paramsTuple: [ParamValue,ParamValue]; params: {'rolloutId': ParamValue,'action': ParamValue} }
   }
   PATCH: {
+    'gatewaySync.wanAliasUpdate': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wanUpdate': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wireguardInterfaceUpdate': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wireguardPeerUpdate': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.ipv6Update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.ipv6LanUpdate': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'network': ParamValue} }
+    'gatewaySync.firewallDefaultsUpdate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.upnpConfigUpdate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gatewaySync.upnpAclUpdate': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.ddnsServiceUpdate': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySyncSettings.update': { paramsTuple?: []; params?: {} }
     'alerts.push.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'settings.alerts.update': { paramsTuple?: []; params?: {} }
     'settings.alerts.webhooks.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.updateDevice': { paramsTuple: [ParamValue,ParamValue]; params: {'kind': ParamValue,'id': ParamValue} }
+    'agentUpdates.updateRelease': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.updateAgentUpdates': { paramsTuple?: []; params?: {} }
     'profile.profile.change_password': { paramsTuple?: []; params?: {} }
     'settings.settings.update_hostname_enrichment': { paramsTuple?: []; params?: {} }
     'settings.updatePresence': { paramsTuple?: []; params?: {} }
@@ -786,11 +1068,23 @@ export type ScannedRoutes = {
     'gateways.updateSystem': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'gateways.updatePortForward': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
     'gateways.updateFirewallRule': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'wifiConfig.aps.update': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.updateSection': { paramsTuple: [ParamValue,ParamValue]; params: {'apId': ParamValue,'perchId': ParamValue} }
+    'wifiConfig.aps.updateRadio': { paramsTuple: [ParamValue,ParamValue]; params: {'apId': ParamValue,'section': ParamValue} }
+    'wifiConfig.networks.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'wifiConfigSettings.update': { paramsTuple?: []; params?: {} }
   }
   DELETE: {
+    'gatewaySync.wanAliasDelete': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wanDelete': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wireguardInterfaceDelete': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.wireguardPeerDelete': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.upnpAclDelete': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+    'gatewaySync.ddnsServiceDelete': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
     'alerts.push.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'alerts.mutes.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'settings.alerts.webhooks.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'agentUpdates.destroyRelease': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'settings.settings.delete_wifi_source': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'settings.wifiSources.agentForget': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'settings.apJoinTokens.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
@@ -827,19 +1121,10 @@ export type ScannedRoutes = {
     'gateways.deleteRoute': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
     'gateways.deletePortForward': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
     'gateways.deleteFirewallRule': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
-  }
-  PUT: {
-    'alerts.watches.update': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
-    'settings.settings.update_wifi_source': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'settings.collectors.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'devices.putWanAccess': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
-    'devices.putReservation': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
-    'infra.positions': { paramsTuple?: []; params?: {} }
-    'portal.templates.files.put': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'name': ParamValue} }
-    'portal.users.password': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.setSignKey': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.orderFirewallRules': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.orderPortForwards': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'wifiConfig.aps.discardDraft': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.aps.unpair': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'wifiConfig.networks.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'wifiConfig.networks.resetAp': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'apId': ParamValue} }
   }
 }
 declare module '@adonisjs/core/types/http' {

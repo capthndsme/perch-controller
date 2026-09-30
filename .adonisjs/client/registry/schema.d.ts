@@ -7,16 +7,508 @@ import type { InferInput, SimpleError } from '@vinejs/vine/types'
 export type ParamValue = string | number | bigint | boolean
 
 export interface Registry {
-  'alerts.push.renew': {
+  'gatewaySync.wan': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/gateways/:id/wan'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wan_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wan_controller').default['index']>>>
+    }
+  }
+  'gatewaySync.wanHistory': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/gateways/:id/wan/history'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/gateway_wan').wanHistoryValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wan_controller').default['history']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wan_controller').default['history']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'gatewaySync.wanOrder': {
+    methods: ["PUT"]
+    pattern: '/api/v1/gateways/:id/wan/order'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_wan').wanOrderValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_wan').wanOrderValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wan_controller').default['order']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wan_controller').default['order']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'gatewaySync.wanCreate': {
     methods: ["POST"]
-    pattern: '/api/v1/alerts/push/renew'
+    pattern: '/api/v1/gateways/:id/wan'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_wan').wanCreateValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_wan').wanCreateValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wan_controller').default['create']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wan_controller').default['create']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'gatewaySync.wanAliasUpdate': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/gateways/:id/wan/aliases/:perchId'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_wan').wanAliasPatchValidator)>>
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; perchId: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_wan').wanAliasPatchValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wan_controller').default['updateAlias']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wan_controller').default['updateAlias']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'gatewaySync.wanAliasDelete': {
+    methods: ["DELETE"]
+    pattern: '/api/v1/gateways/:id/wan/aliases/:perchId'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; perchId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wan_controller').default['deleteAlias']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wan_controller').default['deleteAlias']>>>
+    }
+  }
+  'gatewaySync.wanShow': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/gateways/:id/wan/:perchId'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; perchId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wan_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wan_controller').default['show']>>>
+    }
+  }
+  'gatewaySync.wanUpdate': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/gateways/:id/wan/:perchId'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_wan').wanPatchValidator)>>
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; perchId: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_wan').wanPatchValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wan_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wan_controller').default['update']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'gatewaySync.wanDelete': {
+    methods: ["DELETE"]
+    pattern: '/api/v1/gateways/:id/wan/:perchId'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_wan').wanDeleteValidator)>>
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; perchId: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_wan').wanDeleteValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wan_controller').default['destroy']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wan_controller').default['destroy']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'gatewaySync.wanAliasCreate': {
+    methods: ["POST"]
+    pattern: '/api/v1/gateways/:id/wan/:perchId/aliases'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_wan').wanAliasCreateValidator)>>
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; perchId: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_wan').wanAliasCreateValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wan_controller').default['createAlias']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wan_controller').default['createAlias']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'gatewaySync.wireguardConfig': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/gateways/:id/wireguard/config'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['index']>>>
+    }
+  }
+  'gatewaySync.wireguardInterfaceCreate': {
+    methods: ["POST"]
+    pattern: '/api/v1/gateways/:id/wireguard/interfaces'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['createInterface']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['createInterface']>>>
+    }
+  }
+  'gatewaySync.wireguardInterfaceUpdate': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/gateways/:id/wireguard/interfaces/:perchId'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; perchId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['updateInterface']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['updateInterface']>>>
+    }
+  }
+  'gatewaySync.wireguardInterfaceDelete': {
+    methods: ["DELETE"]
+    pattern: '/api/v1/gateways/:id/wireguard/interfaces/:perchId'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; perchId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['deleteInterface']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['deleteInterface']>>>
+    }
+  }
+  'gatewaySync.wireguardRotateKey': {
+    methods: ["POST"]
+    pattern: '/api/v1/gateways/:id/wireguard/interfaces/:perchId/rotate-key'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; perchId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['rotateKey']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['rotateKey']>>>
+    }
+  }
+  'gatewaySync.wireguardPeerCreate': {
+    methods: ["POST"]
+    pattern: '/api/v1/gateways/:id/wireguard/interfaces/:perchId/peers'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; perchId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['createPeer']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['createPeer']>>>
+    }
+  }
+  'gatewaySync.wireguardPeerUpdate': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/gateways/:id/wireguard/peers/:perchId'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; perchId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['updatePeer']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['updatePeer']>>>
+    }
+  }
+  'gatewaySync.wireguardPeerDelete': {
+    methods: ["DELETE"]
+    pattern: '/api/v1/gateways/:id/wireguard/peers/:perchId'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; perchId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['deletePeer']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_wireguard_controller').default['deletePeer']>>>
+    }
+  }
+  'gatewaySync.ipv6': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/gateways/:id/ipv6'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_ipv6_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_ipv6_controller').default['show']>>>
+    }
+  }
+  'gatewaySync.ipv6Update': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/gateways/:id/ipv6'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_ipv6_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_ipv6_controller').default['update']>>>
+    }
+  }
+  'gatewaySync.ipv6LanUpdate': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/gateways/:id/ipv6/lans/:network'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; network: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_ipv6_controller').default['updateLan']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_ipv6_controller').default['updateLan']>>>
+    }
+  }
+  'gatewaySync.ambiguities': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/gateways/:id/ambiguities'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_ambiguities_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_ambiguities_controller').default['index']>>>
+    }
+  }
+  'gatewaySync.ambiguitiesResolve': {
+    methods: ["POST"]
+    pattern: '/api/v1/gateways/:id/ambiguities/resolve'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_sync').ambiguityResolveValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_sync').ambiguityResolveValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_ambiguities_controller').default['resolve']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_ambiguities_controller').default['resolve']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'gatewaySync.firewallDefaults': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/gateways/:id/firewall/defaults'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_firewall_defaults_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_firewall_defaults_controller').default['show']>>>
+    }
+  }
+  'gatewaySync.firewallDefaultsUpdate': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/gateways/:id/firewall/defaults'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_sync').firewallDefaultsPatchValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_sync').firewallDefaultsPatchValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_firewall_defaults_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_firewall_defaults_controller').default['update']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'gatewaySync.upnpConfig': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/gateways/:id/upnp/config'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['show']>>>
+    }
+  }
+  'gatewaySync.upnpConfigUpdate': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/gateways/:id/upnp/config'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['update']>>>
+    }
+  }
+  'gatewaySync.upnpAclOrder': {
+    methods: ["PUT"]
+    pattern: '/api/v1/gateways/:id/upnp/acl/order'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['orderAcl']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['orderAcl']>>>
+    }
+  }
+  'gatewaySync.upnpAclCreate': {
+    methods: ["POST"]
+    pattern: '/api/v1/gateways/:id/upnp/acl'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['createAcl']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['createAcl']>>>
+    }
+  }
+  'gatewaySync.upnpAclUpdate': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/gateways/:id/upnp/acl/:perchId'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; perchId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['updateAcl']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['updateAcl']>>>
+    }
+  }
+  'gatewaySync.upnpAclDelete': {
+    methods: ["DELETE"]
+    pattern: '/api/v1/gateways/:id/upnp/acl/:perchId'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; perchId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['deleteAcl']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['deleteAcl']>>>
+    }
+  }
+  'gatewaySync.upnpMappingsDelete': {
+    methods: ["POST"]
+    pattern: '/api/v1/gateways/:id/upnp/mappings/delete'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['deleteMappings']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['deleteMappings']>>>
+    }
+  }
+  'gatewaySync.upnpDeviceBlock': {
+    methods: ["PUT"]
+    pattern: '/api/v1/gateways/:id/upnp/devices/:mac'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; mac: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['blockDevice']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_upnp_controller').default['blockDevice']>>>
+    }
+  }
+  'gatewaySync.ddns': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/gateways/:id/ddns'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_ddns_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_ddns_controller').default['index']>>>
+    }
+  }
+  'gatewaySync.ddnsServiceCreate': {
+    methods: ["POST"]
+    pattern: '/api/v1/gateways/:id/ddns/services'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_ddns_controller').default['createService']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_ddns_controller').default['createService']>>>
+    }
+  }
+  'gatewaySync.ddnsServiceUpdate': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/gateways/:id/ddns/services/:perchId'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; perchId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_ddns_controller').default['updateService']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_ddns_controller').default['updateService']>>>
+    }
+  }
+  'gatewaySync.ddnsServiceDelete': {
+    methods: ["DELETE"]
+    pattern: '/api/v1/gateways/:id/ddns/services/:perchId'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; perchId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_ddns_controller').default['deleteService']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_ddns_controller').default['deleteService']>>>
+    }
+  }
+  'gatewaySync.ddnsUpdateNow': {
+    methods: ["POST"]
+    pattern: '/api/v1/gateways/:id/ddns/services/:perchId/update-now'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; perchId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_ddns_controller').default['updateNow']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_ddns_controller').default['updateNow']>>>
+    }
+  }
+  'gatewaySync.multiwan': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/gateways/:id/multiwan'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_multiwan_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_multiwan_controller').default['show']>>>
+    }
+  }
+  'gatewaySyncSettings.show': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/settings/gateway-sync'
     types: {
       body: {}
       paramsTuple: []
       params: {}
       query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_sync_settings_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_sync_settings_controller').default['show']>>>
+    }
+  }
+  'gatewaySyncSettings.update': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/settings/gateway-sync'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_wan').gatewaySyncSettingsPatchValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_wan').gatewaySyncSettingsPatchValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_sync_settings_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_sync_settings_controller').default['update']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'alerts.push.renew': {
+    methods: ["POST"]
+    pattern: '/api/v1/alerts/push/renew'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/alert_push').pushRenewValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/alert_push').pushRenewValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['renew']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['renew']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['renew']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'alerts.summary': {
@@ -107,36 +599,36 @@ export interface Registry {
     methods: ["POST"]
     pattern: '/api/v1/alerts/push/subscriptions'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/alert_push').pushSubscribeValidator)>>
       paramsTuple: []
       params: {}
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/alert_push').pushSubscribeValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['store']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['store']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['store']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'alerts.push.unsubscribe': {
     methods: ["POST"]
     pattern: '/api/v1/alerts/push/subscriptions/unsubscribe'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/alert_push').pushUnsubscribeValidator)>>
       paramsTuple: []
       params: {}
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/alert_push').pushUnsubscribeValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['unsubscribe']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['unsubscribe']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['unsubscribe']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'alerts.push.update': {
     methods: ["PATCH"]
     pattern: '/api/v1/alerts/push/subscriptions/:id'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/alert_push').pushUpdateValidator)>>
       paramsTuple: [ParamValue]
       params: { id: ParamValue }
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/alert_push').pushUpdateValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['update']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['update']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'alerts.push.destroy': {
@@ -311,12 +803,12 @@ export interface Registry {
     methods: ["POST"]
     pattern: '/api/v1/settings/alerts/vapid/rotate'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/alert_push').vapidRotateValidator)>>
       paramsTuple: []
       params: {}
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/alert_push').vapidRotateValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['rotate']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['rotate']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_push_controller').default['rotate']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'settings.alerts.webhooks.index': {
@@ -335,12 +827,12 @@ export interface Registry {
     methods: ["POST"]
     pattern: '/api/v1/settings/alerts/webhooks'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/alert_webhooks').webhookCreateValidator)>>
       paramsTuple: []
       params: {}
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/alert_webhooks').webhookCreateValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['store']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['store']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['store']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'settings.alerts.webhooks.show': {
@@ -359,12 +851,12 @@ export interface Registry {
     methods: ["PATCH"]
     pattern: '/api/v1/settings/alerts/webhooks/:id'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/alert_webhooks').webhookUpdateValidator)>>
       paramsTuple: [ParamValue]
       params: { id: ParamValue }
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/alert_webhooks').webhookUpdateValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['update']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['update']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'settings.alerts.webhooks.destroy': {
@@ -401,6 +893,318 @@ export interface Registry {
       query: {}
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['rotateSecret']>>>
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/alert_webhooks_controller').default['rotateSecret']>>>
+    }
+  }
+  'agentUpdates.download': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/agent-updates/files/:artefactId/:file'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { artefactId: ParamValue; file: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_artefacts_controller').default['download']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_artefacts_controller').default['download']>>>
+    }
+  }
+  'agentUpdates.fleet': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/agent-updates/fleet'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/agent_updates').fleetQueryValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['fleet']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['fleet']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'agentUpdates.jobs': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/agent-updates/jobs'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/agent_updates').jobsQueryValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['jobs']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['jobs']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'agentUpdates.job': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/agent-updates/jobs/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['job']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['job']>>>
+    }
+  }
+  'agentUpdates.events': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/agent-updates/events'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/agent_updates').eventsQueryValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['events']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['events']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'agentUpdates.releases': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/agent-updates/releases'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/agent_updates').releasesIndexValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_releases_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_releases_controller').default['index']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'agentUpdates.release': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/agent-updates/releases/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_releases_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_releases_controller').default['show']>>>
+    }
+  }
+  'agentUpdates.rollouts': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/agent-updates/rollouts'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/agent_updates').rolloutsQueryValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_rollouts_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_rollouts_controller').default['index']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'agentUpdates.rollout': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/agent-updates/rollouts/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_rollouts_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_rollouts_controller').default['show']>>>
+    }
+  }
+  'agentUpdates.updateDevice': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/agent-updates/devices/:kind/:id'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/agent_updates').deviceSettingsValidator)>>
+      paramsTuple: [ParamValue, ParamValue]
+      params: { kind: ParamValue; id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/agent_updates').deviceSettingsValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['updateDevice']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['updateDevice']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'agentUpdates.refreshDevice': {
+    methods: ["POST"]
+    pattern: '/api/v1/agent-updates/devices/:kind/:id/refresh'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { kind: ParamValue; id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['refresh']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['refresh']>>>
+    }
+  }
+  'agentUpdates.preflightDevice': {
+    methods: ["POST"]
+    pattern: '/api/v1/agent-updates/devices/:kind/:id/preflight'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/agent_updates').preflightValidator)>>
+      paramsTuple: [ParamValue, ParamValue]
+      params: { kind: ParamValue; id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/agent_updates').preflightValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['preflight']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['preflight']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'agentUpdates.updateDeviceVersion': {
+    methods: ["POST"]
+    pattern: '/api/v1/agent-updates/devices/:kind/:id/update'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/agent_updates').updateDeviceValidator)>>
+      paramsTuple: [ParamValue, ParamValue]
+      params: { kind: ParamValue; id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/agent_updates').updateDeviceValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['update']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'agentUpdates.rollbackDevice': {
+    methods: ["POST"]
+    pattern: '/api/v1/agent-updates/devices/:kind/:id/rollback'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/agent_updates').rollbackDeviceValidator)>>
+      paramsTuple: [ParamValue, ParamValue]
+      params: { kind: ParamValue; id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/agent_updates').rollbackDeviceValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['rollback']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['rollback']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'agentUpdates.abortJob': {
+    methods: ["POST"]
+    pattern: '/api/v1/agent-updates/jobs/:id/abort'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['abort']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['abort']>>>
+    }
+  }
+  'agentUpdates.checkReleases': {
+    methods: ["POST"]
+    pattern: '/api/v1/agent-updates/releases/check'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_releases_controller').default['check']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_releases_controller').default['check']>>>
+    }
+  }
+  'agentUpdates.storeRelease': {
+    methods: ["POST"]
+    pattern: '/api/v1/agent-updates/releases'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/agent_updates').releaseCreateValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/agent_updates').releaseCreateValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_releases_controller').default['store']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_releases_controller').default['store']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'agentUpdates.uploadReleaseFile': {
+    methods: ["PUT"]
+    pattern: '/api/v1/agent-updates/releases/:id/files/:file'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; file: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_releases_controller').default['upload']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_releases_controller').default['upload']>>>
+    }
+  }
+  'agentUpdates.updateRelease': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/agent-updates/releases/:id'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/agent_updates').releaseUpdateValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/agent_updates').releaseUpdateValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_releases_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_releases_controller').default['update']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'agentUpdates.destroyRelease': {
+    methods: ["DELETE"]
+    pattern: '/api/v1/agent-updates/releases/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_releases_controller').default['destroy']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_releases_controller').default['destroy']>>>
+    }
+  }
+  'agentUpdates.storeRollout': {
+    methods: ["POST"]
+    pattern: '/api/v1/agent-updates/rollouts'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/agent_updates').rolloutCreateValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/agent_updates').rolloutCreateValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_rollouts_controller').default['store']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_rollouts_controller').default['store']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'agentUpdates.pauseRollout': {
+    methods: ["POST"]
+    pattern: '/api/v1/agent-updates/rollouts/:id/pause'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_rollouts_controller').default['pause']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_rollouts_controller').default['pause']>>>
+    }
+  }
+  'agentUpdates.resumeRollout': {
+    methods: ["POST"]
+    pattern: '/api/v1/agent-updates/rollouts/:id/resume'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/agent_updates').rolloutResumeValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/agent_updates').rolloutResumeValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_rollouts_controller').default['resume']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_rollouts_controller').default['resume']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'agentUpdates.cancelRollout': {
+    methods: ["POST"]
+    pattern: '/api/v1/agent-updates/rollouts/:id/cancel'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_rollouts_controller').default['cancel']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_rollouts_controller').default['cancel']>>>
+    }
+  }
+  'settings.agentUpdates': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/settings/agent-updates'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['settings']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['settings']>>>
+    }
+  }
+  'settings.updateAgentUpdates': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/settings/agent-updates'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/agent_updates').agentUpdateSettingsValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/agent_updates').agentUpdateSettingsValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['updateSettings']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/agent_updates_controller').default['updateSettings']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'setup.status': {
@@ -3683,12 +4487,12 @@ export interface Registry {
     methods: ["POST"]
     pattern: '/api/v1/gateways/:id/applies/:applyId/confirm'
     types: {
-      body: {}
+      body: ExtractBody<InferInput<(typeof import('#validators/gateway_sync').applyConfirmValidator)>>
       paramsTuple: [ParamValue, ParamValue]
       params: { id: ParamValue; applyId: ParamValue }
-      query: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateway_sync').applyConfirmValidator)>>
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateways_controller').default['confirmApply']>>>
-      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateways_controller').default['confirmApply']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateways_controller').default['confirmApply']>>> | { status: 422; response: { errors: SimpleError[] } }
     }
   }
   'gateways.revertApply': {
@@ -4073,6 +4877,642 @@ export interface Registry {
       query: {}
       response: ExtractResponse<Awaited<ReturnType<import('#controllers/gateway_firewall_controller').default['deleteRule']>>>
       errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/gateway_firewall_controller').default['deleteRule']>>>
+    }
+  }
+  'wifiConfig.overview': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/config'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['overview']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['overview']>>>
+    }
+  }
+  'wifiConfig.aps.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/config/aps'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['index']>>>
+    }
+  }
+  'wifiConfig.aps.show': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/config/aps/:apId'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['show']>>>
+    }
+  }
+  'wifiConfig.aps.health': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/config/aps/:apId/health'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['health']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['health']>>>
+    }
+  }
+  'wifiConfig.aps.syncStatus': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/config/aps/:apId/sync-status'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['syncStatus']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['syncStatus']>>>
+    }
+  }
+  'wifiConfig.aps.sections': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/config/aps/:apId/sections'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/gateways').sectionFilterValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['sections']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['sections']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.aps.section': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/config/aps/:apId/sections/:perchId'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { apId: ParamValue; perchId: ParamValue }
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/wifi_config').wifiPagingValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['section']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['section']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.aps.draft': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/config/aps/:apId/draft'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['draft']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['draft']>>>
+    }
+  }
+  'wifiConfig.aps.applies': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/config/aps/:apId/applies'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/wifi_config').wifiPagingValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['applies']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['applies']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.aps.apply': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/config/aps/:apId/applies/:applyId'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { apId: ParamValue; applyId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['apply']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['apply']>>>
+    }
+  }
+  'wifiConfig.aps.revisions': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/config/aps/:apId/revisions'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/wifi_config').wifiPagingValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['revisions']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['revisions']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.aps.revision': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/config/aps/:apId/revisions/:number'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { apId: ParamValue; number: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['revision']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['revision']>>>
+    }
+  }
+  'wifiConfig.aps.events': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/config/aps/:apId/events'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/wifi_config').wifiPagingValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['events']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['events']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.aps.pairing': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/config/aps/:apId/pairing'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['pairing']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['pairing']>>>
+    }
+  }
+  'wifiConfig.aps.update': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/wifi/config/aps/:apId'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/wifi_config').apPatchValidator)>>
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/wifi_config').apPatchValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['update']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.aps.refresh': {
+    methods: ["POST"]
+    pattern: '/api/v1/wifi/config/aps/:apId/refresh'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['refresh']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['refresh']>>>
+    }
+  }
+  'wifiConfig.aps.rejoin': {
+    methods: ["POST"]
+    pattern: '/api/v1/wifi/config/aps/:apId/rejoin'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/wifi_config').rejoinValidator)>>
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/wifi_config').rejoinValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['rejoin']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['rejoin']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.aps.dismissRejoin': {
+    methods: ["POST"]
+    pattern: '/api/v1/wifi/config/aps/:apId/rejoin/dismiss'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['dismissRejoin']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['dismissRejoin']>>>
+    }
+  }
+  'wifiConfig.aps.updateSection': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/wifi/config/aps/:apId/sections/:perchId'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/gateways').sectionScopeValidator)>>
+      paramsTuple: [ParamValue, ParamValue]
+      params: { apId: ParamValue; perchId: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateways').sectionScopeValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['updateSection']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['updateSection']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.aps.resolve': {
+    methods: ["POST"]
+    pattern: '/api/v1/wifi/config/aps/:apId/sections/resolve'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/gateways').sectionResolveValidator)>>
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateways').sectionResolveValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['resolve']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['resolve']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.aps.discardDraft': {
+    methods: ["DELETE"]
+    pattern: '/api/v1/wifi/config/aps/:apId/draft'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/gateways').perchIdsValidator)>>
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateways').perchIdsValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['discardDraft']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['discardDraft']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.aps.confirmApply': {
+    methods: ["POST"]
+    pattern: '/api/v1/wifi/config/aps/:apId/applies/:applyId/confirm'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { apId: ParamValue; applyId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['confirmApply']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['confirmApply']>>>
+    }
+  }
+  'wifiConfig.aps.revertApply': {
+    methods: ["POST"]
+    pattern: '/api/v1/wifi/config/aps/:apId/applies/:applyId/revert'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { apId: ParamValue; applyId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['revertApply']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['revertApply']>>>
+    }
+  }
+  'wifiConfig.aps.restoreRevision': {
+    methods: ["POST"]
+    pattern: '/api/v1/wifi/config/aps/:apId/revisions/:number/restore'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { apId: ParamValue; number: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['restoreRevision']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['restoreRevision']>>>
+    }
+  }
+  'wifiConfig.aps.acceptDrift': {
+    methods: ["POST"]
+    pattern: '/api/v1/wifi/config/aps/:apId/drift/accept'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/gateways').perchIdsValidator)>>
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateways').perchIdsValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['acceptDrift']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['acceptDrift']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.aps.revertDrift': {
+    methods: ["POST"]
+    pattern: '/api/v1/wifi/config/aps/:apId/drift/revert-now'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/gateways').perchIdsValidator)>>
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/gateways').perchIdsValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['revertDrift']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['revertDrift']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.aps.resumeEnforcement': {
+    methods: ["POST"]
+    pattern: '/api/v1/wifi/config/aps/:apId/enforcement/resume'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['resumeEnforcement']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['resumeEnforcement']>>>
+    }
+  }
+  'wifiConfig.aps.startPairing': {
+    methods: ["POST"]
+    pattern: '/api/v1/wifi/config/aps/:apId/pairing'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['pairingUnavailable']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['pairingUnavailable']>>>
+    }
+  }
+  'wifiConfig.aps.confirmPairing': {
+    methods: ["POST"]
+    pattern: '/api/v1/wifi/config/aps/:apId/pairing/confirm'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['pairingUnavailable']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['pairingUnavailable']>>>
+    }
+  }
+  'wifiConfig.aps.unpair': {
+    methods: ["DELETE"]
+    pattern: '/api/v1/wifi/config/aps/:apId/pairing'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { apId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['pairingUnavailable']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_aps_controller').default['pairingUnavailable']>>>
+    }
+  }
+  'wifiConfig.aps.updateRadio': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/wifi/config/aps/:apId/radios/:section'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/wifi_config').radioPatchValidator)>>
+      paramsTuple: [ParamValue, ParamValue]
+      params: { apId: ParamValue; section: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/wifi_config').radioPatchValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_radios_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_radios_controller').default['update']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.radios.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/radios'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_radios_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_radios_controller').default['index']>>>
+    }
+  }
+  'wifiConfig.networks.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/networks'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_networks_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_networks_controller').default['index']>>>
+    }
+  }
+  'wifiConfig.networks.show': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/networks/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_networks_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_networks_controller').default['show']>>>
+    }
+  }
+  'wifiConfig.networks.store': {
+    methods: ["POST"]
+    pattern: '/api/v1/wifi/networks'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/wifi_config').networkCreateValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/wifi_config').networkCreateValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_networks_controller').default['store']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_networks_controller').default['store']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.networks.update': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/wifi/networks/:id'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/wifi_config').networkPatchValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/wifi_config').networkPatchValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_networks_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_networks_controller').default['update']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.networks.destroy': {
+    methods: ["DELETE"]
+    pattern: '/api/v1/wifi/networks/:id'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_networks_controller').default['destroy']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_networks_controller').default['destroy']>>>
+    }
+  }
+  'wifiConfig.networks.setPassphrase': {
+    methods: ["POST"]
+    pattern: '/api/v1/wifi/networks/:id/passphrase'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/wifi_config').passphraseValidator)>>
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/wifi_config').passphraseValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_networks_controller').default['setPassphrase']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_networks_controller').default['setPassphrase']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.networks.revealPassphrase': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/networks/:id/passphrase'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { id: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_networks_controller').default['revealPassphrase']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_networks_controller').default['revealPassphrase']>>>
+    }
+  }
+  'wifiConfig.networks.putAp': {
+    methods: ["PUT"]
+    pattern: '/api/v1/wifi/networks/:id/aps/:apId'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/wifi_config').networkApValidator)>>
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; apId: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/wifi_config').networkApValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_networks_controller').default['putAp']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_networks_controller').default['putAp']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.networks.resetAp': {
+    methods: ["DELETE"]
+    pattern: '/api/v1/wifi/networks/:id/aps/:apId/overrides'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue, ParamValue]
+      params: { id: ParamValue; apId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_networks_controller').default['resetAp']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_networks_controller').default['resetAp']>>>
+    }
+  }
+  'wifiConfig.divergences.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/divergences'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/wifi_config').divergenceFilterValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_divergences_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_divergences_controller').default['index']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.adoption.show': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/adoption'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_adoption_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_adoption_controller').default['show']>>>
+    }
+  }
+  'wifiConfig.divergences.resolve': {
+    methods: ["POST"]
+    pattern: '/api/v1/wifi/divergences/resolve'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/wifi_config').divergenceResolveValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/wifi_config').divergenceResolveValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_divergences_controller').default['resolve']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_divergences_controller').default['resolve']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.adoption.accept': {
+    methods: ["POST"]
+    pattern: '/api/v1/wifi/adoption'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/wifi_config').adoptionValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/wifi_config').adoptionValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_adoption_controller').default['accept']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_adoption_controller').default['accept']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.rollouts.index': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/rollouts'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: ExtractQueryForGet<InferInput<(typeof import('#validators/wifi_config').wifiPagingValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_rollouts_controller').default['index']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_rollouts_controller').default['index']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.rollouts.current': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/rollouts/current'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_rollouts_controller').default['current']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_rollouts_controller').default['current']>>>
+    }
+  }
+  'wifiConfig.rollouts.show': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/wifi/rollouts/:rolloutId'
+    types: {
+      body: {}
+      paramsTuple: [ParamValue]
+      params: { rolloutId: ParamValue }
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_rollouts_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_rollouts_controller').default['show']>>>
+    }
+  }
+  'wifiConfig.rollouts.preview': {
+    methods: ["POST"]
+    pattern: '/api/v1/wifi/rollouts/preview'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/wifi_config').rolloutPreviewValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/wifi_config').rolloutPreviewValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_rollouts_controller').default['preview']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_rollouts_controller').default['preview']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.rollouts.store': {
+    methods: ["POST"]
+    pattern: '/api/v1/wifi/rollouts'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/wifi_config').rolloutCreateValidator)>>
+      paramsTuple: []
+      params: {}
+      query: ExtractQuery<InferInput<(typeof import('#validators/wifi_config').rolloutCreateValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_rollouts_controller').default['store']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_rollouts_controller').default['store']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfig.rollouts.action': {
+    methods: ["POST"]
+    pattern: '/api/v1/wifi/rollouts/:rolloutId/:action'
+    types: {
+      body: ExtractBody<InferInput<(typeof import('#validators/wifi_config').rolloutActionValidator)>>
+      paramsTuple: [ParamValue, ParamValue]
+      params: { rolloutId: ParamValue; action: ParamValue }
+      query: ExtractQuery<InferInput<(typeof import('#validators/wifi_config').rolloutActionValidator)>>
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_rollouts_controller').default['action']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_rollouts_controller').default['action']>>> | { status: 422; response: { errors: SimpleError[] } }
+    }
+  }
+  'wifiConfigSettings.show': {
+    methods: ["GET","HEAD"]
+    pattern: '/api/v1/settings/wifi-config'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_settings_controller').default['show']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_settings_controller').default['show']>>>
+    }
+  }
+  'wifiConfigSettings.update': {
+    methods: ["PATCH"]
+    pattern: '/api/v1/settings/wifi-config'
+    types: {
+      body: {}
+      paramsTuple: []
+      params: {}
+      query: {}
+      response: ExtractResponse<Awaited<ReturnType<import('#controllers/wifi_config_settings_controller').default['update']>>>
+      errorResponse: ExtractErrorResponse<Awaited<ReturnType<import('#controllers/wifi_config_settings_controller').default['update']>>>
     }
   }
 }

@@ -2,6 +2,51 @@
 import type { routes } from './index.ts'
 
 export interface ApiDefinition {
+  gatewaySync: {
+    wan: typeof routes['gatewaySync.wan']
+    wanHistory: typeof routes['gatewaySync.wanHistory']
+    wanOrder: typeof routes['gatewaySync.wanOrder']
+    wanCreate: typeof routes['gatewaySync.wanCreate']
+    wanAliasUpdate: typeof routes['gatewaySync.wanAliasUpdate']
+    wanAliasDelete: typeof routes['gatewaySync.wanAliasDelete']
+    wanShow: typeof routes['gatewaySync.wanShow']
+    wanUpdate: typeof routes['gatewaySync.wanUpdate']
+    wanDelete: typeof routes['gatewaySync.wanDelete']
+    wanAliasCreate: typeof routes['gatewaySync.wanAliasCreate']
+    wireguardConfig: typeof routes['gatewaySync.wireguardConfig']
+    wireguardInterfaceCreate: typeof routes['gatewaySync.wireguardInterfaceCreate']
+    wireguardInterfaceUpdate: typeof routes['gatewaySync.wireguardInterfaceUpdate']
+    wireguardInterfaceDelete: typeof routes['gatewaySync.wireguardInterfaceDelete']
+    wireguardRotateKey: typeof routes['gatewaySync.wireguardRotateKey']
+    wireguardPeerCreate: typeof routes['gatewaySync.wireguardPeerCreate']
+    wireguardPeerUpdate: typeof routes['gatewaySync.wireguardPeerUpdate']
+    wireguardPeerDelete: typeof routes['gatewaySync.wireguardPeerDelete']
+    ipv6: typeof routes['gatewaySync.ipv6']
+    ipv6Update: typeof routes['gatewaySync.ipv6Update']
+    ipv6LanUpdate: typeof routes['gatewaySync.ipv6LanUpdate']
+    ambiguities: typeof routes['gatewaySync.ambiguities']
+    ambiguitiesResolve: typeof routes['gatewaySync.ambiguitiesResolve']
+    firewallDefaults: typeof routes['gatewaySync.firewallDefaults']
+    firewallDefaultsUpdate: typeof routes['gatewaySync.firewallDefaultsUpdate']
+    upnpConfig: typeof routes['gatewaySync.upnpConfig']
+    upnpConfigUpdate: typeof routes['gatewaySync.upnpConfigUpdate']
+    upnpAclOrder: typeof routes['gatewaySync.upnpAclOrder']
+    upnpAclCreate: typeof routes['gatewaySync.upnpAclCreate']
+    upnpAclUpdate: typeof routes['gatewaySync.upnpAclUpdate']
+    upnpAclDelete: typeof routes['gatewaySync.upnpAclDelete']
+    upnpMappingsDelete: typeof routes['gatewaySync.upnpMappingsDelete']
+    upnpDeviceBlock: typeof routes['gatewaySync.upnpDeviceBlock']
+    ddns: typeof routes['gatewaySync.ddns']
+    ddnsServiceCreate: typeof routes['gatewaySync.ddnsServiceCreate']
+    ddnsServiceUpdate: typeof routes['gatewaySync.ddnsServiceUpdate']
+    ddnsServiceDelete: typeof routes['gatewaySync.ddnsServiceDelete']
+    ddnsUpdateNow: typeof routes['gatewaySync.ddnsUpdateNow']
+    multiwan: typeof routes['gatewaySync.multiwan']
+  }
+  gatewaySyncSettings: {
+    show: typeof routes['gatewaySyncSettings.show']
+    update: typeof routes['gatewaySyncSettings.update']
+  }
   alerts: {
     push: {
       renew: typeof routes['alerts.push.renew']
@@ -52,6 +97,8 @@ export interface ApiDefinition {
         rotateSecret: typeof routes['settings.alerts.webhooks.rotateSecret']
       }
     }
+    agentUpdates: typeof routes['settings.agentUpdates']
+    updateAgentUpdates: typeof routes['settings.updateAgentUpdates']
     settings: {
       hostnameEnrichment: typeof routes['settings.settings.hostname_enrichment']
       updateHostnameEnrichment: typeof routes['settings.settings.update_hostname_enrichment']
@@ -108,6 +155,32 @@ export interface ApiDefinition {
       updateRole: typeof routes['settings.users.updateRole']
       destroy: typeof routes['settings.users.destroy']
     }
+  }
+  agentUpdates: {
+    download: typeof routes['agentUpdates.download']
+    fleet: typeof routes['agentUpdates.fleet']
+    jobs: typeof routes['agentUpdates.jobs']
+    job: typeof routes['agentUpdates.job']
+    events: typeof routes['agentUpdates.events']
+    releases: typeof routes['agentUpdates.releases']
+    release: typeof routes['agentUpdates.release']
+    rollouts: typeof routes['agentUpdates.rollouts']
+    rollout: typeof routes['agentUpdates.rollout']
+    updateDevice: typeof routes['agentUpdates.updateDevice']
+    refreshDevice: typeof routes['agentUpdates.refreshDevice']
+    preflightDevice: typeof routes['agentUpdates.preflightDevice']
+    updateDeviceVersion: typeof routes['agentUpdates.updateDeviceVersion']
+    rollbackDevice: typeof routes['agentUpdates.rollbackDevice']
+    abortJob: typeof routes['agentUpdates.abortJob']
+    checkReleases: typeof routes['agentUpdates.checkReleases']
+    storeRelease: typeof routes['agentUpdates.storeRelease']
+    uploadReleaseFile: typeof routes['agentUpdates.uploadReleaseFile']
+    updateRelease: typeof routes['agentUpdates.updateRelease']
+    destroyRelease: typeof routes['agentUpdates.destroyRelease']
+    storeRollout: typeof routes['agentUpdates.storeRollout']
+    pauseRollout: typeof routes['agentUpdates.pauseRollout']
+    resumeRollout: typeof routes['agentUpdates.resumeRollout']
+    cancelRollout: typeof routes['agentUpdates.cancelRollout']
   }
   setup: {
     status: typeof routes['setup.status']
@@ -471,5 +544,74 @@ export interface ApiDefinition {
     createFirewallRule: typeof routes['gateways.createFirewallRule']
     updateFirewallRule: typeof routes['gateways.updateFirewallRule']
     deleteFirewallRule: typeof routes['gateways.deleteFirewallRule']
+  }
+  wifiConfig: {
+    overview: typeof routes['wifiConfig.overview']
+    aps: {
+      index: typeof routes['wifiConfig.aps.index']
+      show: typeof routes['wifiConfig.aps.show']
+      health: typeof routes['wifiConfig.aps.health']
+      syncStatus: typeof routes['wifiConfig.aps.syncStatus']
+      sections: typeof routes['wifiConfig.aps.sections']
+      section: typeof routes['wifiConfig.aps.section']
+      draft: typeof routes['wifiConfig.aps.draft']
+      applies: typeof routes['wifiConfig.aps.applies']
+      apply: typeof routes['wifiConfig.aps.apply']
+      revisions: typeof routes['wifiConfig.aps.revisions']
+      revision: typeof routes['wifiConfig.aps.revision']
+      events: typeof routes['wifiConfig.aps.events']
+      pairing: typeof routes['wifiConfig.aps.pairing']
+      update: typeof routes['wifiConfig.aps.update']
+      refresh: typeof routes['wifiConfig.aps.refresh']
+      rejoin: typeof routes['wifiConfig.aps.rejoin']
+      dismissRejoin: typeof routes['wifiConfig.aps.dismissRejoin']
+      updateSection: typeof routes['wifiConfig.aps.updateSection']
+      resolve: typeof routes['wifiConfig.aps.resolve']
+      discardDraft: typeof routes['wifiConfig.aps.discardDraft']
+      confirmApply: typeof routes['wifiConfig.aps.confirmApply']
+      revertApply: typeof routes['wifiConfig.aps.revertApply']
+      restoreRevision: typeof routes['wifiConfig.aps.restoreRevision']
+      acceptDrift: typeof routes['wifiConfig.aps.acceptDrift']
+      revertDrift: typeof routes['wifiConfig.aps.revertDrift']
+      resumeEnforcement: typeof routes['wifiConfig.aps.resumeEnforcement']
+      startPairing: typeof routes['wifiConfig.aps.startPairing']
+      confirmPairing: typeof routes['wifiConfig.aps.confirmPairing']
+      unpair: typeof routes['wifiConfig.aps.unpair']
+      updateRadio: typeof routes['wifiConfig.aps.updateRadio']
+    }
+    radios: {
+      index: typeof routes['wifiConfig.radios.index']
+    }
+    networks: {
+      index: typeof routes['wifiConfig.networks.index']
+      show: typeof routes['wifiConfig.networks.show']
+      store: typeof routes['wifiConfig.networks.store']
+      update: typeof routes['wifiConfig.networks.update']
+      destroy: typeof routes['wifiConfig.networks.destroy']
+      setPassphrase: typeof routes['wifiConfig.networks.setPassphrase']
+      revealPassphrase: typeof routes['wifiConfig.networks.revealPassphrase']
+      putAp: typeof routes['wifiConfig.networks.putAp']
+      resetAp: typeof routes['wifiConfig.networks.resetAp']
+    }
+    divergences: {
+      index: typeof routes['wifiConfig.divergences.index']
+      resolve: typeof routes['wifiConfig.divergences.resolve']
+    }
+    adoption: {
+      show: typeof routes['wifiConfig.adoption.show']
+      accept: typeof routes['wifiConfig.adoption.accept']
+    }
+    rollouts: {
+      index: typeof routes['wifiConfig.rollouts.index']
+      current: typeof routes['wifiConfig.rollouts.current']
+      show: typeof routes['wifiConfig.rollouts.show']
+      preview: typeof routes['wifiConfig.rollouts.preview']
+      store: typeof routes['wifiConfig.rollouts.store']
+      action: typeof routes['wifiConfig.rollouts.action']
+    }
+  }
+  wifiConfigSettings: {
+    show: typeof routes['wifiConfigSettings.show']
+    update: typeof routes['wifiConfigSettings.update']
   }
 }

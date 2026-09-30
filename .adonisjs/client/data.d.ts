@@ -17,6 +17,7 @@ import type QosViewTransformer from '#transformers/qos_view_transformer'
 import type QosWanQueueTransformer from '#transformers/qos_wan_queue_transformer'
 import type UserTransformer from '#transformers/user_transformer'
 import type WifiAccessPointTransformer from '#transformers/wifi_access_point_transformer'
+import type WifiConfigTransformer from '#transformers/wifi_config'
 
 export namespace Data {
   export type AlertDeliveries = InferData<AlertDeliveriesTransformer>
@@ -66,5 +67,9 @@ export namespace Data {
   export type WifiAccessPoint = InferData<WifiAccessPointTransformer>
   export namespace WifiAccessPoint {
     export type Variants = InferVariants<WifiAccessPointTransformer>
+  }
+  export type WifiConfig = InferData<WifiConfigTransformer>
+  export namespace WifiConfig {
+    export type Variants = InferVariants<WifiConfigTransformer>
   }
 }
