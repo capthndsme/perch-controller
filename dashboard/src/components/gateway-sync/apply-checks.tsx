@@ -104,6 +104,18 @@ export function FailedChecksList({ items }: { items: CheckItem[] }) {
   )
 }
 
+/** The checks a planned job will run (the draft's `jobs[].checks`, all pending), for review dialogs. */
+export function PlannedChecksList({ items }: { items: CheckItem[] }) {
+  if (items.length === 0) return <p className="text-xs text-muted-foreground">No checks: the change cannot cut the internet.</p>
+  return (
+    <ul className="space-y-1 text-xs" data-testid="planned-checks">
+      {items.map((item) => (
+        <CheckRow key={item.id} item={item} />
+      ))}
+    </ul>
+  )
+}
+
 /**
  * "Keep anyway…": keeps a change whose checks cannot pass (an ISP outage
  * during an unrelated edit), after the gateway's name is typed. Audited.

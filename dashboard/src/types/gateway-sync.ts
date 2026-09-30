@@ -631,6 +631,8 @@ export type DdnsOverview = {
   installPackages: string[]
   providers: string[]
   secureTransport: boolean
+  /** The gateway agent runs "Update now" (feature `ddns.update`). */
+  canUpdateNow: boolean
   services: DdnsServiceView[]
 }
 
