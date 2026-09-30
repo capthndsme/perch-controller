@@ -22,6 +22,7 @@ import type {
   SectionContent,
   SectionStatus,
   UciOptions,
+  UciSection,
   UciValue,
 } from '#services/gateway_config/types'
 
@@ -36,6 +37,7 @@ export type {
   SectionContent,
   SectionStatus,
   UciOptions,
+  UciSection,
   UciValue,
 }
 
@@ -99,7 +101,7 @@ export interface ApGroupsState {
 }
 
 /** The open job the AP reports (`system.info.wifiConfig.apply`). */
-export interface ApReportedApply {
+export type ApReportedApply = {
   state: 'idle' | 'applying' | 'pending_confirm' | 'rolling_back'
   applyId?: string
   kind?: ApApplyKind
@@ -220,7 +222,8 @@ export interface ApCapabilities {
   transportOk?: boolean
   allowInsecure?: boolean
   confirmMaxSeconds?: number
-  backend?: 'ubus' | 'file' | null
+  /** How the plane writes (the kit's names; the gateway core's type, so AP capabilities pass as `ValidationCtx.capabilities`). */
+  backend?: 'ubus' | 'uci-cli' | null
   guard?: ApGuardState
   openwrt?: { release?: string; revision?: string; target?: string; arch?: string; board?: string }
   packageManager?: 'opkg' | 'apk'
@@ -243,7 +246,7 @@ export interface ApCapabilities {
   radios?: ApRadioCaps[]
   trunk?: ApTrunk | null
   networks?: Array<{ name: string; device: string | null; proto: string | null; up: boolean }>
-  management?: ApManagementPath | null
+  management?: ApManagementPath
   hashes?: Record<string, string>
   uncommitted?: string[]
   luciPending?: boolean
@@ -275,6 +278,33 @@ export interface WifiHealth {
   }>
   pskGuard?: string
   problems: Array<{ code: string; section: string | null; message: string }>
+}
+
+/**
+ * A section as `wifi.config.read` returns it (protocol.md 3.2): the
+ * gateway's read shape plus `owner: "groups"` on sections the device-groups
+ * engine created (kept out of the plane until the fold).
+ */
+export interface ApReadSection extends UciSection {
+  owner?: 'groups'
+  hash?: string
+}
+
+export interface ApReadConfig {
+  name: string
+  hash: string
+  sections: ApReadSection[]
+}
+
+/** `wifi.config.read` result (protocol.md 3.2). */
+export interface ApConfigRead {
+  readAt: string
+  configs: ApReadConfig[]
+  ledger: LedgerEntry[]
+  uncommitted: string[]
+  luciPending: boolean
+  /** Interfaces whose `dynamic_vlan` the device-groups engine set. */
+  groupsOwned?: { dynamicVlan: string[] }
 }
 
 /** `ap_configs.observed_state`: the last read's context. */
