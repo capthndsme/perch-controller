@@ -56,6 +56,28 @@ export const plugins: Config['plugins'] = [
  * The setup functions are executed before all the tests
  * The teardown functions are executed after all the tests
  */
+/**
+ * `testUtils.db().migrate()` without the migration lock. Lucid's lock is a
+ * MariaDB advisory lock (`GET_LOCK('1', 0)`), which is server-wide and fails
+ * at once: two test runs on different `_test` databases of one server refuse
+ * each other, and a run could make the live controller's own migrations fail
+ * on deploy. The `_test` database belongs to this run alone, so no lock.
+ */
+async function migrateTestDatabase() {
+  const ace = await app.container.make('ace')
+  const run = async (name: string) => {
+    const command = await ace.exec(name, [
+      '--compact-output',
+      '--no-schema-generate',
+      '--disable-locks',
+    ])
+    if (!command.exitCode) return
+    throw command.error ?? new Error(`"${name}" failed`)
+  }
+  await run('migration:run')
+  return () => run('migration:reset')
+}
+
 export const runnerHooks: Required<Pick<Config, 'setup' | 'teardown'>> = {
   /**
    * Migrate the test database before the suite runs and roll back at
@@ -64,7 +86,7 @@ export const runnerHooks: Required<Pick<Config, 'setup' | 'teardown'>> = {
    * is always brought to the latest schema before tests execute and
    * left clean afterwards.
    */
-  setup: [() => testUtils.db().migrate()],
+  setup: [migrateTestDatabase],
   teardown: [],
 }
 
