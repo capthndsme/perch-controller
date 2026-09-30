@@ -2,7 +2,13 @@ import { WifiRolloutStepSchema } from '#database/schema'
 import { jsonColumn } from '#models/json_column'
 import type { RolloutStepState } from '#services/wifi_config/types'
 
-export type RolloutStepOutcome = { reason?: string; error?: string; message?: string }
+export type RolloutStepOutcome = {
+  reason?: string
+  error?: string
+  message?: string
+  /** The AP's head revision when the step started ("Roll back completed APs" restores it). */
+  revisionBefore?: number
+}
 
 /** One AP's step of a rollout (docs/design/wifi controller.md section 6.4). */
 export default class WifiRolloutStep extends WifiRolloutStepSchema {
