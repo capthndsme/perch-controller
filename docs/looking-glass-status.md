@@ -2836,3 +2836,33 @@ tsc, eslint and build pass.
 
 Needs a real phone: flick thresholds, the momentum feel, the cost of two blurred bars on mid-range Android,
 iOS pull-down hand-off inside sheets, and dot speeds at 120 Hz.
+
+## 2026-09-30 — Gateway sync Phase A, controller (G-CTL, branch `gwsync/build`)
+
+Design: workspace `docs/design/gateway-sync/` (local), build plan `docs/design/BUILD-PLAN-2026-09-30.md`. Controller
+only, no migration, live-safe with today's collector.
+
+- **B8 skeleton.** `start/routes/gateway_sync.ts` (one import line in `start/routes.ts`): every route of the design,
+  admin-only; routes of packages not built answer 501 `not_built` with the package id. The registry takes `wan`,
+  `wireguard`, `network_globals`, `firewall_defaults`, `upnp`, `ddns` in claim order; the not-built ones claim
+  nothing. `mwan3` is not registered (decision 12 stands).
+- **B0 core (Phase A parts).** Wildcard types (`wireguard_*`). Claims are gated on the stored capabilities
+  (`requires`); a synced row of a domain the agent can no longer serve follows the router, is never drift and is
+  refused by the planner (`gateway_capability_missing`). Re-homing: a settled synced row another domain claims now
+  moves in place (`section_rehomed`); unclaimed rows are left alone (domains write sections they would not import,
+  e.g. device-group ipsets). Excluded rows leave the identity-key census; an ambiguous member can be excluded.
+  The planner adopts an unledgered section before deleting it (the agent refuses `not_owned`; the scripted gateway
+  now enforces this too), and the ledger model drops a deleted section's entry. `sqm`/`perch_qos` `requires`
+  accept a config listed in `managed_config` (the live perch-qos has no package record). Applies carry
+  `origin.domains`.
+- **B3.** `GET /gateways/:id/ambiguities` + `POST …/ambiguities/resolve` (keep / rename / delete / exclude; one
+  job, anonymous members adopted as `perch_<id>`); `firewall_defaults` domain + `GET/PATCH …/firewall/defaults`
+  (protected job; REJECT/DROP on input/output needs the gateway's name); `dns_records` takes MAC-less hosts
+  (type `host`, `publishDns` on PATCH).
+- **B7a.** `GET /gateways/:id/multiwan`: mwan3 explained as a profile (the live shape reads `balance` with a sticky
+  rule); `profile` is null until the collector joins `mwan3` read-only.
+
+Dry run on the live rows (offline, read-only dump): the first read promotes `dhcp.cfg08fe63` (DNS host) and the
+firewall `defaults` with B = R = C, nothing written, unmodeled 19 → 17; `globe_force` stays in `networks` (the
+side rule is B1). Resolving the four redirects with the suggested names plans one firewall job: four adopts renamed
+`perch_<id>` + four puts, no order op, not protected.

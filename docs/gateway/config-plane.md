@@ -629,6 +629,27 @@ an alias whose name is taken by another alias or an address record, an alias poi
 Reserved names are refused by the REST layer (10.3), never by validation, so an odd record
 imported from the router never blocks other applies.
 
+### 7.1 Gateway sync additions to the core (Phase A, 2026-09-30)
+
+- **Wildcard types.** A `types` entry ending in `*` matches by prefix (`wireguard_*`); list semantics may use the
+  same pattern (`'wireguard_*.allowed_ips'`), an exact key wins.
+- **Capability-gated claims.** `registry.claim(section, all, capabilities?)` skips a domain whose `requires`
+  names a reason; `reconcileRead` passes the gateway's stored capabilities (none: nothing gated). A synced row of a
+  domain the agent can no longer serve follows the router (B := R, never drift, drafts kept where they merge),
+  the planner blocks it (`capability_missing`; `POST …/applies` answers 409 `gateway_capability_missing`) and the
+  sync status carries a `feature` blocker `capability_missing`. `sqm` and `perch_qos` count a config listed in
+  `managed_config` as installed.
+- **Re-homing.** A settled synced row (R = B = C, no conflict, not in flight) that another domain claims now changes
+  `domain` and `ownership` in place (`section_rehomed`); an unsettled one waits (`rehome_deferred`, logged once per
+  wait); the next job touching the config re-links its ledger entry's domain. A row no domain claims is left alone.
+- **Ambiguity.** Excluded rows leave the identity-key census, so excluding one member of a pair promotes the other
+  on the next read; `PATCH …/sections/:perchId {scope:'excluded'}` accepts an ambiguous or duplicate member
+  (including it again makes it a mirror). `promoteForResolution` turns ambiguous mirrors into synced rows with
+  B = R = C for the resolve endpoint (`POST /gateways/:id/ambiguities/resolve`).
+- **Deletes of unledgered sections** are planned as an adopt (renamed `perch_<id>` when anonymous) followed by the
+  delete in the same job: the agent deletes owned sections only.
+- `GatewayApply` carries `origin: { domains }` (the domains its changes touch).
+
 ## 9. Storage
 
 Migrations `1779000000048`–`051`; the firewall's `090`–`092` (firewall.md section 8:
