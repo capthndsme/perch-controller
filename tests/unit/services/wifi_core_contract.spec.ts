@@ -21,10 +21,12 @@ import {
   DEFAULT_RULES,
   diffEntry,
   diffOptions,
+  entriesEqual,
   entriesOf,
   itemsOf,
   ownedProjection,
   valueKey,
+  type Entry,
   type ListSemantics,
   type MergeRules,
 } from '#services/gateway_config/canonical'
@@ -160,6 +162,7 @@ import {
   type ApplyState,
   type ConfigDiffEntry,
   type ConfirmMode,
+  type GatewayCapabilities,
   type GatewayEnforcement,
   type GatewayMode,
   type GatewaySyncState,
@@ -185,6 +188,9 @@ import {
   type WireValue,
 } from '#services/gateway_config/types'
 import type { RevisionSnapshotEntry } from '#models/gateway_revision'
+import type { GatewayPairing } from '#models/gateway'
+import type { GatewayApplyOutcome } from '#models/gateway_apply'
+import type { ApCapabilities } from '#services/wifi_config/types'
 import { test } from '@japa/runner'
 
 // ── compile-time pins: the call shapes the Wi-Fi plane uses ──────────────
@@ -214,6 +220,13 @@ const CORE_FUNCTIONS: {
     rules?: MergeRules
   ) => ConfigDiffEntry['options']
   entriesOf: (content: SectionContent | null) => Map<string, unknown>
+  entriesEqual: (
+    type: string,
+    option: string,
+    a: Entry | undefined,
+    b: Entry | undefined,
+    rules: MergeRules
+  ) => boolean
   itemsOf: (value: UciValue | undefined | null) => string[]
   ownedProjection: (
     content: SectionContent | null,
@@ -410,6 +423,7 @@ const CORE_FUNCTIONS: {
   diffEntry,
   diffOptions,
   entriesOf,
+  entriesEqual,
   itemsOf,
   ownedProjection,
   valueKey,
@@ -521,7 +535,12 @@ export type WifiCoreTypes = [
   UciConfig,
   UciConfigSet,
   PairingSubject,
+  GatewayPairing,
+  GatewayApplyOutcome,
 ]
+
+/** The AP's capabilities travel as the core's `ValidationCtx.capabilities`. */
+export const AP_CAPABILITIES_FIT: GatewayCapabilities | null = null as ApCapabilities | null
 
 // ── sample inputs: every field the Wi-Fi plane sets ──────────────────────
 
