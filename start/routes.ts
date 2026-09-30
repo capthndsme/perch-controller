@@ -14,6 +14,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import { middleware } from '#start/kernel'
 import router from '@adonisjs/core/services/router'
 import { controllers } from '#generated/controllers'
+import { registerWifiRoutes } from '#start/routes/wifi'
 
 /**
  * The setup controller isn't in the auto-generated `controllers` registry
@@ -989,6 +990,7 @@ router
  * the normal JSON 404. Registered last: the router matches in registration
  * order, so the wildcard must come after every API group.
  */
+registerWifiRoutes()
 const dashboardIndex = app.publicPath('index.html')
 const serveDashboard = async ({ request, response }: HttpContext) => {
   if (request.url().startsWith('/api/')) {
