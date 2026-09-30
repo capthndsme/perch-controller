@@ -94,6 +94,17 @@ export function SettingsPage() {
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
                 <div className="space-y-1">
+                  <p className="text-sm font-medium">Updates</p>
+                  <p className="text-xs text-muted-foreground">
+                    Update perch-apd and perch-collector on your devices: releases, rollouts, maintenance window.
+                  </p>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/settings/updates">Open</Link>
+                </Button>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+                <div className="space-y-1">
                   <p className="text-sm font-medium">User accounts</p>
                   <p className="text-xs text-muted-foreground">
                     Manage admin and viewer user credentials and roles.

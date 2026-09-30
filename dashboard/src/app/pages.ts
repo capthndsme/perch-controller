@@ -77,6 +77,7 @@ export const pages = {
   gatewayDns: lazyPage(() => import('@/pages/gateway-dns-page').then((m) => m.GatewayDnsPage)),
   gatewayRouting: lazyPage(() => import('@/pages/gateway-routing-page').then((m) => m.GatewayRoutingPage)),
   gatewaySystem: lazyPage(() => import('@/pages/gateway-system-page').then((m) => m.GatewaySystemPage)),
+  settingsUpdates: lazyPage(() => import('@/pages/agent-updates-page').then((m) => m.AgentUpdatesPage)),
   notFound: lazyPage(() => import('@/pages/not-found-page').then((m) => m.NotFoundPage)),
 }
 

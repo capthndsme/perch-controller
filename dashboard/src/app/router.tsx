@@ -110,6 +110,8 @@ export const router = createBrowserRouter([
           { path: 'gateway/routing', ...page('gatewayRouting') },
           { path: 'gateway/system', ...page('gatewaySystem') },
           { path: 'settings/gateway-config', ...page('settingsGatewayConfig') },
+          { path: 'settings/updates', ...page('settingsUpdates') },
+          { path: 'settings/updates/rollouts/:rolloutId', ...page('settingsUpdates') },
           { path: '*', ...page('notFound') },
         ],
       },
