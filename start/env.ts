@@ -171,4 +171,13 @@ export default await Env.create(new URL('../', import.meta.url), {
   */
   PERCH_APD_VERSION: Env.schema.string.optional(),
   PERCH_COLLECTOR_VERSION: Env.schema.string.optional(),
+
+  /*
+  |----------------------------------------------------------
+  | Data directory (the Docker image sets /data, its volume)
+  |----------------------------------------------------------
+  | Agent update artefacts live in <PERCH_DATA_DIR>/agent-artefacts
+  | (app/services/agent_updates/store.ts). Unset: tmp/agent-artefacts.
+  */
+  PERCH_DATA_DIR: Env.schema.string.optional(),
 })
