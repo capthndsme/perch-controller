@@ -1,0 +1,118 @@
+# A firewall config shaped like the live gateway's (OpenWrt 23.05, fw4), placeholders only.
+# Anonymous sections as LuCI leaves them; the loader names them cfgXX3837 like uci does.
+# Four redirects share identity keys: "GAME" twice, "WGX" and "wgx" (names compare
+# case-insensitively), the ambiguity the gateway-sync design resolves (README 2 #16-19).
+config defaults
+	option input 'ACCEPT'
+	option output 'ACCEPT'
+	option forward 'ACCEPT'
+	option synflood_protect '1'
+
+config zone
+	option name 'lan'
+	list network 'lan'
+	option input 'ACCEPT'
+	option output 'ACCEPT'
+	option forward 'ACCEPT'
+
+config zone
+	option name 'wan'
+	list network 'wan'
+	list network 'wan6'
+	option input 'REJECT'
+	option output 'ACCEPT'
+	option forward 'REJECT'
+	option masq '1'
+	option mtu_fix '1'
+
+config zone
+	option name 'wan2'
+	list network 'lan2'
+	option input 'REJECT'
+	option output 'ACCEPT'
+	option forward 'REJECT'
+	option masq '1'
+
+config forwarding
+	option src 'lan'
+	option dest 'wan'
+
+config forwarding
+	option src 'lan'
+	option dest 'wan2'
+
+config rule
+	option name 'Allow-Ping'
+	option src 'wan'
+	option proto 'icmp'
+	option icmp_type 'echo-request'
+	option family 'ipv4'
+	option target 'ACCEPT'
+
+config redirect
+	option dest 'lan'
+	option target 'DNAT'
+	option name 'NAS'
+	option src 'wan'
+	option src_dport '8443'
+	option dest_ip '192.168.1.20'
+	option dest_port '443'
+
+config redirect
+	option dest 'lan'
+	option dest_ip '192.168.1.10'
+	option dest_port '25500-25600'
+	option enabled '0'
+	option name 'GAME'
+	option src 'wan'
+	option src_dport '25500-25600'
+	option target 'DNAT'
+
+config redirect
+	option dest 'lan'
+	option dest_ip '192.168.1.10'
+	option dest_port '3389'
+	option name 'GAME'
+	option src 'wan'
+	option src_dport '45565'
+	option target 'DNAT'
+
+config redirect
+	option dest 'lan'
+	option target 'DNAT'
+	option name 'Camera'
+	option src 'wan'
+	option src_dport '8554'
+	option dest_ip '192.168.1.30'
+	option dest_port '554'
+
+config redirect
+	option dest 'lan'
+	option dest_ip '192.168.1.64'
+	option dest_port '63329'
+	option name 'WGX'
+	option src 'wan'
+	option src_dport '63329'
+	option target 'DNAT'
+
+config redirect 'dns_int'
+	option name 'Intercept-DNS'
+	option src 'lan'
+	option src_dport '53'
+	option proto 'tcp udp'
+	option dest_port '53'
+	option target 'DNAT'
+	option family 'ipv4'
+
+config redirect
+	option dest 'lan'
+	option dest_ip '192.168.1.10'
+	option dest_port '22'
+	option name 'wgx'
+	option src 'wan'
+	option src_dport '3022'
+	option target 'DNAT'
+
+config include 'miniupnpd'
+	option type 'script'
+	option path '/usr/share/miniupnpd/firewall.include'

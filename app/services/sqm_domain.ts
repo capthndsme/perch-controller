@@ -5,14 +5,15 @@ import type {
   SyncedSection,
   ValidationCtx,
 } from '#services/gateway_config/domain'
-import type {
-  GatewayCapabilities,
-  Issue,
-  SectionOwnership,
-  UciConfigSet,
-  UciOptions,
-  UciSection,
-  UciValue,
+import {
+  configAllowed,
+  type GatewayCapabilities,
+  type Issue,
+  type SectionOwnership,
+  type UciConfigSet,
+  type UciOptions,
+  type UciSection,
+  type UciValue,
 } from '#services/gateway_config/types'
 import {
   DEVICE_NAME,
@@ -83,7 +84,12 @@ export const sqmDomain = {
 
   requires(caps: GatewayCapabilities): string | null {
     const packages = caps.packages ?? {}
-    if (!('sqm-scripts' in packages)) return 'sqm-scripts is not installed'
+    // Installed, or listed in the router's `managed_config` (on the effective
+    // allowlist): the config plane gates claims on this (gateway sync
+    // domains.md 1.2), and a hand-installed package has no package record.
+    if (!('sqm-scripts' in packages) && !configAllowed(caps, SQM_CONFIG)) {
+      return 'sqm-scripts is not installed'
+    }
     return null
   },
 

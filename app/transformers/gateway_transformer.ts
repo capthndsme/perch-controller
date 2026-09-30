@@ -117,6 +117,17 @@ export function applyView(
     revision: apply.revisionNumber,
     perchIds: apply.perchIds,
     configs: apply.configs ?? [],
+    // Which domains the job writes (gateway sync: the dashboard links a
+    // pending apply back to the page that made it), from its changes.
+    origin: {
+      domains: [
+        ...new Set(
+          (apply.changes ?? [])
+            .map((c) => c.domain)
+            .filter((d): d is string => typeof d === 'string' && d.length > 0)
+        ),
+      ].sort(),
+    },
     ...(options.changes ? { changes: apply.changes ?? [] } : {}),
   }
 }

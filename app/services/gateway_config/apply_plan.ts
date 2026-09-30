@@ -27,6 +27,7 @@ import type {
   ApplyKind,
   ApplyOp,
   ConfigDiffEntry,
+  GatewayCapabilities,
   LedgerChange,
   LedgerEntry,
   ManagementPath,
@@ -59,7 +60,13 @@ import type {
  * hashes change, so the caller re-plans for the next.
  */
 
-export type BlockReason = 'conflict' | 'not_synced' | 'excluded_config' | 'no_drift'
+export type BlockReason =
+  | 'conflict'
+  | 'not_synced'
+  | 'excluded_config'
+  | 'no_drift'
+  /** Its domain needs more than the agent announces (gateway sync domains.md 1.2). */
+  | 'capability_missing'
 
 export interface PlannedJob {
   kind: ApplyKind
@@ -83,7 +90,14 @@ export interface PlannedJob {
 
 export interface ApplyPlan {
   jobs: PlannedJob[]
-  blocked: Array<{ perchId: string; config: string; section: string; reason: BlockReason }>
+  blocked: Array<{
+    perchId: string
+    config: string
+    section: string
+    reason: BlockReason
+    /** `capability_missing`: what the domain's `requires` says is missing. */
+    detail?: string
+  }>
 }
 
 export interface PlanApplyInput {
@@ -110,6 +124,12 @@ export interface PlanApplyInput {
    * conflict) only places created members.
    */
   orders?: PlannedOrder[]
+  /**
+   * The gateway's stored capabilities (gateway sync domains.md 1.2): sections
+   * of a domain whose `requires` names a reason are never planned (blocked
+   * `capability_missing`). Absent or null: nothing is gated.
+   */
+  capabilities?: GatewayCapabilities | null
 }
 
 export interface PlannedOrder {
@@ -138,6 +158,7 @@ export function planApply(input: PlanApplyInput): ApplyPlan {
   const ledgerByPerch = new Map(input.ledger.map((e) => [e.perchId, e]))
   const wanted = input.perchIds ? new Set(input.perchIds) : null
   const works: SectionWork[] = []
+  const unavailable = input.registry?.unavailable(input.capabilities) ?? new Map<string, string>()
 
   for (const state of input.sections) {
     if (wanted && !wanted.has(state.perchId)) continue
@@ -152,6 +173,11 @@ export function planApply(input: PlanApplyInput): ApplyPlan {
     }
     if (state.conflict) {
       blocked.push({ ...at, reason: 'conflict' })
+      continue
+    }
+    const missing = state.domain ? unavailable.get(state.domain) : undefined
+    if (missing !== undefined) {
+      if (wanted) blocked.push({ ...at, reason: 'capability_missing', detail: missing })
       continue
     }
     if (input.kind === 'revert' && state.status !== 'drift') {
@@ -218,7 +244,22 @@ function planSection(
       if (entry) ledgerRemove.push(state.perchId)
       return ledgerRemove.length > 0 ? work(true) : null
     }
-    ops.push({ op: 'delete', config: state.config, section: state.name })
+    if (!ledgered) {
+      // The agent deletes only sections it owns (perch-collector simulate.go
+      // `not_owned`): a router section Perch imported but never wrote is
+      // adopted first in the same job, renamed when anonymous (an anonymous
+      // section is adopted only with a new name).
+      const renameTo = state.anonymous ? `perch_${state.perchId}` : undefined
+      ops.push({
+        op: 'adopt',
+        config: state.config,
+        section: state.name,
+        perchId: state.perchId,
+        ...(renameTo ? { renameTo } : {}),
+      })
+      if (renameTo) name = renameTo
+    }
+    ops.push({ op: 'delete', config: state.config, section: name })
     if (entry) ledgerRemove.push(state.perchId)
     written = null
   } else {
@@ -276,7 +317,8 @@ function planSection(
     const where = {
       perchId: state.perchId,
       config: state.config,
-      section: name,
+      // A deleted section is shown under the name the router knows it by.
+      section: written === null ? state.name : name,
       domain: state.domain,
     }
     const change = adoptOnly
@@ -334,6 +376,8 @@ function buildJob(
   for (const config of configs) {
     if (input.hashes[config] !== undefined) base[config] = input.hashes[config]
   }
+  const ledgerSet = sorted.flatMap((w) => w.ledgerSet)
+  ledgerSet.push(...domainRelinks(input, configs, ops, ledgerSet))
   return {
     kind,
     protected: guarded,
@@ -341,7 +385,7 @@ function buildJob(
     base,
     ops,
     ledger: {
-      set: sorted.flatMap((w) => w.ledgerSet),
+      set: ledgerSet,
       remove: [...new Set([...sorted.flatMap((w) => w.ledgerRemove), ...staleLedger])],
     },
     perchIds: sorted.map((w) => w.state.perchId),
@@ -353,6 +397,42 @@ function buildJob(
     written: Object.fromEntries(sorted.map((w) => [w.state.perchId, w.written])),
     replaced: Object.fromEntries(sorted.map((w) => [w.state.perchId, w.state.router])),
   }
+}
+
+/**
+ * Ledger entries whose `domain` no longer names the row's domain (a section
+ * re-homed to another domain, gateway sync domains.md 1.3) are re-linked by
+ * the next job that touches their config: a `ledger.set` of the same perch id
+ * and section with the new domain. Entries without a domain (adopted ones)
+ * are left alone, as are sections this job deletes, renames or re-links
+ * already.
+ */
+function domainRelinks(
+  input: PlanApplyInput,
+  configs: string[],
+  ops: ApplyOp[],
+  already: LedgerEntry[]
+): LedgerEntry[] {
+  const out: LedgerEntry[] = []
+  const touched = new Set(configs)
+  const moved = new Set<string>()
+  for (const op of ops) {
+    if (op.op === 'delete' || (op.op === 'adopt' && op.renameTo)) {
+      moved.add(`${op.config}/${op.section}`)
+    }
+  }
+  const taken = new Set(already.map((e) => e.perchId))
+  for (const entry of input.ledger) {
+    if (!touched.has(entry.config) || entry.domain === '' || taken.has(entry.perchId)) continue
+    const row = input.sections.find((s) => s.perchId === entry.perchId)
+    if (!row || row.scope !== 'synced' || row.domain === null || row.domain === entry.domain) {
+      continue
+    }
+    if (row.config !== entry.config || row.name !== entry.section) continue
+    if (moved.has(`${entry.config}/${entry.section}`)) continue
+    out.push({ ...entry, domain: row.domain })
+  }
+  return out
 }
 
 interface OrderPlan {

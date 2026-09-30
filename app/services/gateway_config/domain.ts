@@ -159,6 +159,8 @@ export interface FeatureObservation {
   } | null
   /** `interfaces` part: the networks netifd knows. */
   interfaces?: Array<{ network: string; up: boolean | null }> | null
+  /** `system` part: flow offloading as the router runs it (`firewall_defaults`' check). */
+  offloading?: { flowOffloading: boolean | null; flowOffloadingHw: boolean | null } | null
 }
 
 /** A section as a feature check sees it: its desired content (the router's when not synced). */
@@ -267,13 +269,42 @@ export interface DomainClaim {
   ownership: SectionOwnership
 }
 
+/**
+ * Whether a domain's `types` entry covers a section type. An entry ending in
+ * `*` matches by prefix (`wireguard_*` covers `wireguard_wg0`, gateway sync
+ * domains.md 1.1); anything else must be equal.
+ */
+export function typeMatches(types: readonly string[], type: string): boolean {
+  return types.some((t) => (t.endsWith('*') ? type.startsWith(t.slice(0, -1)) : t === type))
+}
+
+/**
+ * List semantics of `type.option`: the exact key first, then a wildcard key
+ * whose type part ends in `*` (`'wireguard_*.allowed_ips'`).
+ */
+function semanticsOf(
+  semantics: Record<string, ListSemantics>,
+  type: string,
+  option: string
+): ListSemantics | undefined {
+  const exact = semantics[`${type}.${option}`]
+  if (exact !== undefined) return exact
+  for (const [key, value] of Object.entries(semantics)) {
+    const dot = key.lastIndexOf('.')
+    const pattern = key.slice(0, dot)
+    if (!pattern.endsWith('*') || key.slice(dot + 1) !== option) continue
+    if (type.startsWith(pattern.slice(0, -1))) return value
+  }
+  return undefined
+}
+
 /** Merge rules for one domain (or the defaults when `domain` is null). */
 export function rulesFor(domain: ConfigDomain | null | undefined): MergeRules {
   if (!domain) return DEFAULT_RULES
   const semantics = domain.listSemantics ?? {}
   const secrets = domain.secretOptions ?? []
   return {
-    listSemantics: (type, option) => semantics[`${type}.${option}`] ?? 'atomic',
+    listSemantics: (type, option) => semanticsOf(semantics, type, option) ?? 'atomic',
     normalize: (type, option, value) =>
       domain.normalize ? domain.normalize(type, option, value) : value,
     isSecret: (type, option) => isSecretOption(type, option, secrets),
@@ -322,16 +353,41 @@ export class DomainRegistry {
   /**
    * The domain that models a router section, first registered wins. A
    * section of an excluded config is never claimed.
+   *
+   * With `capabilities` (the gateway's stored ones), a domain whose
+   * `requires` names a reason is skipped (gateway sync domains.md 1.2): its
+   * sections stay unmodeled mirrors until the agent announces what the
+   * domain needs, and the next domain in claim order may take them. Without
+   * (absent or null: the gateway never reported any) nothing is gated.
    */
-  claim(section: UciSection & { config: string }, all: UciConfigSet): DomainClaim | null {
+  claim(
+    section: UciSection & { config: string },
+    all: UciConfigSet,
+    capabilities?: GatewayCapabilities | null
+  ): DomainClaim | null {
     if (EXCLUDED_CONFIGS.includes(section.config)) return null
     for (const domain of this.#domains) {
       if (!domain.configs.includes(section.config)) continue
-      if (!domain.types.includes(section.type)) continue
+      if (!typeMatches(domain.types, section.type)) continue
+      if (capabilities && domain.requires?.(capabilities)) continue
       if (!domain.claims(section, all)) continue
       return { domain, ownership: domain.ownership?.(section) ?? WHOLE_SECTION }
     }
     return null
+  }
+
+  /**
+   * Domains the gateway cannot use now, with the reason their `requires`
+   * gives (domains.md 1.2). Empty without capabilities (nothing is gated).
+   */
+  unavailable(capabilities: GatewayCapabilities | null | undefined): Map<string, string> {
+    const out = new Map<string, string>()
+    if (!capabilities) return out
+    for (const domain of this.#domains) {
+      const reason = domain.requires?.(capabilities) ?? null
+      if (reason !== null) out.set(domain.key, reason)
+    }
+    return out
   }
 }
 

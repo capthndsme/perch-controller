@@ -317,7 +317,8 @@ async function syncStatusOf(gateway: Gateway): Promise<SyncStatus> {
     features: featureSyncIssues(
       domainRegistry(),
       states,
-      featureObservation(await readObservedFacts(gateway.collectorId))
+      featureObservation(await readObservedFacts(gateway.collectorId)),
+      gateway.capabilities
     ),
   })
 }
@@ -703,10 +704,21 @@ export async function resumeEnforcement(gatewayId: number, userId: number): Prom
   })
 }
 
+/** An ambiguous (or duplicate) member of a domain: excludable (gateway sync domains.md 1.4). */
+function ambiguousMember(state: SectionState): boolean {
+  return (state.issue === 'ambiguous' || state.issue === 'duplicate') && state.domain !== null
+}
+
 /**
  * `PATCH /gateways/:id/sections/:perchId {scope}` (README 7.5): a synced
  * section becomes router-only (mirrored, its ledger entry dropped with the
  * next job), or an excluded one is synced again (its router content as B = C).
+ *
+ * Gateway sync domains.md 1.4: an ambiguous or duplicate member (`unmodeled`
+ * with a domain) can be excluded too; it keeps its issue, and it stops
+ * counting in the identity-key census, so the next read promotes the other
+ * member of a pair. Including it again makes it an `unmodeled` mirror; the
+ * next read decides whether it is still ambiguous.
  */
 export async function setSectionScope(
   gatewayId: number,
@@ -720,7 +732,7 @@ export async function setSectionScope(
     const state = loaded.states.find((s) => s.perchId === perchId)
     if (!state) throw planeError(404, 'section_not_found', `No section ${perchId}.`)
     if (state.scope === scope) return
-    if (state.scope === 'unmodeled') {
+    if (state.scope === 'unmodeled' && !(scope === 'excluded' && ambiguousMember(state))) {
       throw planeError(409, 'unmodeled', 'No domain models this section; it stays router-only.')
     }
     const inFlight = await inFlightApply(gateway.id)
@@ -732,7 +744,8 @@ export async function setSectionScope(
     }
     const next: SectionState = {
       ...state,
-      scope,
+      scope: scope === 'synced' && ambiguousMember(state) ? 'unmodeled' : scope,
+      ...(scope === 'synced' && ambiguousMember(state) ? { ownership: null } : {}),
       base: cloneContent(state.router),
       desired: cloneContent(state.router),
       conflict: null,

@@ -5,14 +5,15 @@ import type {
   SyncedSection,
   ValidationCtx,
 } from '#services/gateway_config/domain'
-import type {
-  GatewayCapabilities,
-  Issue,
-  SectionOwnership,
-  UciConfigSet,
-  UciOptions,
-  UciSection,
-  UciValue,
+import {
+  configAllowed,
+  type GatewayCapabilities,
+  type Issue,
+  type SectionOwnership,
+  type UciConfigSet,
+  type UciOptions,
+  type UciSection,
+  type UciValue,
 } from '#services/gateway_config/types'
 
 /**
@@ -170,7 +171,13 @@ export const perchQosDomain = {
 
   requires(caps: GatewayCapabilities): string | null {
     const packages = caps.packages ?? {}
-    if (!('perch-qos' in packages)) return 'perch-qos is not installed'
+    // Installed, or listed in the router's `managed_config` (on the effective
+    // allowlist): perch-qos copied onto a router by hand has no package
+    // record but is listed (the live gateway since 2026-09-23). The config
+    // plane gates claims on this (gateway sync domains.md 1.2).
+    if (!('perch-qos' in packages) && !configAllowed(caps, PERCH_QOS_CONFIG)) {
+      return 'perch-qos is not installed'
+    }
     return null
   },
 

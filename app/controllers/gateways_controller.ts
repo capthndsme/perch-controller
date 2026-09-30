@@ -353,6 +353,7 @@ export default class GatewaysController {
         management: gateway.managementPath,
         registry: domainRegistry(),
         orders: plannedOrders(await loadOrders(gateway.id), 'apply'),
+        capabilities: gateway.capabilities,
       })
       return serialize({
         changes: plan.jobs.flatMap((j) => j.changes),
@@ -611,6 +612,7 @@ export default class GatewaysController {
         management: gateway.managementPath,
         registry: domainRegistry(),
         orders: plannedOrders(await loadOrders(gateway.id), 'apply'),
+        capabilities: gateway.capabilities,
       })
       return serialize({ perchIds, changes: plan.jobs.flatMap((j) => j.changes) })
     } catch (error) {

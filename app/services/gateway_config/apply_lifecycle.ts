@@ -257,6 +257,7 @@ function planFor(
     management: gateway.managementPath,
     registry: domainRegistry(),
     orders: plannedOrders(orders, kind),
+    capabilities: gateway.capabilities,
   })
 }
 
@@ -296,6 +297,21 @@ export async function requestApply(
     }
     const kind = request.kind ?? 'apply'
     const plan = planFor(gateway, states, request, await loadOrders(gateway.id))
+    // Gateway sync domains.md 1.2: a requested section whose domain needs
+    // more than the agent announces is never planned; the whole request is
+    // refused, as with conflicts.
+    const incapable = plan.blocked.filter((b) => b.reason === 'capability_missing')
+    if (incapable.length > 0) {
+      throw planeError(
+        409,
+        'gateway_capability_missing',
+        `${incapable[0].detail ?? 'The gateway agent cannot apply this yet'}.`,
+        {
+          capability: incapable[0].detail ?? null,
+          perchIds: incapable.map((b) => b.perchId),
+        }
+      )
+    }
     // Errors block only the sections this request changes: an odd section
     // imported from the router does not freeze every other edit.
     const planned = new Set(plan.jobs.flatMap((j) => j.perchIds))

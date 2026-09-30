@@ -649,7 +649,18 @@ export class FakeGateway {
         owned.add(`${op.config}/${s.name}`)
       } else if (op.op === 'delete') {
         const i = sections.findIndex((x) => x.name === op.section)
-        if (i >= 0) sections.splice(i, 1)
+        if (i >= 0) {
+          // perch-collector deletes owned sections only (simulate.go `not_owned`).
+          if (!owned.has(`${op.config}/${op.section}`)) {
+            undo()
+            fail('not_owned', `${op.config}.${op.section} is not in the ledger`)
+          }
+          sections.splice(i, 1)
+        }
+        // Its ledger entries go with it (simulate.go removes them by section).
+        this.ledger = this.ledger.filter(
+          (e) => !(e.config === op.config && e.section === op.section)
+        )
         functional = true
       } else if (op.op === 'put') {
         const existing = sections.find((x) => x.name === op.section)
