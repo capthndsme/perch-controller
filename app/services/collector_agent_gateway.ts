@@ -1,4 +1,9 @@
 import Collector from '#models/collector'
+import {
+  attachAgentUpdates,
+  noteAgentPush,
+  recordUpdateReport,
+} from '#services/agent_updates/bridge'
 import type { AgentEndpoint } from '#services/agent_gateway'
 import {
   forgetSessionKey,
@@ -118,7 +123,11 @@ export function collectorAgentEndpoint(): AgentEndpoint<CollectorPrincipal> {
       collectorHub.onNotification('collector.push', async (collectorId, params) => {
         const outcome = await handleCollectorPush(collectorId, params)
         // The agent half of a config apply's confirm (config-plane.md 5.6).
-        if (outcome.status === 'ingested') await onCollectorPushAccepted(collectorId)
+        if (outcome.status === 'ingested') {
+          await onCollectorPushAccepted(collectorId)
+          // Agent updates: the same signal is the update health check (controller.md 4.2).
+          await noteAgentPush('collector', collectorId)
+        }
       })
       // The observation channel (docs/gateway/observation.md).
       collectorHub.onNotification('gateway.observed', async (collectorId, params) => {
@@ -131,6 +140,8 @@ export function collectorAgentEndpoint(): AgentEndpoint<CollectorPrincipal> {
       collectorHub.onNotification('gateway.pair.state', onPairState)
       // The guest portal (docs/gateway/portal.md section 13).
       attachPortalAgent(collectorHub)
+      // Agent updates: agent.update.progress / agent.update.result.
+      attachAgentUpdates(collectorHub, 'collector')
     },
 
     async authenticate(request, { address }) {
@@ -417,6 +428,13 @@ async function handleHello(
     'collector_agent_gateway: collector connected'
   )
   if (outcome.lifecycle === 'adopted') {
+    // Agent updates: the hello's raw `update` block (the validator drops it).
+    const updateParams = (frame.params ?? {}) as { update?: unknown }
+    void recordUpdateReport('collector', row.id, updateParams.update, {
+      version: hello.version ?? null,
+      session,
+      facts: { arch: hello.system?.arch ?? null, os: hello.system?.os ?? null },
+    })
     void syncCollectorProtocols(row.id)
     // A managed gateway's shaper: probe it and send the device entries.
     void onCollectorConnected(row.id)

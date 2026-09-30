@@ -47,6 +47,11 @@ export function setGithubFetchForTesting(fake: Fetch | null): void {
   fetchImpl = fake
 }
 
+/** True while a test replaced `fetch` (the tick never calls GitHub from a test otherwise). */
+export function githubFetchIsFaked(): boolean {
+  return fetchImpl !== null
+}
+
 function githubFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers)
   headers.set('User-Agent', `perch-controller/${perchVersions().version}`)

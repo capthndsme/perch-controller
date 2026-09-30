@@ -10,6 +10,7 @@ import {
   signWithTestKey,
   trustTestKey,
   useScratchStore,
+  api,
 } from '#tests/helpers/agent_updates'
 import app from '@adonisjs/core/services/app'
 import testUtils from '@adonisjs/core/services/test_utils'
@@ -50,7 +51,7 @@ test.group('agent updates: releases API', (group) => {
     await trustTestKey()
     const built = buildManifest({ version: '1.1.0-pre.5', channel: 'local' })
 
-    const created = await client
+    const created = await api(client)
       .post('/api/v1/agent-updates/releases')
       .bearerToken(adminToken)
       .json({ manifest: built.bytes.toString('base64'), signature: built.signature })
@@ -66,7 +67,7 @@ test.group('agent updates: releases API', (group) => {
     assert.lengthOf(release.artefacts, 2)
     assert.isFalse(release.artefacts[0].stored)
 
-    const again = await client
+    const again = await api(client)
       .post('/api/v1/agent-updates/releases')
       .bearerToken(adminToken)
       .json({ manifest: built.bytes.toString('base64'), signature: built.signature })
@@ -74,7 +75,7 @@ test.group('agent updates: releases API', (group) => {
     assert.equal(again.body().data.id, release.id)
 
     const other = buildManifest({ version: '1.1.0-pre.5', channel: 'local', minVersion: '1.0.0' })
-    const conflict = await client
+    const conflict = await api(client)
       .post('/api/v1/agent-updates/releases')
       .bearerToken(adminToken)
       .json({ manifest: other.bytes.toString('base64'), signature: other.signature })
@@ -82,7 +83,7 @@ test.group('agent updates: releases API', (group) => {
     conflict.assertBodyContains({ error: 'release_exists_different' })
 
     const file = 'perch-apd-linux-mipsle'
-    const upload = await client
+    const upload = await api(client)
       .put(`/api/v1/agent-updates/releases/${release.id}/files/${file}`)
       .bearerToken(adminToken)
       .file('file', built.files.get(file)!, { filename: file })
@@ -90,7 +91,7 @@ test.group('agent updates: releases API', (group) => {
     assert.equal(upload.body().data.file, file)
     assert.isTrue(upload.body().data.stored)
 
-    const wrong = await client
+    const wrong = await api(client)
       .put(`/api/v1/agent-updates/releases/${release.id}/files/perch-apd-linux-arm64`)
       .bearerToken(adminToken)
       .file('file', Buffer.from('x'.repeat(built.files.get('perch-apd-linux-arm64')!.length)), {
@@ -99,21 +100,21 @@ test.group('agent updates: releases API', (group) => {
     wrong.assertStatus(422)
     wrong.assertBodyContains({ error: 'hash_mismatch' })
 
-    const short = await client
+    const short = await api(client)
       .put(`/api/v1/agent-updates/releases/${release.id}/files/perch-apd-linux-arm64`)
       .bearerToken(adminToken)
       .file('file', Buffer.from('short'), { filename: 'perch-apd-linux-arm64' })
     short.assertStatus(422)
     short.assertBodyContains({ error: 'size_mismatch' })
 
-    const unknown = await client
+    const unknown = await api(client)
       .put(`/api/v1/agent-updates/releases/${release.id}/files/other-file`)
       .bearerToken(adminToken)
       .file('file', Buffer.from('x'), { filename: 'other-file' })
     unknown.assertStatus(404)
     unknown.assertBodyContains({ error: 'artefact_not_in_manifest' })
 
-    const shown = await client
+    const shown = await api(client)
       .get(`/api/v1/agent-updates/releases/${release.id}`)
       .bearerToken(adminToken)
     shown.assertStatus(200)
@@ -126,7 +127,7 @@ test.group('agent updates: releases API', (group) => {
     const { adminToken } = await seedSetupComplete()
     const built = buildManifest()
 
-    const untrusted = await client
+    const untrusted = await api(client)
       .post('/api/v1/agent-updates/releases')
       .bearerToken(adminToken)
       .json({ manifest: built.bytes.toString('base64'), signature: built.signature })
@@ -136,7 +137,7 @@ test.group('agent updates: releases API', (group) => {
     await trustTestKey()
     const tampered = Buffer.from(built.bytes)
     tampered[tampered.length - 3] ^= 1
-    const bad = await client
+    const bad = await api(client)
       .post('/api/v1/agent-updates/releases')
       .bearerToken(adminToken)
       .json({ manifest: tampered.toString('base64'), signature: built.signature })
@@ -144,7 +145,7 @@ test.group('agent updates: releases API', (group) => {
     bad.assertBodyContains({ error: 'bad_signature' })
 
     const invalidBytes = Buffer.from(JSON.stringify({ schema: 'perch-release/1', product: 'x' }))
-    const invalid = await client
+    const invalid = await api(client)
       .post('/api/v1/agent-updates/releases')
       .bearerToken(adminToken)
       .json({ manifest: invalidBytes.toString('base64'), signature: signWithTestKey(invalidBytes) })
@@ -163,15 +164,15 @@ test.group('agent updates: releases API', (group) => {
     const { operatorToken } = await seedSetupComplete()
     await trustTestKey()
     await seedRelease()
-    const read = await client.get('/api/v1/agent-updates/releases').bearerToken(operatorToken)
+    const read = await api(client).get('/api/v1/agent-updates/releases').bearerToken(operatorToken)
     read.assertStatus(200)
     const built = buildManifest({ version: '1.3.0' })
-    const write = await client
+    const write = await api(client)
       .post('/api/v1/agent-updates/releases')
       .bearerToken(operatorToken)
       .json({ manifest: built.bytes.toString('base64'), signature: built.signature })
     write.assertStatus(403)
-    const anonymous = await client.get('/api/v1/agent-updates/releases')
+    const anonymous = await api(client).get('/api/v1/agent-updates/releases')
     anonymous.assertStatus(401)
   })
 
@@ -186,7 +187,7 @@ test.group('agent updates: releases API', (group) => {
     ap.agentVersion = '1.2.0'
     await ap.save()
 
-    const withdrawn = await client
+    const withdrawn = await api(client)
       .patch(`/api/v1/agent-updates/releases/${release.id}`)
       .bearerToken(adminToken)
       .json({ withdrawn: true })
@@ -195,14 +196,14 @@ test.group('agent updates: releases API', (group) => {
     assert.equal(withdrawn.body().data.notOfferableReason, 'withdrawn')
     assert.equal(withdrawn.body().data.devicesOn, 1)
 
-    const list = await client.get('/api/v1/agent-updates/releases').bearerToken(adminToken)
+    const list = await api(client).get('/api/v1/agent-updates/releases').bearerToken(adminToken)
     assert.lengthOf(list.body().data.releases, 0)
-    const all = await client
+    const all = await api(client)
       .get('/api/v1/agent-updates/releases?includeWithdrawn=true')
       .bearerToken(adminToken)
     assert.lengthOf(all.body().data.releases, 1)
 
-    const refused = await client
+    const refused = await api(client)
       .delete(`/api/v1/agent-updates/releases/${release.id}`)
       .bearerToken(adminToken)
     refused.assertStatus(409)
@@ -210,7 +211,7 @@ test.group('agent updates: releases API', (group) => {
 
     ap.agentVersion = '1.1.0'
     await ap.save()
-    const deleted = await client
+    const deleted = await api(client)
       .delete(`/api/v1/agent-updates/releases/${release.id}`)
       .bearerToken(adminToken)
     deleted.assertStatus(204)
@@ -222,7 +223,7 @@ test.group('agent updates: releases API', (group) => {
     const { adminToken } = await seedSetupComplete()
     await trustTestKey()
     await seedRelease({ version: '9.0.0', minControllerVersion: '9.0.0' })
-    const list = await client.get('/api/v1/agent-updates/releases').bearerToken(adminToken)
+    const list = await api(client).get('/api/v1/agent-updates/releases').bearerToken(adminToken)
     const [release] = list.body().data.releases
     assert.isFalse(release.offerable)
     assert.equal(release.notOfferableReason, 'controller_too_old')
@@ -404,7 +405,9 @@ test.group('agent updates: GitHub mirror (recorded responses, no network)', (gro
       },
     })
 
-    const check = await client.post('/api/v1/agent-updates/releases/check').bearerToken(adminToken)
+    const check = await api(client)
+      .post('/api/v1/agent-updates/releases/check')
+      .bearerToken(adminToken)
     check.assertStatus(200)
     const found = check.body().data.found as Array<Record<string, unknown>>
     const byVersion = (product: string, version: string) =>
@@ -432,7 +435,9 @@ test.group('agent updates: GitHub mirror (recorded responses, no network)', (gro
 
     // A second check knows it without fetching the manifest again.
     const before = requests.length
-    const second = await client.post('/api/v1/agent-updates/releases/check').bearerToken(adminToken)
+    const second = await api(client)
+      .post('/api/v1/agent-updates/releases/check')
+      .bearerToken(adminToken)
     assert.equal(
       (second.body().data.found as Array<Record<string, unknown>>).find(
         (entry) => entry.product === 'perch-apd' && entry.version === '1.2.0'
@@ -460,7 +465,9 @@ test.group('agent updates: GitHub mirror (recorded responses, no network)', (gro
   test('an unreachable GitHub answers 502', async ({ client }) => {
     const { adminToken } = await seedSetupComplete()
     fakeGithub({ [API('perch-apd')]: { status: 503, body: 'down' } })
-    const check = await client.post('/api/v1/agent-updates/releases/check').bearerToken(adminToken)
+    const check = await api(client)
+      .post('/api/v1/agent-updates/releases/check')
+      .bearerToken(adminToken)
     check.assertStatus(502)
     check.assertBodyContains({ error: 'github_unreachable' })
   })

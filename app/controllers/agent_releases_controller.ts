@@ -1,5 +1,8 @@
 import AgentArtefact from '#models/agent_artefact'
 import AgentRelease from '#models/agent_release'
+import AgentUpdateJob from '#models/agent_update_job'
+import { recordUpdateEvent } from '#services/agent_updates/events'
+import { eligibleCounts } from '#services/agent_updates/fleet'
 import { GithubUnreachableError, checkGithubReleases } from '#services/agent_updates/github'
 import {
   ReleaseImportError,
@@ -11,6 +14,7 @@ import {
   runningVersions,
 } from '#services/agent_updates/releases'
 import { getAgentUpdateSettings } from '#services/agent_updates/settings'
+import { afterGithubCheck, announceAvailable } from '#services/agent_updates/tick'
 import {
   StoreError,
   deleteReleaseDirectory,
@@ -44,7 +48,7 @@ export default class AgentReleasesController {
       product: query.product,
       includeWithdrawn: query.includeWithdrawn ?? false,
     })
-    const counts = await releaseDeviceCounts(releases)
+    const counts = await releaseDeviceCounts(releases, await eligibleCounts(settings))
     return serialize({
       releases: releases.map((release) => releaseView(release, artefacts, settings, counts)),
     })
@@ -56,7 +60,7 @@ export default class AgentReleasesController {
     if (!release) return releaseNotFound(response, params.id)
     const settings = await getAgentUpdateSettings()
     const artefacts = await AgentArtefact.query().where('release_id', release.id).orderBy('id')
-    const counts = await releaseDeviceCounts([release])
+    const counts = await releaseDeviceCounts([release], await eligibleCounts(settings))
     return serialize({
       ...releaseView(release, artefacts, settings, counts),
       manifest: JSON.parse(release.manifest) as unknown,
@@ -64,10 +68,11 @@ export default class AgentReleasesController {
   }
 
   /** POST /api/v1/agent-updates/releases/check */
-  async check({ response, serialize }: HttpContext) {
+  async check({ response, auth, serialize }: HttpContext) {
     const settings = await getAgentUpdateSettings()
     try {
       const result = await checkGithubReleases(settings)
+      await afterGithubCheck(result, settings, auth.user?.id ?? null)
       return serialize({ checkedAt: result.checkedAt, found: result.found })
     } catch (error) {
       if (error instanceof GithubUnreachableError) {
@@ -88,12 +93,33 @@ export default class AgentReleasesController {
         { manifestBytes, signature: payload.signature, source: 'upload', userId },
         settings
       )
+      if (created) {
+        await recordUpdateEvent('release_imported', {
+          releaseId: release.id,
+          userId,
+          detail: { product: release.product, version: release.version, source: 'upload' },
+        })
+        void announceAvailable(settings).catch(() => {})
+      }
       const artefacts = await AgentArtefact.query().where('release_id', release.id).orderBy('id')
       const counts = await releaseDeviceCounts([release])
       response.status(created ? 201 : 200)
       return serialize(releaseView(release, artefacts, settings, counts))
     } catch (error) {
       if (!(error instanceof ReleaseImportError)) throw error
+      if (error.code !== 'release_exists_different') {
+        await recordUpdateEvent('agent_update.release_rejected', {
+          userId,
+          detail: {
+            source: 'upload',
+            product: error.extra.product ?? null,
+            version: error.extra.version ?? null,
+            reason: error.code,
+            keyId: error.extra.keyId ?? null,
+            detail: error.extra.detail ?? null,
+          },
+        })
+      }
       if (error.code === 'release_exists_different') {
         return response.conflict({ error: error.code, message: error.message })
       }
@@ -110,7 +136,7 @@ export default class AgentReleasesController {
   }
 
   /** PUT /api/v1/agent-updates/releases/:id/files/:file (multipart, one part `file`) */
-  async upload({ params, request, response, serialize }: HttpContext) {
+  async upload({ params, request, response, auth, serialize }: HttpContext) {
     const release = await AgentRelease.find(Number(params.id))
     if (!release) return releaseNotFound(response, params.id)
     const artefact = await AgentArtefact.query()
@@ -149,6 +175,19 @@ export default class AgentReleasesController {
     }
 
     if (failure instanceof StoreError) {
+      if (failure.code === 'hash_mismatch' || failure.code === 'size_mismatch') {
+        await recordUpdateEvent('agent_update.release_rejected', {
+          releaseId: release.id,
+          userId: auth.user?.id ?? null,
+          detail: {
+            source: 'upload',
+            product: release.product,
+            version: release.version,
+            reason: failure.code,
+            file: artefact.fileName,
+          },
+        })
+      }
       if (failure.code === 'too_large') return tooLarge(response, failure.message)
       return response.unprocessableEntity({ error: failure.code, message: failure.message })
     }
@@ -176,6 +215,11 @@ export default class AgentReleasesController {
       release.withdrawnAt = payload.withdrawn ? DateTime.utc() : null
       release.withdrawnByUserId = payload.withdrawn ? (auth.user?.id ?? null) : null
       await release.save()
+      await recordUpdateEvent(payload.withdrawn ? 'release_withdrawn' : 'release_restored', {
+        releaseId: release.id,
+        userId: auth.user?.id ?? null,
+        detail: { product: release.product, version: release.version },
+      })
     }
     const settings = await getAgentUpdateSettings()
     const artefacts = await AgentArtefact.query().where('release_id', release.id).orderBy('id')
@@ -184,12 +228,15 @@ export default class AgentReleasesController {
   }
 
   /** DELETE /api/v1/agent-updates/releases/:id */
-  async destroy({ params, response }: HttpContext) {
+  async destroy({ params, response, auth }: HttpContext) {
     const release = await AgentRelease.find(Number(params.id))
     if (!release) return releaseNotFound(response, params.id)
     const running = await runningVersions()
+    const openJobs = await AgentUpdateJob.query()
+      .where('release_id', release.id)
+      .whereNotNull('active_key')
     const usage = {
-      jobs: 0,
+      jobs: openJobs.length,
       rollouts: 0,
       devices: running[release.product].filter((version) => version === release.version).length,
     }
@@ -200,6 +247,10 @@ export default class AgentReleasesController {
         ...usage,
       })
     }
+    await recordUpdateEvent('release_deleted', {
+      userId: auth.user?.id ?? null,
+      detail: { product: release.product, version: release.version, releaseId: release.id },
+    })
     await release.delete()
     await deleteReleaseDirectory(release.product, release.version)
     return response.noContent()

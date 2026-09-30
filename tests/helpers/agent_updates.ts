@@ -10,6 +10,7 @@ import {
 } from '#services/agent_updates/settings'
 import { setStoreRootForTesting, storeArtefactStream } from '#services/agent_updates/store'
 import app from '@adonisjs/core/services/app'
+import type { ApiClient, ApiRequest } from '@japa/api-client'
 import { createHash, createPrivateKey, sign } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -218,4 +219,77 @@ export async function useScratchStore(): Promise<() => Promise<void>> {
     setStoreRootForTesting(null)
     await rm(root, { recursive: true, force: true })
   }
+}
+
+/** An `update` status block (protocol.md section 3) as a self-updating agent reports it. */
+export function updateBlock(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    protocol: 1,
+    enabled: true,
+    refusal: null,
+    keyIds: [TEST_KEY_ID],
+    floor: null,
+    installKind: 'swapped',
+    methods: ['binary'],
+    binaryPath: '/usr/bin/perch-apd',
+    binarySha256: 'a'.repeat(64),
+    packageManager: 'apk',
+    packageVersion: '1.0.0_rc2-r1',
+    openwrt: { release: '25.12.4', series: '25.12', pkgArch: 'mipsel_24kc' },
+    arch: 'mipsle',
+    variant: null,
+    flash: { path: '/overlay', fsType: 'jffs2', freeBytes: 4308992, totalBytes: 8060928 },
+    ram: { memAvailableBytes: 28561408, tmpFreeBytes: 58912768 },
+    guard: 'missing',
+    previous: null,
+    active: null,
+    results: [],
+    ...overrides,
+  }
+}
+
+/** A preflight answer (protocol.md 4.2). */
+export function preflightAnswer(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    ok: true,
+    problems: [],
+    method: 'binary',
+    installKind: 'swapped',
+    rollbackStore: 'flash',
+    staging: 'ram',
+    downloadBytes: 1560,
+    flash: {
+      path: '/overlay',
+      fsType: 'jffs2',
+      freeBytes: 4308992,
+      needBytes: 3719977,
+      reserveBytes: 524288,
+      estimate: 'gzip_x1.15',
+      hardlink: true,
+    },
+    ram: {
+      memAvailableBytes: 28561408,
+      tmpFreeBytes: 58912768,
+      needBytes: 20910273,
+      reserveBytes: 12582912,
+    },
+    busy: null,
+    ...overrides,
+  }
+}
+
+type UntypedRequest = ApiRequest<any, any, any>
+type UntypedClient = Record<
+  'get' | 'post' | 'patch' | 'put' | 'delete',
+  (url: string) => UntypedRequest
+>
+
+/**
+ * The test client without the route registry's inferred types: bodies and
+ * responses are plain JSON here, and inferring a body type for every path
+ * across the ~300 registered routes makes the checker give up elsewhere
+ * (other suites' `.json()` turned `never`).
+ */
+export function api(client: ApiClient): UntypedClient {
+  return client as unknown as UntypedClient
 }
