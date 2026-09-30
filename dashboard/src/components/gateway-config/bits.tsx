@@ -86,6 +86,11 @@ export function DiffList({
             <span className="font-mono text-[11px] font-medium">
               {entry.config}.{entry.section}
             </span>
+            {entry.renamedFrom ? (
+              <span className="text-[11px] text-muted-foreground">
+                renamed from <span className="font-mono">{entry.renamedFrom}</span>
+              </span>
+            ) : null}
             <span className="text-[11px] text-muted-foreground">{entry.type}</span>
             {entry.domain ? <span className="text-[11px] text-muted-foreground">· {entry.domain}</span> : null}
           </div>

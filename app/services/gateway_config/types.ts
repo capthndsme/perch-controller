@@ -322,6 +322,8 @@ export interface ConfigDiffEntry {
   domain: string | null
   action: 'create' | 'update' | 'delete' | 'adopt' | 'order'
   options: ConfigDiffOption[]
+  /** An anonymous section adopted under Perch's name (`perch_<id>`): the router's old name. */
+  renamedFrom?: string
 }
 
 /** A validation finding; `error` blocks an apply, `warning` does not. */

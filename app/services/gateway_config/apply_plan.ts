@@ -491,9 +491,16 @@ function planSection(
       section: written === null ? state.name : name,
       domain: state.domain,
     }
+    // An anonymous section adopted under a new name changes the router even
+    // when its options stay: without an entry the job would look empty.
+    const adoption = { ...where, type: state.type, action: 'adopt' as const, options: [] }
     const change = adoptOnly
-      ? { ...where, type: state.type, action: 'adopt' as const, options: [] }
-      : diffEntry(where, state.router, written, rules)
+      ? adoption
+      : (diffEntry(where, state.router, written, rules) ?? (renamed ? adoption : null))
+    const shown =
+      change && ops.some((op) => op.op === 'adopt') && change.action === 'update'
+        ? { ...change, action: 'adopt' as const }
+        : change
     return {
       state,
       ops,
@@ -503,10 +510,7 @@ function planSection(
       refs,
       adoptOnly,
       protected: protectedPath,
-      change:
-        change && ops.some((op) => op.op === 'adopt') && change.action === 'update'
-          ? { ...change, action: 'adopt' }
-          : change,
+      change: shown && renamed ? { ...shown, renamedFrom: state.name } : shown,
     }
   }
 }

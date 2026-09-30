@@ -75,6 +75,8 @@ export type ConfigDiffEntry = {
   domain: string | null
   action: 'create' | 'update' | 'delete' | 'adopt' | 'order'
   options: ConfigDiffOption[]
+  /** An anonymous section adopted under Perch's name: the router's old name. */
+  renamedFrom?: string
 }
 
 export type GatewayApply = {

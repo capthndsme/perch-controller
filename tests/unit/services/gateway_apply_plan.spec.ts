@@ -214,6 +214,11 @@ test.group('apply planning | ops and order (README 3.5)', () => {
     assert.deepEqual(jobs[1].ops, [
       { op: 'adopt', config: 'dhcp', section: 'cfg07fe63', perchId: 'a2', renameTo: 'perch_a2' },
     ])
+    // The rename changes the router although no option does: the job shows it.
+    assert.deepEqual(
+      jobs[1].changes.map((c) => [c.action, c.section, c.renamedFrom, c.options.length]),
+      [['adopt', 'perch_a2', 'cfg07fe63', 0]]
+    )
   })
 
   test('an unledgered anonymous section with an edit: adopt+rename, then put on the new name', ({
@@ -236,6 +241,7 @@ test.group('apply planning | ops and order (README 3.5)', () => {
       ]
     )
     assert.equal(job.changes[0].action, 'adopt')
+    assert.equal(job.changes[0].renamedFrom, 'cfg07fe63')
   })
 
   test('conflicts are blocked; excluded and unmodeled rows are skipped unless asked for', ({
