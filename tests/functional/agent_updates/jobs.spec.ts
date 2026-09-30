@@ -771,4 +771,68 @@ test.group('agent updates: devices and jobs over the AP socket', (group) => {
     assert.equal(await jobState(job.id), 'queued')
     await agent.close()
   })
+  test('a session from before the install is no candidate; a silent job can be closed', async ({
+    client,
+    assert,
+  }) => {
+    const { adminToken } = await seedSetupComplete()
+    await trustTestKey({ githubCheck: false })
+    await seedRelease({ version: '1.2.0', store: true })
+    const { ap, agentId, agentSecret } = await seedAgentAp()
+    let confirms = 0
+    let jobUpdateId = ''
+    const agent = await connectAgent({ agentId, agentSecret }, '1.1.0', updateBlock(), {
+      'agent.update.stage': (params) => ({ updateId: params.updateId, state: 'staged' }),
+      'agent.update.install': (params) => ({ updateId: params.updateId, state: 'installing' }),
+      'agent.update.confirm': () => {
+        confirms += 1
+        return { state: 'confirmed' }
+      },
+    })
+    await reportStored(ap.id, (row) => row.report !== null)
+    const createdResponse = await api(client)
+      .post(`/api/v1/agent-updates/devices/ap/${ap.id}/update`)
+      .bearerToken(adminToken)
+      .json({ version: '1.2.0' })
+    const job = createdResponse.body().data
+    jobUpdateId = job.updateId
+    await agentUpdatesTick()
+    assert.equal(await jobState(job.id), 'installing')
+    // The same (old) session claims to be the candidate: it opened before the install.
+    const live = hub.liveSession(ap.id)!
+    const { sessionState } = await import('#services/agent_updates/sessions')
+    const state = sessionState(live)
+    state.version = '1.2.0'
+    state.report = {
+      ...(state.report as NonNullable<typeof state.report>),
+      active: {
+        updateId: jobUpdateId,
+        phase: 'probation',
+        fromVersion: '1.1.0',
+        toVersion: '1.2.0',
+        method: 'binary',
+        rollbackStore: 'flash',
+        bytes: null,
+        totalBytes: null,
+        deadline: null,
+        watchdog: 'running',
+      },
+    }
+    await noteAgentPush('ap', ap.id)
+    await noteAgentPush('ap', ap.id)
+    await agentUpdatesTick(DateTime.utc().plus({ seconds: 60 }))
+    assert.equal(confirms, 0)
+    assert.equal(await jobState(job.id), 'installing')
+
+    // Silent past its deadline, then closed by the admin while offline.
+    await agent.close()
+    await agentUpdatesTick(DateTime.utc().plus({ seconds: 301 }))
+    assert.equal(await jobState(job.id), 'unknown')
+    const closed = await api(client)
+      .post(`/api/v1/agent-updates/jobs/${job.id}/abort`)
+      .bearerToken(adminToken)
+    closed.assertStatus(200)
+    assert.equal(closed.body().data.state, 'cancelled')
+    assert.isFalse(deviceUpdateInFlight('ap', ap.id))
+  })
 })

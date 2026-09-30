@@ -796,6 +796,27 @@ export async function abortJob(
   }
   const target = deviceOf(job)
   if (!target) return transition(job, 'cancelled', { reason: 'admin', detail: null, userId })
+  // A silent device: a job that changed nothing on it yet, or one it never
+  // reported back on, is closed here (whatever it reports later is ignored).
+  // One in its install or check window needs the device.
+  if (
+    !hubFor(target.kind).isOnline(target.id) &&
+    ['staging', 'staged', 'unknown'].includes(job.state)
+  ) {
+    await recordUpdateEvent('job_aborted', {
+      device: eventDevice(job),
+      jobId: job.id,
+      releaseId: job.releaseId,
+      rolloutId: job.rolloutId,
+      userId,
+      detail: { updateId: job.updateKey, state: job.state, offline: true },
+    })
+    return transition(job, 'cancelled', {
+      reason: 'admin',
+      detail: 'closed while the device was offline',
+      userId,
+    })
+  }
   let answer: { state?: unknown }
   try {
     answer = await hubFor(target.kind).request(
@@ -961,7 +982,9 @@ export async function expireQueued(settings: AgentUpdateSettings, now = DateTime
   const cutoff = now.minus({ hours: settings.queueExpiryHours })
   const jobs = await AgentUpdateJob.query().where('state', 'queued')
   for (const job of jobs) {
-    if (job.createdAt < cutoff) await transition(job, 'expired', { reason: 'expired' })
+    // A job for next week's window counts from when it may start.
+    const since = job.notBefore && job.notBefore > job.createdAt ? job.notBefore : job.createdAt
+    if (since < cutoff) await transition(job, 'expired', { reason: 'expired' })
   }
 }
 
