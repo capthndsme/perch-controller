@@ -2,46 +2,56 @@
 import type { routes } from './index.ts'
 
 export interface ApiDefinition {
-  setup: {
-    status: typeof routes['setup.status']
-    admin: typeof routes['setup.admin']
-    login: typeof routes['setup.login']
-    instance: typeof routes['setup.instance']
-    collector: typeof routes['setup.collector'] & {
-      candidates: typeof routes['setup.collector.candidates']
-      skip: typeof routes['setup.collector.skip']
-      adopt: typeof routes['setup.collector.adopt']
+  alerts: {
+    push: {
+      renew: typeof routes['alerts.push.renew']
+      config: typeof routes['alerts.push.config']
+      index: typeof routes['alerts.push.index']
+      store: typeof routes['alerts.push.store']
+      unsubscribe: typeof routes['alerts.push.unsubscribe']
+      update: typeof routes['alerts.push.update']
+      destroy: typeof routes['alerts.push.destroy']
+      test: typeof routes['alerts.push.test']
     }
-  }
-  version: typeof routes['version']
-  collectors: typeof routes['collectors'] & {
-    announce: typeof routes['collectors.announce']
-  }
-  apAgent: {
-    join: typeof routes['apAgent.join']
-    wsFallback: typeof routes['apAgent.wsFallback']
-  }
-  collectorAgent: {
-    wsFallback: typeof routes['collectorAgent.wsFallback']
-  }
-  auth: {
-    newAccount: {
-      store: typeof routes['auth.new_account.store']
+    summary: typeof routes['alerts.summary']
+    catalogue: typeof routes['alerts.catalogue']
+    read: typeof routes['alerts.read']
+    mutes: {
+      index: typeof routes['alerts.mutes.index']
+      store: typeof routes['alerts.mutes.store']
+      destroy: typeof routes['alerts.mutes.destroy']
     }
-    accessTokens: {
-      store: typeof routes['auth.access_tokens.store']
+    watches: {
+      index: typeof routes['alerts.watches.index']
+      update: typeof routes['alerts.watches.update']
     }
-  }
-  profile: {
-    profile: {
-      show: typeof routes['profile.profile.show']
-      changePassword: typeof routes['profile.profile.change_password']
+    index: typeof routes['alerts.index']
+    show: typeof routes['alerts.show']
+    deliveries: {
+      index: typeof routes['alerts.deliveries.index']
+      show: typeof routes['alerts.deliveries.show']
     }
-    accessTokens: {
-      destroy: typeof routes['profile.access_tokens.destroy']
-    }
+    acknowledge: typeof routes['alerts.acknowledge']
+    resolve: typeof routes['alerts.resolve']
   }
   settings: {
+    alerts: {
+      show: typeof routes['settings.alerts.show']
+      update: typeof routes['settings.alerts.update']
+      test: typeof routes['settings.alerts.test']
+      vapid: {
+        rotate: typeof routes['settings.alerts.vapid.rotate']
+      }
+      webhooks: {
+        index: typeof routes['settings.alerts.webhooks.index']
+        store: typeof routes['settings.alerts.webhooks.store']
+        show: typeof routes['settings.alerts.webhooks.show']
+        update: typeof routes['settings.alerts.webhooks.update']
+        destroy: typeof routes['settings.alerts.webhooks.destroy']
+        test: typeof routes['settings.alerts.webhooks.test']
+        rotateSecret: typeof routes['settings.alerts.webhooks.rotateSecret']
+      }
+    }
     settings: {
       hostnameEnrichment: typeof routes['settings.settings.hostname_enrichment']
       updateHostnameEnrichment: typeof routes['settings.settings.update_hostname_enrichment']
@@ -88,6 +98,8 @@ export interface ApiDefinition {
       adopt: typeof routes['settings.collectors.adopt']
       dismiss: typeof routes['settings.collectors.dismiss']
     }
+    deviceGroups: typeof routes['settings.deviceGroups']
+    updateDeviceGroups: typeof routes['settings.updateDeviceGroups']
     portal: typeof routes['settings.portal']
     updatePortal: typeof routes['settings.updatePortal']
     users: {
@@ -95,6 +107,45 @@ export interface ApiDefinition {
       store: typeof routes['settings.users.store']
       updateRole: typeof routes['settings.users.updateRole']
       destroy: typeof routes['settings.users.destroy']
+    }
+  }
+  setup: {
+    status: typeof routes['setup.status']
+    admin: typeof routes['setup.admin']
+    login: typeof routes['setup.login']
+    instance: typeof routes['setup.instance']
+    collector: typeof routes['setup.collector'] & {
+      candidates: typeof routes['setup.collector.candidates']
+      skip: typeof routes['setup.collector.skip']
+      adopt: typeof routes['setup.collector.adopt']
+    }
+  }
+  version: typeof routes['version']
+  collectors: typeof routes['collectors'] & {
+    announce: typeof routes['collectors.announce']
+  }
+  apAgent: {
+    join: typeof routes['apAgent.join']
+    wsFallback: typeof routes['apAgent.wsFallback']
+  }
+  collectorAgent: {
+    wsFallback: typeof routes['collectorAgent.wsFallback']
+  }
+  auth: {
+    newAccount: {
+      store: typeof routes['auth.new_account.store']
+    }
+    accessTokens: {
+      store: typeof routes['auth.access_tokens.store']
+    }
+  }
+  profile: {
+    profile: {
+      show: typeof routes['profile.profile.show']
+      changePassword: typeof routes['profile.profile.change_password']
+    }
+    accessTokens: {
+      destroy: typeof routes['profile.access_tokens.destroy']
     }
   }
   aggregateTraffic: typeof routes['aggregateTraffic']
@@ -134,6 +185,7 @@ export interface ApiDefinition {
     networks: typeof routes['devices.networks']
     reservation: typeof routes['devices.reservation']
     wanAccess: typeof routes['devices.wanAccess']
+    group: typeof routes['devices.group']
     putWanAccess: typeof routes['devices.putWanAccess']
     putReservation: typeof routes['devices.putReservation']
     deleteReservation: typeof routes['devices.deleteReservation']
@@ -162,7 +214,19 @@ export interface ApiDefinition {
   infra: {
     layout: typeof routes['infra.layout']
     state: typeof routes['infra.state']
+    ports: {
+      traffic: typeof routes['infra.ports.traffic']
+      update: typeof routes['infra.ports.update']
+      destroy: typeof routes['infra.ports.destroy']
+    }
+    links: {
+      traffic: typeof routes['infra.links.traffic']
+      store: typeof routes['infra.links.store']
+      update: typeof routes['infra.links.update']
+      destroy: typeof routes['infra.links.destroy']
+    }
     nodes: {
+      traffic: typeof routes['infra.nodes.traffic']
       store: typeof routes['infra.nodes.store']
       update: typeof routes['infra.nodes.update']
       destroy: typeof routes['infra.nodes.destroy']
@@ -170,15 +234,6 @@ export interface ApiDefinition {
       ports: {
         store: typeof routes['infra.nodes.ports.store']
       }
-    }
-    ports: {
-      update: typeof routes['infra.ports.update']
-      destroy: typeof routes['infra.ports.destroy']
-    }
-    links: {
-      store: typeof routes['infra.links.store']
-      update: typeof routes['infra.links.update']
-      destroy: typeof routes['infra.links.destroy']
     }
     positions: typeof routes['infra.positions']
   }
@@ -285,6 +340,25 @@ export interface ApiDefinition {
       update: typeof routes['portal.apiClients.update']
       rotate: typeof routes['portal.apiClients.rotate']
       destroy: typeof routes['portal.apiClients.destroy']
+    }
+  }
+  deviceGroups: {
+    index: typeof routes['deviceGroups.index']
+    aps: typeof routes['deviceGroups.aps'] & {
+      update: typeof routes['deviceGroups.aps.update']
+    }
+    show: typeof routes['deviceGroups.show']
+    store: typeof routes['deviceGroups.store']
+    update: typeof routes['deviceGroups.update']
+    destroy: typeof routes['deviceGroups.destroy']
+    members: {
+      store: typeof routes['deviceGroups.members.store']
+      destroy: typeof routes['deviceGroups.members.destroy']
+    }
+    keys: {
+      store: typeof routes['deviceGroups.keys.store']
+      reveal: typeof routes['deviceGroups.keys.reveal']
+      destroy: typeof routes['deviceGroups.keys.destroy']
     }
   }
   qos: {

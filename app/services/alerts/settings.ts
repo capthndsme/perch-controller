@@ -458,9 +458,24 @@ export function settingsView(settings: AlertsSettings) {
   }
 }
 
-/** Limits for the validator and the dashboard (`limits` of GET /settings/alerts). */
+/**
+ * `limits` of GET /settings/alerts, for the validator and the dashboard: the
+ * global fields nested like `settings` (`pushTtlMinutes` per severity), and
+ * `rule` with one `{ min, max }` per numeric rule field; `repeatMinutes` is
+ * `{ min: 15, max: 1440, allowZero: true }` (0 = never, else 15–1440).
+ */
 export function limitsView() {
-  return { ...ALERTS_LIMITS, rule: { ...RULE_LIMITS, repeatMinutesMinNonZero: REPEAT_MINUTES_MIN } }
+  return {
+    ...ALERTS_LIMITS,
+    rule: {
+      ...RULE_LIMITS,
+      repeatMinutes: {
+        min: REPEAT_MINUTES_MIN,
+        max: RULE_LIMITS.repeatMinutes.max,
+        allowZero: true,
+      },
+    },
+  }
 }
 
 /** The project page: the VAPID subject when no HTTPS dashboard origin is known. */

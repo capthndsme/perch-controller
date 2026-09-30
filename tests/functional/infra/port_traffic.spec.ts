@@ -506,10 +506,15 @@ test.group('infra | port traffic reads', (group) => {
       .get(`/api/v1/infra/ports/${ap.ports.lan1}/traffic`)
       .bearerToken(operatorToken)
     standard.assertStatus(200)
-    assert.equal(standard.body().data.bucketSeconds, 300)
-    assert.approximately(standard.body().data.points.length, 288, 1)
+    assert.equal(bodyOf(standard).data.bucketSeconds, 300)
+    assert.approximately(bodyOf(standard).data.points.length, 288, 1)
 
     const anonymous = await client.get(`/api/v1/infra/ports/${ap.ports.lan1}/traffic`)
     anonymous.assertStatus(401)
   })
 })
+
+/** Response bodies as untyped JSON (the registry types some of these routes as `void | …`). */
+function bodyOf(response: { body(): unknown }): any {
+  return response.body()
+}

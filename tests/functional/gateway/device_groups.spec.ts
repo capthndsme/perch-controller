@@ -235,7 +235,7 @@ test.group('device groups: REST', (group) => {
         qos: { rate: { downloadKbit: 20000, uploadKbit: 5000 } },
       })
     created.assertStatus(201)
-    const unit = created.body().data
+    const unit = bodyOf(created).data
     assert.equal(unit.network.name, 'unit101')
     assert.equal(unit.network.vlanId, 101)
     assert.equal(unit.qos.via, 'network')
@@ -252,14 +252,14 @@ test.group('device groups: REST', (group) => {
       .bearerToken(env.adminToken)
       .json({ gatewayId: env.gatewayId, name: 'Unit 102', networkPerchId: env.unitPerchId })
     clash.assertStatus(422)
-    assert.equal(clash.body().error, 'group_network_taken')
+    assert.equal(bodyOf(clash).error, 'group_network_taken')
     // A group with its own network has no portal to pass.
     const bypass = await client
       .patch(`/api/v1/device-groups/${unit.id}`)
       .bearerToken(env.adminToken)
       .json({ portalBypass: true })
     bypass.assertStatus(422)
-    assert.equal(bypass.body().error, 'group_bypass_with_network')
+    assert.equal(bodyOf(bypass).error, 'group_bypass_with_network')
 
     // Wi-Fi keys: generated, shown again to admins, unique per gateway.
     const key = await client
@@ -267,14 +267,14 @@ test.group('device groups: REST', (group) => {
       .bearerToken(env.adminToken)
       .json({ label: 'Tenant' })
     key.assertStatus(201)
-    const passphrase = key.body().data.passphrase
+    const passphrase = bodyOf(key).data.passphrase
     assert.match(passphrase, /^[a-z2-9]{4}-[a-z2-9]{4}-[a-z2-9]{4}$/)
     const reveal = await client
-      .get(`/api/v1/device-groups/${unit.id}/keys/${key.body().data.key.id}/passphrase`)
+      .get(`/api/v1/device-groups/${unit.id}/keys/${bodyOf(key).data.key.id}/passphrase`)
       .bearerToken(env.adminToken)
-    assert.equal(reveal.body().data.passphrase, passphrase)
+    assert.equal(bodyOf(reveal).data.passphrase, passphrase)
     const noReveal = await client
-      .get(`/api/v1/device-groups/${unit.id}/keys/${key.body().data.key.id}/passphrase`)
+      .get(`/api/v1/device-groups/${unit.id}/keys/${bodyOf(key).data.key.id}/passphrase`)
       .bearerToken(env.operatorToken)
     noReveal.assertStatus(403)
     const again = await client
@@ -282,7 +282,7 @@ test.group('device groups: REST', (group) => {
       .bearerToken(env.adminToken)
       .json({ label: 'Copy', passphrase })
     again.assertStatus(409)
-    assert.equal(again.body().error, 'group_passphrase_taken')
+    assert.equal(bodyOf(again).error, 'group_passphrase_taken')
     const stored = await db.from('device_group_keys').first()
     assert.notInclude(stored.passphrase_encrypted, passphrase, 'encrypted at rest')
 
@@ -292,7 +292,7 @@ test.group('device groups: REST', (group) => {
       .bearerToken(env.adminToken)
       .json({ networkPerchId: null })
     drop.assertStatus(422)
-    assert.equal(drop.body().error, 'group_keys_need_vlan')
+    assert.equal(bodyOf(drop).error, 'group_keys_need_vlan')
 
     // No internet for the unit: its zone holds its network alone, so the
     // rule names the zone (IPv4 and IPv6 alike).
@@ -314,7 +314,7 @@ test.group('device groups: REST', (group) => {
         const res = await client
           .get(`/api/v1/device-groups/${unit.id}`)
           .bearerToken(env.operatorToken)
-        return res.body().data
+        return bodyOf(res).data
       },
       (d: any) => d.firewall.state === 'applied',
       15_000
@@ -325,8 +325,8 @@ test.group('device groups: REST', (group) => {
       .get(`/api/v1/device-groups/${unit.id}`)
       .bearerToken(env.operatorToken)
     detail.assertStatus(200)
-    assert.lengthOf(detail.body().data.keys, 1)
-    assert.notProperty(detail.body().data.keys[0], 'passphrase')
+    assert.lengthOf(bodyOf(detail).data.keys, 1)
+    assert.notProperty(bodyOf(detail).data.keys[0], 'passphrase')
 
     // Delete: the group's QoS assignment goes with it.
     const del = await client.delete(`/api/v1/device-groups/${unit.id}`).bearerToken(env.adminToken)
@@ -356,14 +356,14 @@ test.group('device groups: REST', (group) => {
       .post('/api/v1/device-groups')
       .bearerToken(env.adminToken)
       .json({ gatewayId: env.gatewayId, name: 'Kids', qos: { policyId: policy.id } })
-    const kids = kidsRes.body().data
+    const kids = bodyOf(kidsRes).data
     assert.equal(kids.qos.via, 'group')
     assert.equal(kids.qos.policyId, policy.id)
     const otherRes = await client
       .post('/api/v1/device-groups')
       .bearerToken(env.adminToken)
       .json({ gatewayId: env.gatewayId, name: 'Guests' })
-    const other = otherRes.body().data
+    const other = bodyOf(otherRes).data
 
     const r2 = await client
       .post(`/api/v1/device-groups/${kids.id}/members`)
@@ -375,15 +375,15 @@ test.group('device groups: REST', (group) => {
       .bearerToken(env.adminToken)
       .json({ mac: KID })
     taken.assertStatus(409)
-    assert.equal(taken.body().error, 'group_mac_taken')
-    assert.equal(taken.body().groupId, kids.id)
+    assert.equal(bodyOf(taken).error, 'group_mac_taken')
+    assert.equal(bodyOf(taken).groupId, kids.id)
     const moved = await client
       .post(`/api/v1/device-groups/${other.id}/members`)
       .bearerToken(env.adminToken)
       .json({ mac: KID, move: true })
     moved.assertStatus(201)
-    assert.isTrue(moved.body().data.moved)
-    assert.equal(moved.body().data.fromGroupId, kids.id)
+    assert.isTrue(bodyOf(moved).data.moved)
+    assert.equal(bodyOf(moved).data.fromGroupId, kids.id)
     await client
       .post(`/api/v1/device-groups/${kids.id}/members`)
       .bearerToken(env.adminToken)
@@ -414,7 +414,7 @@ test.group('device groups: REST', (group) => {
       .bearerToken(env.adminToken)
       .json({ internet: false })
     blocked.assertStatus(200)
-    assert.isFalse(blocked.body().data.internet)
+    assert.isFalse(bodyOf(blocked).data.internet)
     await gatewayQueue.drain(env.gatewayId)
     const sections = await eventually(
       () => groupSections(env.gatewayId),
@@ -494,7 +494,7 @@ test.group('device groups: REST', (group) => {
       .post('/api/v1/device-groups')
       .bearerToken(env.adminToken)
       .json({ gatewayId: env.gatewayId, name: 'Unit 101', networkPerchId: env.unitPerchId })
-    const unit = unitRes.body().data
+    const unit = bodyOf(unitRes).data
     const keyRes = await client
       .post(`/api/v1/device-groups/${unit.id}/keys`)
       .bearerToken(env.adminToken)
@@ -601,7 +601,7 @@ test.group('device groups: REST', (group) => {
       .post('/api/v1/device-groups')
       .bearerToken(env.adminToken)
       .json({ gatewayId: env.gatewayId, name: 'Unit 101', networkPerchId: env.unitPerchId })
-    const unit = unitRes.body().data
+    const unit = bodyOf(unitRes).data
     const bound = await client
       .post(`/api/v1/device-groups/${unit.id}/members`)
       .bearerToken(env.adminToken)
@@ -644,7 +644,7 @@ test.group('device groups: REST', (group) => {
       (list: any[]) => list[0]?.state === 'failed',
       5000
     )
-    assert.match(failed[0].error, /^unsafe_binding/)
+    assert.match(String(failed[0].error), /^unsafe_binding/)
 
     // The two-minute sweep: the same state and daemon, nothing is sent.
     await syncAllApGroups()
@@ -665,3 +665,8 @@ test.group('device groups: REST', (group) => {
     assert.equal(ap.agentVersion, '1.1.0-pre.2')
   })
 })
+
+/** Response bodies as untyped JSON (the registry types some of these routes as `void | …`). */
+function bodyOf(response: { body(): unknown }): any {
+  return response.body()
+}

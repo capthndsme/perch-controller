@@ -42,6 +42,8 @@ export type AlertView = {
   openedAt: string | null
   lastEventAt: string
   resolvedAt: string | null
+  /** When it last became news (opened, posted, escalated, reopened, flapping): the unread reference and the inbox order. */
+  bumpedAt: string
   quietResolve: boolean
   eventCount: number
   transitions: number
@@ -101,6 +103,7 @@ export function alertView(
     openedAt: isoOrNull(alert.openedAt),
     lastEventAt: isoOrNull(alert.lastEventAt)!,
     resolvedAt: isoOrNull(alert.resolvedAt),
+    bumpedAt: isoOrNull(alert.bumpedAt)!,
     quietResolve: alert.quietResolve,
     eventCount: alert.eventCount,
     transitions: alert.transitions,

@@ -5,12 +5,13 @@ import SystemSetting from '#models/system_setting'
 import User from '#models/user'
 import { fakeAlertClock } from '#services/alerts/clock'
 import { runDeliveryPass } from '#services/alerts/delivery_worker'
+import { _resetHeartbeat } from '#services/alerts/detectors/heartbeat'
 import { emitAlertEvent } from '#services/alerts/emit'
 import { flushAlertQueue } from '#services/alerts/engine'
 import { _resetRoutingState } from '#services/alerts/routing'
 import { _setSenders } from '#services/alerts/senders'
 import { ALERTS_DEFAULTS, getAlertsSettings, RULE_LIMITS } from '#services/alerts/settings'
-import { resetAlertEngineState, truncateAllTables } from '#tests/helpers/alerts'
+import { apiLoose, resetAlertEngineState, truncateAllTables } from '#tests/helpers/alerts'
 import { test } from '@japa/runner'
 
 /**
@@ -57,6 +58,7 @@ test.group('alerts settings API', (group) => {
     await truncateAllTables()
     await resetAlertEngineState()
     _resetRoutingState()
+    _resetHeartbeat()
     const clock = fakeAlertClock('2026-10-01T06:00:00Z')
     return async () => {
       clock.restore()
@@ -67,10 +69,12 @@ test.group('alerts settings API', (group) => {
 
   test('admin only', async ({ client }) => {
     const { operatorToken } = await seed()
-    const read = await client.get(ENDPOINT).bearerToken(operatorToken)
+    const read = await apiLoose(client).get(ENDPOINT).bearerToken(operatorToken)
     read.assertStatus(403)
     read.assertBodyContains({ error: 'admin_required' })
-    const deliveries = await client.get('/api/v1/alerts/deliveries').bearerToken(operatorToken)
+    const deliveries = await apiLoose(client)
+      .get('/api/v1/alerts/deliveries')
+      .bearerToken(operatorToken)
     deliveries.assertStatus(403)
   })
 
@@ -79,7 +83,7 @@ test.group('alerts settings API', (group) => {
     assert,
   }) => {
     const { adminToken } = await seed()
-    const r = await client.get(ENDPOINT).bearerToken(adminToken)
+    const r = await apiLoose(client).get(ENDPOINT).bearerToken(adminToken)
     r.assertStatus(200)
     const data = r.body().data
     assert.deepEqual(data.settings.quietHours, ALERTS_DEFAULTS.quietHours)
@@ -93,6 +97,8 @@ test.group('alerts settings API', (group) => {
     assert.deepEqual(data.overrides, {})
     assert.deepEqual(data.limits.rule.holdSeconds, RULE_LIMITS.holdSeconds)
     assert.equal(data.limits.bootGraceSeconds.min, 30)
+    assert.deepEqual(data.limits.rule.repeatMinutes, { min: 15, max: 1440, allowZero: true })
+    assert.deepEqual(data.limits.pushTtlMinutes.critical, { min: 5, max: 2880 })
     assert.isAbove(data.catalogue.length, 40)
     assert.equal(data.timezone, 'Asia/Manila')
     assert.isNull(data.vapid)
@@ -105,7 +111,7 @@ test.group('alerts settings API', (group) => {
     assert,
   }) => {
     const { adminToken } = await seed()
-    const first = await client
+    const first = await apiLoose(client)
       .patch(ENDPOINT)
       .bearerToken(adminToken)
       .json({
@@ -119,7 +125,7 @@ test.group('alerts settings API', (group) => {
     first.assertStatus(200)
     const data = first.body().data
     assert.deepEqual(data.settings.quietHours, { ...ALERTS_DEFAULTS.quietHours, enabled: true })
-    assert.match(data.settings.capturedOrigin, /^http:\/\/(127\.0\.0\.1|localhost):\d+$/)
+    assert.match(String(data.settings.capturedOrigin), /^http:\/\/(127\.0\.0\.1|localhost):\d+$/)
     assert.deepEqual(data.settings.heartbeat, {
       configured: true,
       urlDisplay: 'https://hc-ping.example.com/••••',
@@ -131,7 +137,7 @@ test.group('alerts settings API', (group) => {
     assert.isTrue(data.rules['device.new'].params.excludePortalNetworks)
     assert.deepEqual(data.overrides['wan.failover'], { holdSeconds: 90 })
 
-    const second = await client
+    const second = await apiLoose(client)
       .patch(ENDPOINT)
       .bearerToken(adminToken)
       .json({ rules: { 'wan.failover': null, 'device.new': { notify: false } } })
@@ -151,7 +157,7 @@ test.group('alerts settings API', (group) => {
     assert,
   }) => {
     const { adminToken } = await seed()
-    const r = await client
+    const r = await apiLoose(client)
       .patch(ENDPOINT)
       .bearerToken(adminToken)
       .json({
@@ -164,9 +170,9 @@ test.group('alerts settings API', (group) => {
         },
       })
     r.assertStatus(422)
-    const fields = (r.body().errors as Array<{ field: string; rule: string }>).map(
-      (e) => `${e.field}:${e.rule}`
-    )
+    const fields = (
+      r.body() as unknown as { errors: Array<{ field: string; rule: string }> }
+    ).errors.map((e) => `${e.field}:${e.rule}`)
     assert.includeMembers(fields, [
       'dashboardUrl:origin',
       'vapidSubject:not_localhost',
@@ -177,7 +183,10 @@ test.group('alerts settings API', (group) => {
       'rules.device.new.params.minPresenceMinutes:param_value',
       'rules.device.new.params.nope:param',
     ])
-    const vine = await client.patch(ENDPOINT).bearerToken(adminToken).json({ bootGraceSeconds: 5 })
+    const vine = await apiLoose(client)
+      .patch(ENDPOINT)
+      .bearerToken(adminToken)
+      .json({ bootGraceSeconds: 5 })
     vine.assertStatus(422)
     assert.deepEqual(await getAlertsSettings(), { ...ALERTS_DEFAULTS, rules: {} })
   })
@@ -189,7 +198,7 @@ test.group('alerts settings API', (group) => {
     const before = await Alert.query().where('type', 'system.rollup_stalled').firstOrFail()
     assert.equal(before.state, 'active')
 
-    const r = await client
+    const r = await apiLoose(client)
       .patch(ENDPOINT)
       .bearerToken(adminToken)
       .json({ rules: { 'system.rollup_stalled': { enabled: false } } })
@@ -204,7 +213,7 @@ test.group('alerts settings API', (group) => {
     assert,
   }) => {
     const { adminToken } = await seed()
-    const r = await client
+    const r = await apiLoose(client)
       .post(`${ENDPOINT}/test`)
       .bearerToken(adminToken)
       .json({ severity: 'warning', title: 'Hello from the test' })
@@ -213,10 +222,10 @@ test.group('alerts settings API', (group) => {
     assert.equal(alert.type, 'system.test')
     assert.equal(alert.severity, 'warning')
     assert.equal(alert.title, 'Hello from the test')
-    const invalid = await client
+    const invalid = await apiLoose(client)
       .post(`${ENDPOINT}/test`)
       .bearerToken(adminToken)
-      .json({ severity: 'loud' })
+      .json({ severity: 'loud' } as never)
     invalid.assertStatus(422)
   })
 
@@ -267,7 +276,7 @@ test.group('alerts settings API', (group) => {
     await flushAlertQueue()
     await runDeliveryPass()
 
-    const page = await client
+    const page = await apiLoose(client)
       .get('/api/v1/alerts/deliveries')
       .qs({ destination: `webhook:${hook.id}`, limit: 2 })
       .bearerToken(adminToken)
@@ -282,25 +291,25 @@ test.group('alerts settings API', (group) => {
       format: 'standard',
     })
     assert.isNull(deliveries[0].nextAttemptAt)
-    const rest = await client
+    const rest = await apiLoose(client)
       .get('/api/v1/alerts/deliveries')
       .qs({ before: nextCursor })
       .bearerToken(adminToken)
     assert.lengthOf(rest.body().data.deliveries, 1)
     assert.isNull(rest.body().data.nextCursor)
 
-    const byStatus = await client
+    const byStatus = await apiLoose(client)
       .get('/api/v1/alerts/deliveries')
       .qs({ status: 'failed,expired' })
       .bearerToken(adminToken)
     assert.lengthOf(byStatus.body().data.deliveries, 0)
-    const bad = await client
+    const bad = await apiLoose(client)
       .get('/api/v1/alerts/deliveries')
       .qs({ status: 'nope' })
       .bearerToken(adminToken)
     bad.assertStatus(422)
 
-    const detail = await client
+    const detail = await apiLoose(client)
       .get(`/api/v1/alerts/deliveries/${deliveries[0].id}`)
       .bearerToken(adminToken)
     detail.assertStatus(200)
@@ -314,7 +323,9 @@ test.group('alerts settings API', (group) => {
         responseExcerpt: null,
       },
     ])
-    const missing = await client.get('/api/v1/alerts/deliveries/999999').bearerToken(adminToken)
+    const missing = await apiLoose(client)
+      .get('/api/v1/alerts/deliveries/999999')
+      .bearerToken(adminToken)
     missing.assertStatus(404)
     missing.assertBodyContains({ error: 'delivery_not_found' })
   })

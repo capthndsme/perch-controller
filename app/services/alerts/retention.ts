@@ -24,10 +24,11 @@ export type AlertsPruneResult = {
   mutes: number
 }
 
-async function batched(run: () => Promise<number>): Promise<number> {
+async function batched(run: () => PromiseLike<unknown>): Promise<number> {
   let total = 0
   for (;;) {
-    const affected = Number(await run()) || 0
+    const result = await run()
+    const affected = Number(Array.isArray(result) ? result[0] : result) || 0
     total += affected
     if (affected < BATCH) return total
   }

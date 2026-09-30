@@ -2,6 +2,7 @@ import Alert from '#models/alert'
 import SystemSetting from '#models/system_setting'
 import { getAlertType, listAlertTypes } from '#services/alerts/catalogue/index'
 import { deliveryEnabled } from '#services/alerts/delivery_worker'
+import { heartbeatStatus } from '#services/alerts/detectors/heartbeat'
 import { emitAlertEvent } from '#services/alerts/emit'
 import { instanceZone, resolveTypeQuietly, runOnEngine } from '#services/alerts/engine'
 import type { AlertsSettings } from '#services/alerts/model'
@@ -61,27 +62,13 @@ async function vapidView(settings: AlertsSettings) {
   }
 }
 
-type HeartbeatStatus = {
-  lastPingAt: string | null
-  lastStatus: number | null
-  lastError: string | null
-}
-
-/** Last heartbeat ping, from the controller-lifecycle side (WP-A5a) when it is present. */
-async function heartbeatInfo(): Promise<HeartbeatStatus> {
-  const empty = { lastPingAt: null, lastStatus: null, lastError: null }
-  const specifier: string = '#services/alerts/detectors/heartbeat'
-  try {
-    const mod = (await import(specifier)) as { heartbeatStatus?: () => Partial<HeartbeatStatus> }
-    const status = mod.heartbeatStatus?.()
-    if (!status) return empty
-    return {
-      lastPingAt: status.lastPingAt ?? null,
-      lastStatus: status.lastStatus ?? null,
-      lastError: status.lastError ?? null,
-    }
-  } catch {
-    return empty
+/** Last heartbeat ping (the pinger of the controller lifecycle, WP-A5a). */
+function heartbeatInfo() {
+  const status = heartbeatStatus()
+  return {
+    lastPingAt: status.lastPingAt,
+    lastStatus: status.lastStatus,
+    lastError: status.lastError,
   }
 }
 
@@ -96,7 +83,7 @@ async function settingsBody(settings: AlertsSettings) {
     catalogue: await catalogueTypeViews(types),
     timezone: await instanceZone(),
     vapid: await vapidView(settings),
-    heartbeat: await heartbeatInfo(),
+    heartbeat: heartbeatInfo(),
     deliveryEnabled: deliveryEnabled(),
   }
 }

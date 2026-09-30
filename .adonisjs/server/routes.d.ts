@@ -4,6 +4,39 @@ type ParamValue = string | number | bigint | boolean
 
 export type ScannedRoutes = {
   ALL: {
+    'alerts.push.renew': { paramsTuple?: []; params?: {} }
+    'alerts.summary': { paramsTuple?: []; params?: {} }
+    'alerts.catalogue': { paramsTuple?: []; params?: {} }
+    'alerts.read': { paramsTuple?: []; params?: {} }
+    'alerts.mutes.index': { paramsTuple?: []; params?: {} }
+    'alerts.watches.index': { paramsTuple?: []; params?: {} }
+    'alerts.push.config': { paramsTuple?: []; params?: {} }
+    'alerts.push.index': { paramsTuple?: []; params?: {} }
+    'alerts.push.store': { paramsTuple?: []; params?: {} }
+    'alerts.push.unsubscribe': { paramsTuple?: []; params?: {} }
+    'alerts.push.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'alerts.push.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'alerts.push.test': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'alerts.index': { paramsTuple?: []; params?: {} }
+    'alerts.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'alerts.mutes.store': { paramsTuple?: []; params?: {} }
+    'alerts.mutes.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'alerts.watches.update': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'alerts.deliveries.index': { paramsTuple?: []; params?: {} }
+    'alerts.deliveries.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'alerts.acknowledge': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'alerts.resolve': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.alerts.show': { paramsTuple?: []; params?: {} }
+    'settings.alerts.update': { paramsTuple?: []; params?: {} }
+    'settings.alerts.test': { paramsTuple?: []; params?: {} }
+    'settings.alerts.vapid.rotate': { paramsTuple?: []; params?: {} }
+    'settings.alerts.webhooks.index': { paramsTuple?: []; params?: {} }
+    'settings.alerts.webhooks.store': { paramsTuple?: []; params?: {} }
+    'settings.alerts.webhooks.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.alerts.webhooks.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.alerts.webhooks.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.alerts.webhooks.test': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.alerts.webhooks.rotateSecret': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'setup.status': { paramsTuple?: []; params?: {} }
     'setup.admin': { paramsTuple?: []; params?: {} }
     'setup.login': { paramsTuple?: []; params?: {} }
@@ -58,6 +91,8 @@ export type ScannedRoutes = {
     'settings.collectors.probe': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'settings.collectors.adopt': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'settings.collectors.dismiss': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.deviceGroups': { paramsTuple?: []; params?: {} }
+    'settings.updateDeviceGroups': { paramsTuple?: []; params?: {} }
     'settings.portal': { paramsTuple?: []; params?: {} }
     'settings.updatePortal': { paramsTuple?: []; params?: {} }
     'settings.users.index': { paramsTuple?: []; params?: {} }
@@ -95,6 +130,7 @@ export type ScannedRoutes = {
     'devices.networks': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'devices.reservation': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'devices.wanAccess': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.group': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'devices.putWanAccess': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'devices.putReservation': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'devices.deleteReservation': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
@@ -117,6 +153,9 @@ export type ScannedRoutes = {
     'wifi.wifi.locate_ap': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'infra.layout': { paramsTuple?: []; params?: {} }
     'infra.state': { paramsTuple?: []; params?: {} }
+    'infra.ports.traffic': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'infra.links.traffic': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'infra.nodes.traffic': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'infra.nodes.store': { paramsTuple?: []; params?: {} }
     'infra.nodes.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'infra.nodes.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
@@ -199,6 +238,18 @@ export type ScannedRoutes = {
     'portal.checkouts.void': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.checkouts.credit': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.checkouts.dismiss': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'deviceGroups.index': { paramsTuple?: []; params?: {} }
+    'deviceGroups.aps': { paramsTuple?: []; params?: {} }
+    'deviceGroups.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'deviceGroups.store': { paramsTuple?: []; params?: {} }
+    'deviceGroups.aps.update': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'deviceGroups.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'deviceGroups.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'deviceGroups.members.store': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'deviceGroups.members.destroy': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'mac': ParamValue} }
+    'deviceGroups.keys.store': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'deviceGroups.keys.reveal': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'keyId': ParamValue} }
+    'deviceGroups.keys.destroy': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'keyId': ParamValue} }
     'qos.overview': { paramsTuple?: []; params?: {} }
     'qos.devices.index': { paramsTuple?: []; params?: {} }
     'qos.wanQueues.index': { paramsTuple?: []; params?: {} }
@@ -293,7 +344,122 @@ export type ScannedRoutes = {
     'gateways.updateFirewallRule': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
     'gateways.deleteFirewallRule': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
   }
+  POST: {
+    'alerts.push.renew': { paramsTuple?: []; params?: {} }
+    'alerts.read': { paramsTuple?: []; params?: {} }
+    'alerts.push.store': { paramsTuple?: []; params?: {} }
+    'alerts.push.unsubscribe': { paramsTuple?: []; params?: {} }
+    'alerts.push.test': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'alerts.mutes.store': { paramsTuple?: []; params?: {} }
+    'alerts.acknowledge': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'alerts.resolve': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.alerts.test': { paramsTuple?: []; params?: {} }
+    'settings.alerts.vapid.rotate': { paramsTuple?: []; params?: {} }
+    'settings.alerts.webhooks.store': { paramsTuple?: []; params?: {} }
+    'settings.alerts.webhooks.test': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.alerts.webhooks.rotateSecret': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'setup.admin': { paramsTuple?: []; params?: {} }
+    'setup.login': { paramsTuple?: []; params?: {} }
+    'setup.instance': { paramsTuple?: []; params?: {} }
+    'setup.collector': { paramsTuple?: []; params?: {} }
+    'setup.collector.skip': { paramsTuple?: []; params?: {} }
+    'setup.collector.adopt': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'collectors.announce': { paramsTuple?: []; params?: {} }
+    'apAgent.join': { paramsTuple?: []; params?: {} }
+    'auth.new_account.store': { paramsTuple?: []; params?: {} }
+    'auth.access_tokens.store': { paramsTuple?: []; params?: {} }
+    'profile.access_tokens.destroy': { paramsTuple?: []; params?: {} }
+    'settings.settings.probe_wifi_source_draft': { paramsTuple?: []; params?: {} }
+    'settings.settings.create_wifi_source': { paramsTuple?: []; params?: {} }
+    'settings.settings.probe_wifi_source': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.wifiSources.agentPing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.apJoinTokens.store': { paramsTuple?: []; params?: {} }
+    'settings.apJoinTokens.reveal': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.collectors.store': { paramsTuple?: []; params?: {} }
+    'settings.collectors.probeDraft': { paramsTuple?: []; params?: {} }
+    'settings.collectors.probe': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.collectors.adopt': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.collectors.dismiss': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.users.store': { paramsTuple?: []; params?: {} }
+    'wifi.wifi.kick_client': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'wifi.wifi.steer_client': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'wifi.wifi.reboot_ap': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'wifi.wifi.locate_ap': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'infra.nodes.store': { paramsTuple?: []; params?: {} }
+    'infra.nodes.bind': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'infra.nodes.ports.store': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'infra.links.store': { paramsTuple?: []; params?: {} }
+    'gatewayObservations.gateway_observations.observe': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'gatewayObservations.gateway_observations.create_backup': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'portal.authorizations.store': { paramsTuple?: []; params?: {} }
+    'portal.priceTables.quote': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.portals.store': { paramsTuple?: []; params?: {} }
+    'portal.gateways.rotateKey': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
+    'portal.grants.extend': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.grants.revoke': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.templates.store': { paramsTuple?: []; params?: {} }
+    'portal.templates.duplicate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.voucherBatches.store': { paramsTuple?: []; params?: {} }
+    'portal.voucherBatches.revoke': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.vouchers.lookup': { paramsTuple?: []; params?: {} }
+    'portal.vouchers.revoke': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.users.store': { paramsTuple?: []; params?: {} }
+    'portal.apiClients.store': { paramsTuple?: []; params?: {} }
+    'portal.apiClients.rotate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.priceTables.store': { paramsTuple?: []; params?: {} }
+    'portal.terminals.store': { paramsTuple?: []; params?: {} }
+    'portal.terminals.rotate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.checkouts.void': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.checkouts.credit': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'portal.checkouts.dismiss': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'deviceGroups.store': { paramsTuple?: []; params?: {} }
+    'deviceGroups.members.store': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'deviceGroups.keys.store': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.wanQueues.store': { paramsTuple?: []; params?: {} }
+    'qos.policies.store': { paramsTuple?: []; params?: {} }
+    'qos.groups.store': { paramsTuple?: []; params?: {} }
+    'qos.assignments.store': { paramsTuple?: []; params?: {} }
+    'qos.schedules.store': { paramsTuple?: []; params?: {} }
+    'qos.assignments.resetQuota': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'qos.pause': { paramsTuple?: []; params?: {} }
+    'qos.resume': { paramsTuple?: []; params?: {} }
+    'gateways.createNetwork': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.bind': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.refresh': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.resolve': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createApply': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.installPackages': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.startPairing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.confirmPairing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.confirmApply': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'applyId': ParamValue} }
+    'gateways.revertApply': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'applyId': ParamValue} }
+    'gateways.restoreRevision': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'number': ParamValue} }
+    'gateways.dismissRejoin': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.acceptDrift': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.revertDrift': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.resumeEnforcement': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createRecord': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.applyLabelNames': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createDhcpTag': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createRoute': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.resolveFirewallOrder': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createPortForward': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.createFirewallRule': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+  }
   GET: {
+    'alerts.summary': { paramsTuple?: []; params?: {} }
+    'alerts.catalogue': { paramsTuple?: []; params?: {} }
+    'alerts.mutes.index': { paramsTuple?: []; params?: {} }
+    'alerts.watches.index': { paramsTuple?: []; params?: {} }
+    'alerts.push.config': { paramsTuple?: []; params?: {} }
+    'alerts.push.index': { paramsTuple?: []; params?: {} }
+    'alerts.index': { paramsTuple?: []; params?: {} }
+    'alerts.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'alerts.deliveries.index': { paramsTuple?: []; params?: {} }
+    'alerts.deliveries.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.alerts.show': { paramsTuple?: []; params?: {} }
+    'settings.alerts.webhooks.index': { paramsTuple?: []; params?: {} }
+    'settings.alerts.webhooks.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'setup.status': { paramsTuple?: []; params?: {} }
     'setup.collector.candidates': { paramsTuple?: []; params?: {} }
     'version': { paramsTuple?: []; params?: {} }
@@ -312,6 +478,7 @@ export type ScannedRoutes = {
     'settings.apAgent.install': { paramsTuple?: []; params?: {} }
     'settings.collectors.index': { paramsTuple?: []; params?: {} }
     'settings.collectors.discovery': { paramsTuple?: []; params?: {} }
+    'settings.deviceGroups': { paramsTuple?: []; params?: {} }
     'settings.portal': { paramsTuple?: []; params?: {} }
     'settings.users.index': { paramsTuple?: []; params?: {} }
     'aggregateTraffic': { paramsTuple?: []; params?: {} }
@@ -343,6 +510,7 @@ export type ScannedRoutes = {
     'devices.networks': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'devices.reservation': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'devices.wanAccess': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.group': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'wifi.wifi.overview': { paramsTuple?: []; params?: {} }
     'wifi.wifi.ssids': { paramsTuple?: []; params?: {} }
     'wifi.wifi.ssid_clients': { paramsTuple: [ParamValue]; params: {'ssid': ParamValue} }
@@ -358,6 +526,9 @@ export type ScannedRoutes = {
     'wifi.wifi.ap_health': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'infra.layout': { paramsTuple?: []; params?: {} }
     'infra.state': { paramsTuple?: []; params?: {} }
+    'infra.ports.traffic': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'infra.links.traffic': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'infra.nodes.traffic': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'gatewayObservations.gateway_observations.overview': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
     'gatewayObservations.gateway_observations.leases': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
     'gatewayObservations.gateway_observations.neighbors': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
@@ -389,6 +560,10 @@ export type ScannedRoutes = {
     'portal.vouchers.index': { paramsTuple?: []; params?: {} }
     'portal.users.index': { paramsTuple?: []; params?: {} }
     'portal.apiClients.index': { paramsTuple?: []; params?: {} }
+    'deviceGroups.index': { paramsTuple?: []; params?: {} }
+    'deviceGroups.aps': { paramsTuple?: []; params?: {} }
+    'deviceGroups.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'deviceGroups.keys.reveal': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'keyId': ParamValue} }
     'qos.overview': { paramsTuple?: []; params?: {} }
     'qos.devices.index': { paramsTuple?: []; params?: {} }
     'qos.wanQueues.index': { paramsTuple?: []; params?: {} }
@@ -420,6 +595,19 @@ export type ScannedRoutes = {
     'gateways.firewall': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
   }
   HEAD: {
+    'alerts.summary': { paramsTuple?: []; params?: {} }
+    'alerts.catalogue': { paramsTuple?: []; params?: {} }
+    'alerts.mutes.index': { paramsTuple?: []; params?: {} }
+    'alerts.watches.index': { paramsTuple?: []; params?: {} }
+    'alerts.push.config': { paramsTuple?: []; params?: {} }
+    'alerts.push.index': { paramsTuple?: []; params?: {} }
+    'alerts.index': { paramsTuple?: []; params?: {} }
+    'alerts.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'alerts.deliveries.index': { paramsTuple?: []; params?: {} }
+    'alerts.deliveries.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.alerts.show': { paramsTuple?: []; params?: {} }
+    'settings.alerts.webhooks.index': { paramsTuple?: []; params?: {} }
+    'settings.alerts.webhooks.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'setup.status': { paramsTuple?: []; params?: {} }
     'setup.collector.candidates': { paramsTuple?: []; params?: {} }
     'version': { paramsTuple?: []; params?: {} }
@@ -438,6 +626,7 @@ export type ScannedRoutes = {
     'settings.apAgent.install': { paramsTuple?: []; params?: {} }
     'settings.collectors.index': { paramsTuple?: []; params?: {} }
     'settings.collectors.discovery': { paramsTuple?: []; params?: {} }
+    'settings.deviceGroups': { paramsTuple?: []; params?: {} }
     'settings.portal': { paramsTuple?: []; params?: {} }
     'settings.users.index': { paramsTuple?: []; params?: {} }
     'aggregateTraffic': { paramsTuple?: []; params?: {} }
@@ -469,6 +658,7 @@ export type ScannedRoutes = {
     'devices.networks': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'devices.reservation': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'devices.wanAccess': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.group': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
     'wifi.wifi.overview': { paramsTuple?: []; params?: {} }
     'wifi.wifi.ssids': { paramsTuple?: []; params?: {} }
     'wifi.wifi.ssid_clients': { paramsTuple: [ParamValue]; params: {'ssid': ParamValue} }
@@ -484,6 +674,9 @@ export type ScannedRoutes = {
     'wifi.wifi.ap_health': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'infra.layout': { paramsTuple?: []; params?: {} }
     'infra.state': { paramsTuple?: []; params?: {} }
+    'infra.ports.traffic': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'infra.links.traffic': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'infra.nodes.traffic': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'gatewayObservations.gateway_observations.overview': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
     'gatewayObservations.gateway_observations.leases': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
     'gatewayObservations.gateway_observations.neighbors': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
@@ -515,6 +708,10 @@ export type ScannedRoutes = {
     'portal.vouchers.index': { paramsTuple?: []; params?: {} }
     'portal.users.index': { paramsTuple?: []; params?: {} }
     'portal.apiClients.index': { paramsTuple?: []; params?: {} }
+    'deviceGroups.index': { paramsTuple?: []; params?: {} }
+    'deviceGroups.aps': { paramsTuple?: []; params?: {} }
+    'deviceGroups.show': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'deviceGroups.keys.reveal': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'keyId': ParamValue} }
     'qos.overview': { paramsTuple?: []; params?: {} }
     'qos.devices.index': { paramsTuple?: []; params?: {} }
     'qos.wanQueues.index': { paramsTuple?: []; params?: {} }
@@ -545,93 +742,10 @@ export type ScannedRoutes = {
     'gateways.routing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'gateways.firewall': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
   }
-  POST: {
-    'setup.admin': { paramsTuple?: []; params?: {} }
-    'setup.login': { paramsTuple?: []; params?: {} }
-    'setup.instance': { paramsTuple?: []; params?: {} }
-    'setup.collector': { paramsTuple?: []; params?: {} }
-    'setup.collector.skip': { paramsTuple?: []; params?: {} }
-    'setup.collector.adopt': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'collectors.announce': { paramsTuple?: []; params?: {} }
-    'apAgent.join': { paramsTuple?: []; params?: {} }
-    'auth.new_account.store': { paramsTuple?: []; params?: {} }
-    'auth.access_tokens.store': { paramsTuple?: []; params?: {} }
-    'profile.access_tokens.destroy': { paramsTuple?: []; params?: {} }
-    'settings.settings.probe_wifi_source_draft': { paramsTuple?: []; params?: {} }
-    'settings.settings.create_wifi_source': { paramsTuple?: []; params?: {} }
-    'settings.settings.probe_wifi_source': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'settings.wifiSources.agentPing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'settings.apJoinTokens.store': { paramsTuple?: []; params?: {} }
-    'settings.apJoinTokens.reveal': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'settings.collectors.store': { paramsTuple?: []; params?: {} }
-    'settings.collectors.probeDraft': { paramsTuple?: []; params?: {} }
-    'settings.collectors.probe': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'settings.collectors.adopt': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'settings.collectors.dismiss': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'settings.users.store': { paramsTuple?: []; params?: {} }
-    'wifi.wifi.kick_client': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
-    'wifi.wifi.steer_client': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
-    'wifi.wifi.reboot_ap': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'wifi.wifi.locate_ap': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'infra.nodes.store': { paramsTuple?: []; params?: {} }
-    'infra.nodes.bind': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'infra.nodes.ports.store': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'infra.links.store': { paramsTuple?: []; params?: {} }
-    'gatewayObservations.gateway_observations.observe': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
-    'gatewayObservations.gateway_observations.create_backup': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
-    'portal.authorizations.store': { paramsTuple?: []; params?: {} }
-    'portal.priceTables.quote': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.portals.store': { paramsTuple?: []; params?: {} }
-    'portal.gateways.rotateKey': { paramsTuple: [ParamValue]; params: {'gatewayId': ParamValue} }
-    'portal.grants.extend': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.grants.revoke': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.templates.store': { paramsTuple?: []; params?: {} }
-    'portal.templates.duplicate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.voucherBatches.store': { paramsTuple?: []; params?: {} }
-    'portal.voucherBatches.revoke': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.vouchers.lookup': { paramsTuple?: []; params?: {} }
-    'portal.vouchers.revoke': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.users.store': { paramsTuple?: []; params?: {} }
-    'portal.apiClients.store': { paramsTuple?: []; params?: {} }
-    'portal.apiClients.rotate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.priceTables.store': { paramsTuple?: []; params?: {} }
-    'portal.terminals.store': { paramsTuple?: []; params?: {} }
-    'portal.terminals.rotate': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.checkouts.void': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.checkouts.credit': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'portal.checkouts.dismiss': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'qos.wanQueues.store': { paramsTuple?: []; params?: {} }
-    'qos.policies.store': { paramsTuple?: []; params?: {} }
-    'qos.groups.store': { paramsTuple?: []; params?: {} }
-    'qos.assignments.store': { paramsTuple?: []; params?: {} }
-    'qos.schedules.store': { paramsTuple?: []; params?: {} }
-    'qos.assignments.resetQuota': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'qos.pause': { paramsTuple?: []; params?: {} }
-    'qos.resume': { paramsTuple?: []; params?: {} }
-    'gateways.createNetwork': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.bind': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.refresh': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.resolve': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.createApply': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.installPackages': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.startPairing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.confirmPairing': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.confirmApply': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'applyId': ParamValue} }
-    'gateways.revertApply': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'applyId': ParamValue} }
-    'gateways.restoreRevision': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'number': ParamValue} }
-    'gateways.dismissRejoin': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.acceptDrift': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.revertDrift': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.resumeEnforcement': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.createRecord': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.applyLabelNames': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.createDhcpTag': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.createRoute': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.resolveFirewallOrder': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.createPortForward': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.createFirewallRule': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-  }
   PATCH: {
+    'alerts.push.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.alerts.update': { paramsTuple?: []; params?: {} }
+    'settings.alerts.webhooks.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'profile.profile.change_password': { paramsTuple?: []; params?: {} }
     'settings.settings.update_hostname_enrichment': { paramsTuple?: []; params?: {} }
     'settings.updatePresence': { paramsTuple?: []; params?: {} }
@@ -640,6 +754,7 @@ export type ScannedRoutes = {
     'settings.updateQos': { paramsTuple?: []; params?: {} }
     'settings.updateCharts': { paramsTuple?: []; params?: {} }
     'settings.collectors.updateDiscovery': { paramsTuple?: []; params?: {} }
+    'settings.updateDeviceGroups': { paramsTuple?: []; params?: {} }
     'settings.updatePortal': { paramsTuple?: []; params?: {} }
     'settings.users.updateRole': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'devices.updateLabel': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
@@ -652,6 +767,8 @@ export type ScannedRoutes = {
     'portal.apiClients.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.priceTables.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.terminals.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'deviceGroups.aps.update': { paramsTuple: [ParamValue]; params: {'apId': ParamValue} }
+    'deviceGroups.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'qos.wanQueues.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'qos.policies.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'qos.groups.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
@@ -670,19 +787,10 @@ export type ScannedRoutes = {
     'gateways.updatePortForward': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
     'gateways.updateFirewallRule': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
   }
-  PUT: {
-    'settings.settings.update_wifi_source': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'settings.collectors.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'devices.putWanAccess': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
-    'devices.putReservation': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
-    'infra.positions': { paramsTuple?: []; params?: {} }
-    'portal.templates.files.put': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'name': ParamValue} }
-    'portal.users.password': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.setSignKey': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.orderFirewallRules': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-    'gateways.orderPortForwards': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
-  }
   DELETE: {
+    'alerts.push.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'alerts.mutes.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.alerts.webhooks.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'settings.settings.delete_wifi_source': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'settings.wifiSources.agentForget': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'settings.apJoinTokens.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
@@ -702,6 +810,9 @@ export type ScannedRoutes = {
     'portal.apiClients.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.priceTables.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'portal.terminals.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'deviceGroups.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'deviceGroups.members.destroy': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'mac': ParamValue} }
+    'deviceGroups.keys.destroy': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'keyId': ParamValue} }
     'qos.wanQueues.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'qos.policies.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
     'qos.groups.destroy': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
@@ -716,6 +827,19 @@ export type ScannedRoutes = {
     'gateways.deleteRoute': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
     'gateways.deletePortForward': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
     'gateways.deleteFirewallRule': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'perchId': ParamValue} }
+  }
+  PUT: {
+    'alerts.watches.update': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'settings.settings.update_wifi_source': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'settings.collectors.update': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'devices.putWanAccess': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'devices.putReservation': { paramsTuple: [ParamValue]; params: {'mac': ParamValue} }
+    'infra.positions': { paramsTuple?: []; params?: {} }
+    'portal.templates.files.put': { paramsTuple: [ParamValue,ParamValue]; params: {'id': ParamValue,'name': ParamValue} }
+    'portal.users.password': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.setSignKey': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.orderFirewallRules': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
+    'gateways.orderPortForwards': { paramsTuple: [ParamValue]; params: {'id': ParamValue} }
   }
 }
 declare module '@adonisjs/core/types/http' {

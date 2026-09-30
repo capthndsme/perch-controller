@@ -10,6 +10,7 @@ import {
 import type { ConditionInput, EmitInput, Transition } from '#services/alerts/model'
 import { _resetSubjectLabels } from '#services/alerts/subjects'
 import db from '@adonisjs/lucid/services/db'
+import type { ApiClient, ApiRequest } from '@japa/api-client'
 
 /**
  * Test side of the alerts event API (docs/design/alerts/README.md §11.2),
@@ -151,4 +152,17 @@ export async function truncateAllTables(): Promise<void> {
       await trx.rawQuery('SET FOREIGN_KEY_CHECKS = 1')
     }
   })
+}
+
+type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete'
+
+/**
+ * The test client, untyped. The typed client (`RoutesRegistry`) infers bodies
+ * and responses from the route pattern; instantiating it with non-literal
+ * paths (`/api/v1/alerts/${id}`) unions every route's types, and that union,
+ * checked early, turns other suites' `call(client, method, path).json(...)`
+ * helpers into `never`. Alerts specs call through this instead.
+ */
+export function apiLoose(client: ApiClient): Record<HttpMethod, (path: string) => ApiRequest> {
+  return client as unknown as Record<HttpMethod, (path: string) => ApiRequest>
 }

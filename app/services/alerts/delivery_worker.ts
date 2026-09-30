@@ -5,11 +5,17 @@ import AlertPushSubscription from '#models/alert_push_subscription'
 import AlertWebhook from '#models/alert_webhook'
 import { getAlertType } from '#services/alerts/catalogue/index'
 import { alertNow, sqlTime } from '#services/alerts/clock'
+import {
+  refreshOutOfBand,
+  setOutOfBandTransport,
+  type OutOfBandMessage,
+  type OutOfBandTransport,
+} from '#services/alerts/detectors/out_of_band'
 import { emitAlertEvent } from '#services/alerts/emit'
 import { instanceZone } from '#services/alerts/engine'
 import { filterMatches } from '#services/alerts/filters'
 import { buildMessage, destinationIdOf } from '#services/alerts/messages'
-import type { AlertsSettings, Severity } from '#services/alerts/model'
+import type { AlertsSettings } from '#services/alerts/model'
 import { pushSender } from '#services/alerts/push/push_sender'
 import { quietHoldUntil } from '#services/alerts/quiet_hours'
 import { rateLimitHoldUntil } from '#services/alerts/rate_limit'
@@ -532,15 +538,6 @@ export async function sendTestDelivery(
 /* Out-of-band transport (database unreachable, delivery.md §6)        */
 /* ------------------------------------------------------------------ */
 
-export type OutOfBandMessageLike = {
-  type: string
-  transition: 'opened' | 'resolved'
-  severity: Severity
-  title: string
-  body: string
-  path: string
-}
-
 type CachedDestination = { kind: DestinationKind; row: Destination }
 
 const OOB_MAX_DESTINATIONS = 500
@@ -554,7 +551,7 @@ const OOB_RETRY_WINDOW_MS = 15 * 60_000
  * database answers. Sends go straight to the senders (no rows), honouring
  * filters, channels and mutes as cached, retried in memory for 15 minutes.
  */
-export function createOutOfBandTransport() {
+export function createOutOfBandTransport(): OutOfBandTransport {
   let destinations: CachedDestination[] = []
   let settings: AlertsSettings | null = null
   let muted = false
@@ -587,7 +584,7 @@ export function createOutOfBandTransport() {
         .first()
       muted = Boolean(mute)
     },
-    async send(message: OutOfBandMessageLike): Promise<void> {
+    async send(message: OutOfBandMessage): Promise<void> {
       try {
         if (!settings || muted || !deliveryEnabled()) return
         const def = getAlertType(message.type)
@@ -663,22 +660,8 @@ async function sendWithRetries(
   }
 }
 
-/**
- * Hands the transport to the controller-lifecycle detector's out-of-band
- * path when that module is present (WP-A5a owns it). Imported by name at run
- * time so this package does not depend on it at compile time.
- */
+/** Hands the transport to the out-of-band path of the controller lifecycle (WP-A5a). */
 async function installOutOfBandTransport(): Promise<void> {
-  const specifier: string = '#services/alerts/detectors/out_of_band'
-  try {
-    const mod = (await import(specifier)) as {
-      setOutOfBandTransport?: (t: ReturnType<typeof createOutOfBandTransport>) => void
-      refreshOutOfBand?: () => Promise<void>
-    }
-    if (typeof mod.setOutOfBandTransport !== 'function') return
-    mod.setOutOfBandTransport(createOutOfBandTransport())
-    await mod.refreshOutOfBand?.()
-  } catch (error) {
-    logger.debug({ err: error }, 'alerts: no out-of-band path to wire')
-  }
+  setOutOfBandTransport(createOutOfBandTransport())
+  await refreshOutOfBand()
 }
