@@ -171,6 +171,14 @@ export interface FeatureObservation {
   }> | null
   /** `system` part: flow offloading as the router runs it (`firewall_defaults`' check). */
   offloading?: { flowOffloading: boolean | null; flowOffloadingHw: boolean | null } | null
+  /** `upnp` part: whether miniupnpd runs (`upnp`'s check). */
+  upnp?: { running: boolean | null } | null
+  /** `ddns` part: which services' updaters run (`ddns`' check). */
+  ddns?: { services: Array<{ name: string; running: boolean }> } | null
+  /** `wireguard` part: the peers each interface has loaded (`wireguard`'s check). */
+  wireguard?: {
+    interfaces: Array<{ name: string; network: string | null; peers: string[] }>
+  } | null
 }
 
 // ── apply checks (gateway sync domains.md 1.5, protocol.md 1) ────────────

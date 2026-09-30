@@ -578,7 +578,7 @@ function zoneOfAddress(states: SectionState[], zones: ZoneInfo[], ip: string): s
 }
 
 /** Places new members of an order (a Perch rule on top, the block rules first toward WAN). */
-async function placeInOrder(
+export async function placeInOrder(
   gateway: Gateway,
   userId: number | null,
   key: OrderKey,
@@ -624,7 +624,7 @@ type Destination = { ip: string; reservationEdits: SectionEdit[]; reservationId:
  * `deviceMac`, the device's reservation, else one is created from its
  * current lease in the same job (`dhcp` before `firewall`).
  */
-async function resolveDestination(
+export async function resolveDestination(
   gateway: Gateway,
   states: SectionState[],
   input: PortForwardInput

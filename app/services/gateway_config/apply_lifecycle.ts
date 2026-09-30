@@ -455,7 +455,7 @@ export async function requestApply(
   })
 }
 
-function blockCode(reason: string): string {
+export function blockCode(reason: string): string {
   switch (reason) {
     case 'router_access':
       return 'router_access_insufficient'
@@ -470,7 +470,7 @@ function blockCode(reason: string): string {
   }
 }
 
-function writeBlockMessage(reason: string): string {
+export function writeBlockMessage(reason: string): string {
   switch (reason) {
     case 'router_access':
       return "The router does not allow writes (config_access is not 'write')."
@@ -606,7 +606,7 @@ async function applyParams(
   return params
 }
 
-function agentFailure(error: unknown) {
+export function agentFailure(error: unknown) {
   if (error instanceof AgentOfflineError) {
     return planeError(409, 'agent_offline', 'The gateway agent is not connected.')
   }
@@ -1297,7 +1297,10 @@ async function chainNext(gateway: Gateway, apply: GatewayApply): Promise<void> {
     skipChecks: explicitlyUnchecked(apply),
   })
   // Post actions whose sections were not in this job go with the next one.
-  if (apply.postActions?.conntrackFlush && !apply.postActions.conntrackFlush.done) {
+  const pendingPost =
+    (apply.postActions?.conntrackFlush && !apply.postActions.conntrackFlush.done) ||
+    (apply.postActions?.upnpDelete && !apply.postActions.upnpDelete.done)
+  if (pendingPost) {
     next.postActions = apply.postActions
     await next.save()
   }

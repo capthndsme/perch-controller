@@ -20,12 +20,14 @@ import {
   normalizePackages,
   normalizeResolver,
   normalizeSystem,
+  normalizeDdns,
   normalizeWireguard,
   type Mwan3Observation,
   type ObservedInterface,
   type PackagesObservation,
   type ResolverObservation,
   type SystemObservation,
+  type DdnsObservation,
   type WireguardObservation,
 } from '#services/gateway_observation_parts'
 import db from '@adonisjs/lucid/services/db'
@@ -658,6 +660,17 @@ export async function readWireguard(collectorId: number) {
     observedAt: part?.observedAt ?? null,
     stale: part ? part.stale : true,
     interfaces: value?.interfaces ?? [],
+  }
+}
+
+/** ddns-scripts' observed state (gateway sync protocol.md 6.1), null when never reported. */
+export async function readDdns(collectorId: number) {
+  const part = await readPart(collectorId, 'ddns')
+  const value: DdnsObservation | null = part?.payload ? normalizeDdns(part.payload) : null
+  return {
+    observedAt: part?.observedAt ?? null,
+    stale: part ? part.stale : true,
+    value,
   }
 }
 

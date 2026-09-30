@@ -131,6 +131,9 @@ export class FakeGateway {
   closed = false
   /** Installed packages (name → version). */
   packages: Record<string, string> = { dnsmasq: '2.90-r1' }
+  /** Gateway sync runtime RPCs it received: `gateway.ddns.update` services, `gateway.upnp.delete` mappings. */
+  ddnsUpdates: string[] = []
+  upnpDeletes: Array<{ proto: string; extPort: number }> = []
   /** Packages `gateway.package.install` may install. */
   installAllowlist = ['sqm-scripts', 'kmod-sched-cake', 'opennds']
   /** The router's own `config_sign_key` (signing.key says so when set). */
@@ -424,6 +427,27 @@ export class FakeGateway {
         this.#writeGate(signed)
         this.#requireManaged()
         return this.#apply(params, gen)
+      },
+      'gateway.ddns.update': (raw: Record<string, unknown>) => {
+        const { params, signed } = this.#unwrap('gateway.ddns.update', raw)
+        this.calls.push({ method: 'gateway.ddns.update', params, signed })
+        this.#writeGate(signed)
+        if (!this.packages['ddns-scripts']) fail('ddns_not_installed', 'ddns-scripts missing')
+        const known = (this.configs.ddns ?? []).some(
+          (x) => x.type === 'service' && x.name === params.service
+        )
+        if (!known) fail('ddns_unknown_service', 'no such service')
+        this.ddnsUpdates.push(String(params.service))
+        return { started: true }
+      },
+      'gateway.upnp.delete': (raw: Record<string, unknown>) => {
+        const { params, signed } = this.#unwrap('gateway.upnp.delete', raw)
+        this.calls.push({ method: 'gateway.upnp.delete', params, signed })
+        this.#writeGate(signed)
+        if (!this.packages.miniupnpd) fail('upnp_not_installed', 'miniupnpd missing')
+        const wanted = (params.mappings as Array<{ proto: string; extPort: number }>) ?? []
+        for (const m of wanted) this.upnpDeletes.push({ proto: m.proto, extPort: m.extPort })
+        return { deleted: wanted.length, notFound: 0, restarted: wanted.length > 0 }
       },
       'gateway.package.install': (raw: Record<string, unknown>) => {
         const { params, signed } = this.#unwrap('gateway.package.install', raw)

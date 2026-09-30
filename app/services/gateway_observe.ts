@@ -66,6 +66,7 @@ export const OBSERVATION_PARTS = [
   'resolver',
   'system',
   'wireguard',
+  'ddns',
   'packages',
 ] as const
 export type ObservationPart = (typeof OBSERVATION_PARTS)[number]
@@ -80,6 +81,7 @@ export const PART_CAPABILITIES: Record<ObservationPart, string> = {
   resolver: 'observe.resolver',
   system: 'observe.system',
   wireguard: 'observe.wireguard',
+  ddns: 'observe.ddns',
   packages: 'observe.packages',
 }
 
