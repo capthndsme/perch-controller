@@ -3064,3 +3064,31 @@ each AP's pre.2 binary, init and `perch-apd`/`wireless`/`network` configs (0600)
 Left to the owner (dashboard): Managed per AP (password step-up), the fleet country (APs report TW/US, PH, PH/TW;
 PH suggested), passphrases (optional until a passphrase change), then the first real Wi-Fi change; the gateway
 draft's adoptions; UPnP secure mode; the release key for agent updates; a push subscription on a phone.
+
+## 2026-10-01 — First outside install, and the compose subnet clash
+
+**The live stack's network moved.** An outside LAN routed to this host overlaps the compose
+default `PERCH_NET_SUBNET` 172.28.0.0/24. Taking the stack's bridge down by hand to reach that LAN cut the server off
+its database (4.5 min, `EHOSTUNREACH` to the `db` container, health check failing). Fix: `PERCH_NET_SUBNET` /
+`PERCH_NET_GATEWAY` in `.env` set to a free 10.x /24 (`TRUST_PROXY` follows the gateway), then `docker compose down`
+and `up -d --no-build` (the network has to be recreated). Collector and all three APs were back within a minute.
+
+**First install on someone else's network** (the four-area build, local releases, nothing pushed): its own controller
+(1.1.0-pre.5) in Docker on a small Linux host, beside Frigate; that host cannot reach Docker Hub, so both images went over
+with `docker save | docker load` and a `docker-compose.override.yml` names the local image (`pull_policy: never`). The
+gateway is OpenWrt 23.05 x86_64 in a container (no package target): collector 1.1.0-pre.4 static nDPI build plus the
+package's init, guard and UCI template, `config_access 'none'`, adopted through the wizard. Two Xiaomi AX3000T on
+24.10.0-rc7: the perch-apd 1.0.0 `.ipk` for the package record, then the 1.1.0-pre.3 binary, init and boot guard, one
+two-use join token; Wi-Fi plane in Observe. Within minutes: 14 devices, 13 Wi-Fi clients with names from the gateway's
+DHCP, gateway stats; the APs' `wireless` files byte-identical afterwards. perch-apd 13–14 MB RSS on a 256 MB AP,
+collector 54 MB, controller 117 MiB + MariaDB 145 MiB (buffer pool 256M).
+
+Setup friction it showed (for "install the controller, install the daemons, done"):
+1. The compose default subnet sat inside a real LAN range twice over (this host, and that site's own Docker host).
+   A rarer default, or letting Docker allocate and trusting whatever gateway it picks, would avoid it.
+2. Both APs report the hostname "OpenWrt": two identical names until friendly names are set.
+3. APs with a static `lan` and no `dns` never resolve the NTP pool: their clocks sat at the firmware date (Feb 2025).
+   Harmless over plain HTTP; it would break TLS validation and self-updates. Worth a hint in the AP view.
+4. Plain HTTP leaves Web Push (the browser wants HTTPS) and every write (Wi-Fi plane, gateway config) unavailable.
+   Small installs need an easy TLS path (an internal CA the agents trust) or pairing.
+5. Scripted installs: `POST /setup/admin` wants `passwordConfirmation` (the dashboard sends it).
