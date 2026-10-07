@@ -22,6 +22,7 @@ import {
   TERMINAL_TOKEN_REGEX,
   entitlementText,
   moneyText,
+  normalizeDeskSettings,
   normalizePaymentSettings,
   previewText,
   priceEntitlement,
@@ -130,7 +131,7 @@ function cleanEntries(entries: NonNullable<PriceTableInput['entries']>): PriceEn
   return out.sort((a, b) => a.amount - b.amount)
 }
 
-/** Portals (by their payment settings) and terminals using each table. */
+/** Portals (by their payment or desk settings) and terminals using each table. */
 async function priceTableUsage(): Promise<Map<number, PriceTableView['usedBy']>> {
   const usage = new Map<number, PriceTableView['usedBy']>()
   const get = (id: number) => {
@@ -141,10 +142,13 @@ async function priceTableUsage(): Promise<Map<number, PriceTableView['usedBy']>>
     }
     return u
   }
-  const portals = await Portal.query().whereNull('deleted_at').select(['id', 'payment'])
+  const portals = await Portal.query().whereNull('deleted_at').select(['id', 'payment', 'desk'])
   for (const p of portals) {
-    const id = normalizePaymentSettings(p.payment).priceTableId
-    if (id !== null) get(id).portalIds.push(p.id)
+    const ids = new Set([
+      normalizePaymentSettings(p.payment).priceTableId,
+      normalizeDeskSettings(p.desk).priceTableId,
+    ])
+    for (const id of ids) if (id !== null) get(id).portalIds.push(p.id)
   }
   const terminals = await HotspotTerminal.query()
     .whereNotNull('price_table_id')
@@ -487,6 +491,7 @@ export type CheckoutFilter = {
   gatewayId?: number
   terminalId?: number
   kind?: 'payment' | 'unclaimed'
+  channel?: 'coin' | 'desk'
   state?: 'paid' | 'voided' | 'unclaimed' | 'credited' | 'dismissed'
   mac?: string
   from?: string
@@ -518,18 +523,25 @@ async function checkoutViews(rows: HotspotCheckout[]): Promise<CheckoutView[]> {
     ])
   )
   const userIds = [
-    ...new Set(rows.map((r) => r.resolvedByUserId).filter((x): x is number => x !== null)),
+    ...new Set(
+      rows
+        .flatMap((r) => [r.resolvedByUserId, r.sellerUserId])
+        .filter((x): x is number => x !== null)
+    ),
   ]
   const users = userIds.length
-    ? await User.query().select(['id', 'email']).whereIn('id', userIds)
+    ? await User.query().select(['id', 'email', 'full_name']).whereIn('id', userIds)
     : []
-  const userById = new Map(users.map((u) => [u.id, { id: u.id, email: u.email }]))
-  return rows.map((r) =>
-    checkoutView(r, {
+  const userById = new Map(users.map((u) => [u.id, u]))
+  return rows.map((r) => {
+    const resolver = r.resolvedByUserId === null ? null : userById.get(r.resolvedByUserId)
+    const seller = r.sellerUserId === null ? null : userById.get(r.sellerUserId)
+    return checkoutView(r, {
       voucher: r.voucherId === null ? null : (voucherRefs.get(r.voucherId) ?? null),
-      resolvedBy: r.resolvedByUserId === null ? null : (userById.get(r.resolvedByUserId) ?? null),
+      resolvedBy: resolver ? { id: resolver.id, email: resolver.email } : null,
+      seller: seller ? { id: seller.id, email: seller.email, fullName: seller.fullName } : null,
     })
-  )
+  })
 }
 
 export async function listCheckouts(filter: CheckoutFilter): Promise<{
@@ -554,6 +566,7 @@ export async function listCheckouts(filter: CheckoutFilter): Promise<{
     if (filter.gatewayId) q.where('gateway_id', filter.gatewayId)
     if (filter.terminalId) q.where('terminal_id', filter.terminalId)
     if (filter.kind) q.where('kind', filter.kind)
+    if (filter.channel) q.where('channel', filter.channel)
     if (filter.state) q.where('state', filter.state)
     if (mac) q.where('mac', mac)
     if (from) q.where('created_at', '>=', utc(from.getTime()).toSQL({ includeOffset: false })!)

@@ -351,6 +351,33 @@ export function normalizeClickThroughSettings(value: unknown): ClickThroughSetti
   }
 }
 
+/**
+ * `portals.desk`: codes sold by hand in Sell Mode (section 15). One entry of
+ * `priceTableId` per sale. 8 symbols is the floor on purpose: a redeemed code
+ * stays live (it moves, decision 23), so every unexpired sale can be guessed.
+ */
+export type DeskSettings = {
+  priceTableId: number | null
+  codeLength: number
+}
+
+export const DESK_DEFAULTS: DeskSettings = { priceTableId: null, codeLength: 8 }
+export const DESK_LIMITS = { codeLength: { min: 8, max: 16 } } as const
+
+export function normalizeDeskSettings(value: unknown): DeskSettings {
+  const o = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+  const id = o.priceTableId
+  return {
+    priceTableId: typeof id === 'number' && Number.isSafeInteger(id) && id > 0 ? id : null,
+    codeLength: clampInt(
+      o.codeLength,
+      DESK_DEFAULTS.codeLength,
+      DESK_LIMITS.codeLength.min,
+      DESK_LIMITS.codeLength.max
+    ),
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Terminal tokens and request signatures
 // ---------------------------------------------------------------------------

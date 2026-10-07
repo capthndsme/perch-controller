@@ -391,7 +391,7 @@ export async function previewTemplate(
   const code = messageCode && PORTAL_MESSAGES[messageCode] !== undefined ? messageCode : ''
   const methods = portal
     ? portalMethods(portal.methods)
-    : { voucher: true, password: true, payment: true, clickThrough: true }
+    : { voucher: true, password: true, payment: true, clickThrough: true, desk: true }
   const expires = new Date(Date.now() + 90 * 60_000).toISOString()
   const html = renderPreview(
     await filesOf(template),

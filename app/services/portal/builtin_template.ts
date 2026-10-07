@@ -197,18 +197,24 @@ function escapeText(value: string): string {
  * routes (`POST /portal/voucher`, `/portal/login`, `/portal/logout`,
  * `/portal/checkout[/done|/cancel]`, `/portal/clickthrough`), which answer
  * 303 to `/?m=<message_code>` so they work without JavaScript. The voucher
- * form is also there for the payment method: a reference code is a voucher
- * code (section 14.6). `reference_code` is not a snippet but a plain value
+ * form is also there for the payment and desk methods: a reference code and a
+ * desk-sold code are voucher codes (sections 14.6, 15). `reference_code` is not a snippet but a plain value
  * (escaped by the renderer).
  */
 export function portalSnippets(
-  methods: { voucher: boolean; password: boolean; payment?: boolean; clickThrough?: boolean },
+  methods: {
+    voucher: boolean
+    password: boolean
+    payment?: boolean
+    clickThrough?: boolean
+    desk?: boolean
+  },
   hotspot: HotspotSnippetView | null = null
 ) {
   const payment = Boolean(methods.payment)
   return {
     voucher_form:
-      methods.voucher || payment
+      methods.voucher || payment || Boolean(methods.desk)
         ? '<form class="perch-form perch-voucher" method="post" action="/portal/voucher">' +
           '<label for="perch-code">Voucher code</label>' +
           '<input id="perch-code" name="code" required maxlength="64" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false">' +

@@ -1779,3 +1779,136 @@ call POST /portal/v1/terminal/done "{\"checkoutRef\":\"$REF\"}"
 - **`below_minimum`**: Done refuses a total that buys nothing; at the idle
   timeout such money is recorded as unclaimed.
 - **Receipts**: the paying device's pages show the code for 24 h.
+
+## 15. Sell Mode: desk sales (owner, 2026-10-06)
+
+Status: designed and built on branch `sell-mode` (controller only; the router
+needs nothing new), October 2026.
+
+Front-desk staff sell Wi-Fi codes for cash on a phone. This is not the coin
+flow (section 14): no terminal, no checkout on the router. A desk sale is the
+controller's version of "credit unclaimed coins" (14.5): one entry of a price
+table → a one-voucher `payment` batch + a ledger row, the code shown once.
+Everything after that (redemption, first-use clock, device moves of decision
+23, the offline voucher list, void) is the existing payment-voucher path.
+
+| Question            | Decision                                                                                                                                                                                                   |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Who sells           | Admins, and the new role `wifi_vendor` ("Wi-Fi vendor"), which can do nothing else                                                                                                                         |
+| Where               | Dashboard route `/sell`, outside the shell (like the voucher print sheet). Admins get a back button (top left, to `/`); a vendor always lands on `/sell` and has Sign out instead                            |
+| What is sold        | One entry of the portal's **desk price table** per sale (no greedy coin sum). Same `hotspot_price_tables` as the coin box, chosen separately per portal (`portals.desk.priceTableId`)                       |
+| Code                | Crockford, `desk.codeLength` 8–16, default **8** (`XXXX-XXXX`, 40 bits). Never shorter: a redeemed code stays live (it moves, decision 23), so every unexpired sale is a guessing target (section 3)     |
+| Ledger              | `hotspot_checkouts` row, `kind` payment, `channel` **desk**, `seller_user_id`; Payments shows coin and desk together                                                                                        |
+| Voucher entry       | A portal with `methods.desk` takes codes like `voucher`/`payment` do. The router is not told about `desk`: the configure wire sends `methods.voucher = voucher \|\| desk`                                   |
+| Outage              | Selling needs the controller. A fresh code redeems online at once; the `vouchers` push puts it on the router's offline list. Gateway disconnected: the answer's `delivery` is `pending` and the UI warns. Fallback: a printed ordinary batch |
+| Preferred start page| Dashboard-only, per browser (`localStorage`), applied only when the app opens at `/` (load, home-screen launch, after login), never on in-app navigation, so back from `/sell` reaches the dashboard   |
+
+### 15.1 Data (migration `1779000000175`)
+
+- `portals.desk` TEXT JSON null: `DeskSettings = {priceTableId: number|null,
+  codeLength: 8–16 = 8}` (read with `normalizeDeskSettings`). Whether desk
+  sales are on is `portals.methods.desk` (like `payment`).
+- `hotspot_checkouts.channel` VARCHAR(8) NOT NULL default `coin`: `coin` |
+  `desk`. `hotspot_checkouts.seller_user_id` INT UNSIGNED null → `users`
+  ON DELETE SET NULL; index `(seller_user_id, created_at)`.
+- A desk row: `gateway_id` = the portal's, `event_key` = `desk:<clientRef>`
+  (idempotency, the existing unique index), `terminal_*`, `checkout_ref`,
+  `mac`, `ip`, `hostname`, `reason`, `key_epoch`, `router_sig` null,
+  `coin_count` 0, `opened_at` = `finalized_at` = sale time, price table id +
+  revision + snapshot as sold, the entry's entitlement, `voucher_id` = the
+  minted voucher.
+- `users.role` gains `wifi_vendor` (the column is a string: no migration).
+
+### 15.2 Roles
+
+`middleware.auth()` takes `{roles}`; **its default is the dashboard roles
+(admin, operator, viewer)**, so every existing route refuses a vendor with
+403 `role_forbidden` and a route has to opt in to admit one. Opted in:
+`/account/*` (all roles) and `/sell/*` (admin, wifi_vendor). The Paid Hotspot
+API already takes admin tokens only. Admins create vendors in Settings →
+Users (`role: 'wifi_vendor'` in the invite and role validators).
+
+### 15.3 REST API (`/api/v1/sell`, auth: admin or wifi_vendor; `requirePasswordChange`)
+
+Errors are `{error, message, ...extra}` like the rest of the portal API.
+
+| Method, path                    | Request                                                                                     | Response                                                                                                     | Errors                                                                                                                                                                          |
+| ------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET `/sell`                     | –                                                                                           | `SellMenu`                                                                                                    | –                                                                                                                                                                               |
+| POST `/sell/sales`              | `{portalId, amount, priceRevision, clientRef ^[A-Za-z0-9._:-]{8,64}$, note? ≤200}`          | 201 `{sale: Sale, code, delivery}` (`no-store`); a replay of the same `clientRef` by the same seller: 200, same sale and code | 404 `portal_not_found`; 409 `desk_sales_off`, `price_changed` `{portal: SellPortal}`, `client_ref_used`; 422 `not_on_menu`; 410 `codes_unrecoverable` (replay after APP_KEY rotation) |
+| GET `/sell/sales`               | `?from&to` (ISO; default today 00:00 in the instance time zone → now) `&portalId&sellerId (admin only; a vendor always gets their own)&state=paid\|voided&limit ≤200 =50&offset` | `{items: Sale[], total, totals: [{currency, amount, count}] (paid only), range: {from, to}, timezone}` newest first | 422 `invalid_range`, `invalid_date`                                                                                                                                             |
+| GET `/sell/sales/:id/code`      | –                                                                                           | `{code}` (`no-store`)                                                                                        | 404 `sale_not_found` (also another vendor's sale); 409 `sale_voided`, `code_revoked` (the voucher was revoked on its own), `code_used` (vendor, voucher already redeemed); 410 `codes_unrecoverable`                                 |
+| POST `/sell/sales/:id/void`     | `{refundAmount? 0–amount, note? ≤200}`                                                       | `{sale, delivery}`                                                                                           | 404 `sale_not_found`; 409 `sale_voided`, `sale_used` (vendor: the code was redeemed, ask an admin); 422 `refund_exceeds_amount`                                                 |
+
+```ts
+type SellMenu = {
+  seller: { id: number; email: string; fullName: string | null; role: 'admin' | 'wifi_vendor' }
+  timezone: string // instance setting, e.g. Asia/Manila
+  portals: SellPortal[] // live portals with methods.desk and a usable desk table
+}
+type SellPortal = {
+  id: number
+  name: string
+  gatewayId: number
+  gatewayOnline: boolean // the gateway's portal session is up (codes redeem at once)
+  codeLength: number
+  priceTable: {
+    id: number
+    name: string
+    revision: number
+    currency: string
+    decimals: number
+    durationMode: 'wall_clock' | 'active_time'
+  }
+  items: SellItem[] // ascending amount
+}
+type SellItem = {
+  amount: number // minor units of the table (5 with decimals 0 = PHP 5)
+  amountText: string // "PHP 5"
+  minutes: number
+  quotaBytes: number | null
+  downKbps: number | null
+  upKbps: number | null
+  text: string // "1 h · 5 Mbit/s down" (entitlementText)
+}
+type Sale = {
+  id: number // the ledger row (hotspot_checkouts.id)
+  state: 'paid' | 'voided'
+  portal: { id: number; name: string } | null
+  amount: number
+  amountText: string
+  currency: string
+  decimals: number
+  item: { minutes: number; quotaBytes: number | null; downKbps: number | null; upKbps: number | null; durationMode: string; text: string }
+  voucher: { id: number; hint: string; status: VoucherStatus } | null
+  codeAvailable: boolean // GET /code would answer for this caller
+  voidable: boolean // POST /void would be allowed for this caller
+  seller: { id: number; email: string; fullName: string | null } | null
+  note: string | null
+  refundAmount: number | null
+  createdAt: string
+  voidedAt: string | null
+  voidedBy: { id: number; email: string } | null
+}
+```
+
+- **Price lock**: the client sends the `priceRevision` it showed; a changed
+  table answers 409 `price_changed` with the fresh `SellPortal`, so the
+  seller never charges an old price.
+- **clientRef**: one per sale attempt (a UUID made when the seller taps a
+  price), reused on retry. A double tap or a lost answer never sells twice.
+- **Vendor limits**: own sales only; code again and void only while the
+  voucher is unused (`status` `unused`). Admins: any sale; a used one can be
+  voided (devices go offline, as for coin payments).
+
+### 15.4 Portal settings (admin)
+
+`POST/PATCH /portal/portals` take `methods.desk` (boolean) and `desk:
+{priceTableId?, codeLength? 8–16}` (merged like `payment`). `methods.desk`
+without a table: 422 `desk_price_table_required`; an unknown table: 404
+`price_table_not_found`. `Portal` (11.3) gains `methods.desk` and `desk:
+DeskSettings`. A price table a desk uses counts in its `usedBy.portalIds`
+(deleting it is refused). `GET /portal/checkouts` takes `?channel=coin|desk`;
+`CheckoutView` gains `channel` and `seller: {id, email, fullName} | null`.
+The `hotspot.payment` alert covers desk sales (`channel`, `sellerName` in
+its payload).

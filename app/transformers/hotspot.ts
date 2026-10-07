@@ -171,6 +171,10 @@ export function terminalView(
 export type CheckoutView = {
   id: number
   kind: 'payment' | 'unclaimed'
+  /** `coin` = a router checkout (section 14), `desk` = sold by hand in Sell Mode (section 15). */
+  channel: 'coin' | 'desk'
+  /** Who sold it (desk sales). */
+  seller: { id: number; email: string; fullName: string | null } | null
   state: 'paid' | 'voided' | 'unclaimed' | 'credited' | 'dismissed'
   gatewayId: number
   portalId: number | null
@@ -217,12 +221,15 @@ export function checkoutView(
   refs: {
     voucher: CheckoutView['voucher']
     resolvedBy: CheckoutView['resolvedBy']
+    seller: CheckoutView['seller']
   }
 ): CheckoutView {
   const amount = num(c.amount)
   return {
     id: num(c.id),
     kind: c.kind,
+    channel: c.channel === 'desk' ? 'desk' : 'coin',
+    seller: refs.seller,
     state: c.state,
     gatewayId: c.gatewayId,
     portalId: c.portalId,

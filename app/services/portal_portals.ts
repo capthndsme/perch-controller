@@ -6,8 +6,10 @@ import HotspotPriceTable from '#models/hotspot_price_table'
 import Portal, { type PortalMethods, portalMethods } from '#models/portal'
 import {
   type ClickThroughSettings,
+  type DeskSettings,
   type PaymentSettings,
   normalizeClickThroughSettings,
+  normalizeDeskSettings,
   normalizePaymentSettings,
 } from '#services/portal/hotspot'
 import PortalGatewayState from '#models/portal_gateway_state'
@@ -54,22 +56,33 @@ export type PortalInput = {
   payment?: Partial<PaymentSettings>
   /** The click-through method's limits (section 14.7); merged into the stored ones. */
   clickThrough?: Partial<ClickThroughSettings>
+  /** The desk method's settings (section 15); merged into the stored ones. */
+  desk?: Partial<DeskSettings>
   templateId?: number | null
   cspConnectSrc?: string[]
   privacyNotice?: string | null
   force?: boolean
 }
 
+/** 404 `price_table_not_found` unless the table exists (null: nothing to check). */
+async function checkPriceTable(id: number | null): Promise<void> {
+  if (id !== null && !(await HotspotPriceTable.find(id))) {
+    throw new PortalError(404, 'price_table_not_found', `There is no price table ${id}.`)
+  }
+}
+
 /**
- * The stored payment and click-through settings after an input: merged,
- * normalized; the payment method needs an existing price table
- * (422 `price_table_required`, 404 `price_table_not_found`).
+ * The stored payment, click-through and desk settings after an input:
+ * merged, normalized; the payment method needs an existing price table
+ * (422 `price_table_required`), the desk method too (422
+ * `desk_price_table_required`); an unknown table is 404
+ * `price_table_not_found`.
  */
 async function methodSettings(
   methods: ReturnType<typeof portalMethods>,
-  current: { payment: unknown; clickThrough: unknown },
+  current: { payment: unknown; clickThrough: unknown; desk: unknown },
   input: PortalInput
-): Promise<{ payment: PaymentSettings; clickThrough: ClickThroughSettings }> {
+): Promise<{ payment: PaymentSettings; clickThrough: ClickThroughSettings; desk: DeskSettings }> {
   const payment = normalizePaymentSettings({
     ...normalizePaymentSettings(current.payment),
     ...(input.payment ?? {}),
@@ -78,16 +91,12 @@ async function methodSettings(
     ...normalizeClickThroughSettings(current.clickThrough),
     ...(input.clickThrough ?? {}),
   })
-  if (payment.priceTableId !== null) {
-    const table = await HotspotPriceTable.find(payment.priceTableId)
-    if (!table) {
-      throw new PortalError(
-        404,
-        'price_table_not_found',
-        `There is no price table ${payment.priceTableId}.`
-      )
-    }
-  }
+  const desk = normalizeDeskSettings({
+    ...normalizeDeskSettings(current.desk),
+    ...(input.desk ?? {}),
+  })
+  await checkPriceTable(payment.priceTableId)
+  await checkPriceTable(desk.priceTableId)
   if (methods.payment && payment.priceTableId === null) {
     throw new PortalError(
       422,
@@ -95,7 +104,14 @@ async function methodSettings(
       'The payment method needs a price table (`payment.priceTableId`).'
     )
   }
-  return { payment, clickThrough }
+  if (methods.desk && desk.priceTableId === null) {
+    throw new PortalError(
+      422,
+      'desk_price_table_required',
+      'Desk sales need a price table (`desk.priceTableId`).'
+    )
+  }
+  return { payment, clickThrough, desk }
 }
 
 export async function builtinTemplateId(): Promise<number | null> {
@@ -304,8 +320,13 @@ export async function createPortal(
     password: input.methods?.password ?? false,
     payment: input.methods?.payment ?? false,
     clickThrough: input.methods?.clickThrough ?? false,
+    desk: input.methods?.desk ?? false,
   }
-  const settings = await methodSettings(methods, { payment: null, clickThrough: null }, input)
+  const settings = await methodSettings(
+    methods,
+    { payment: null, clickThrough: null, desk: null },
+    input
+  )
 
   return runInPortalQueue(gateway.id, async () => {
     await checkNetwork(gateway, input.networkPerchId, Boolean(input.force), null)
@@ -318,6 +339,7 @@ export async function createPortal(
         methods,
         payment: settings.payment,
         clickThrough: settings.clickThrough,
+        desk: settings.desk,
         templateId,
         cspConnectSrc: input.cspConnectSrc ?? [],
         privacyNotice: input.privacyNotice ?? null,
@@ -366,6 +388,7 @@ export async function updatePortal(id: number, input: PortalInput): Promise<Port
       password: input.methods?.password ?? stored.password,
       payment: input.methods?.payment ?? stored.payment,
       clickThrough: input.methods?.clickThrough ?? stored.clickThrough,
+      desk: input.methods?.desk ?? stored.desk,
     }
     if (input.methods !== undefined && JSON.stringify(methods) !== JSON.stringify(stored)) {
       portal.methods = methods
@@ -374,7 +397,8 @@ export async function updatePortal(id: number, input: PortalInput): Promise<Port
     if (
       input.methods !== undefined ||
       input.payment !== undefined ||
-      input.clickThrough !== undefined
+      input.clickThrough !== undefined ||
+      input.desk !== undefined
     ) {
       const settings = await methodSettings(methods, portal, input)
       if (
@@ -389,6 +413,10 @@ export async function updatePortal(id: number, input: PortalInput): Promise<Port
         JSON.stringify(normalizeClickThroughSettings(portal.clickThrough))
       ) {
         portal.clickThrough = settings.clickThrough
+        changed = true
+      }
+      if (JSON.stringify(settings.desk) !== JSON.stringify(normalizeDeskSettings(portal.desk))) {
+        portal.desk = settings.desk
         changed = true
       }
     }

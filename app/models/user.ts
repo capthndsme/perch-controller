@@ -8,9 +8,17 @@ import { type AccessToken, DbAccessTokensProvider } from '@adonisjs/auth/access_
  * User roles, ordered loosely by privilege. Only `admin` may complete the
  * setup wizard and write to system settings / collectors today; the other
  * tiers exist so we can land RBAC without a follow-up migration.
+ * `wifi_vendor` sells portal codes in Sell Mode and can do nothing else
+ * (docs/gateway/portal.md section 15).
  */
-export const USER_ROLES = ['admin', 'operator', 'viewer'] as const
+export const USER_ROLES = ['admin', 'operator', 'viewer', 'wifi_vendor'] as const
 export type UserRole = (typeof USER_ROLES)[number]
+
+/** The roles that use the dashboard: `middleware.auth()` admits these unless a route says otherwise. */
+export const DASHBOARD_ROLES: readonly UserRole[] = ['admin', 'operator', 'viewer']
+
+/** Who may sell in Sell Mode. */
+export const SELL_ROLES: readonly UserRole[] = ['admin', 'wifi_vendor']
 
 export default class User extends compose(UserSchema, withAuthFinder(hash)) {
   static accessTokens = DbAccessTokensProvider.forModel(User)

@@ -260,6 +260,7 @@ test.group('portal | paid hotspot', (group) => {
       password: false,
       payment: true,
       clickThrough: true,
+      desk: false,
     })
     assert.equal(view.payment.idleTimeoutSeconds, 45)
     assert.equal(view.clickThrough.terms, 'Be nice.')

@@ -343,7 +343,14 @@ export async function buildConfigureParams(
     }
     const template = templates.find((t) => t.id === p.templateId)
     revisions.set(p.id, p.revision)
-    const methods = portalMethods(p.methods)
+    const stored = portalMethods(p.methods)
+    // The router has no desk method: desk-sold codes are voucher codes (section 15).
+    const methods = {
+      voucher: stored.voucher || stored.desk,
+      password: stored.password,
+      payment: stored.payment,
+      clickThrough: stored.clickThrough,
+    }
     const payment = methods.payment ? payments.get(p.id) : undefined
     out.push({
       portalId: p.id,

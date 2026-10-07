@@ -10,9 +10,10 @@ const password = () => vine.string().minLength(8).maxLength(128)
  * Roles that an admin may assign when creating or updating another account.
  * `operator` is in the USER_ROLES enum for forward-compatibility but is not
  * yet exposed here — it will be added when it gets distinct route-level
- * permissions.
+ * permissions. `wifi_vendor` sells codes in Sell Mode only
+ * (docs/gateway/portal.md section 15).
  */
-const invitableRoles = ['admin', 'viewer'] as const
+const invitableRoles = ['admin', 'viewer', 'wifi_vendor'] as const
 
 /**
  * Validator to use when performing self-signup
@@ -34,7 +35,7 @@ export const loginValidator = vine.create({
 })
 
 /**
- * Admin-only: create a new viewer or admin account.
+ * Admin-only: create a new admin, viewer or Wi-Fi vendor account.
  */
 export const inviteUserValidator = vine.create({
   fullName: vine.string().minLength(1).maxLength(120).nullable(),

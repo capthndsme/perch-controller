@@ -2144,10 +2144,12 @@ export class GatewayWireguardPeerSchema extends BaseModel {
 }
 
 export class HotspotCheckoutSchema extends BaseModel {
-  static $columns = ['amount', 'checkoutRef', 'coinCount', 'createdAt', 'currency', 'decimals', 'downKbps', 'durationMode', 'durationSeconds', 'eventKey', 'finalizedAt', 'gatewayId', 'hostname', 'id', 'ip', 'keyEpoch', 'kind', 'mac', 'note', 'openedAt', 'portalId', 'priceRevision', 'priceTableId', 'quotaBytes', 'reason', 'refundAmount', 'resolvedAt', 'resolvedByUserId', 'routerSig', 'state', 'terminalId', 'terminalName', 'unusedAmount', 'upKbps', 'updatedAt', 'voucherId'] as const
+  static $columns = ['amount', 'channel', 'checkoutRef', 'coinCount', 'createdAt', 'currency', 'decimals', 'downKbps', 'durationMode', 'durationSeconds', 'eventKey', 'finalizedAt', 'gatewayId', 'hostname', 'id', 'ip', 'keyEpoch', 'kind', 'mac', 'note', 'openedAt', 'portalId', 'priceRevision', 'priceTableId', 'quotaBytes', 'reason', 'refundAmount', 'resolvedAt', 'resolvedByUserId', 'routerSig', 'sellerUserId', 'state', 'terminalId', 'terminalName', 'unusedAmount', 'upKbps', 'updatedAt', 'voucherId'] as const
   $columns = HotspotCheckoutSchema.$columns
   @column()
   declare amount: bigint | number
+  @column()
+  declare channel: string
   @column()
   declare checkoutRef: string | null
   @column()
@@ -2204,6 +2206,8 @@ export class HotspotCheckoutSchema extends BaseModel {
   declare resolvedByUserId: number | null
   @column()
   declare routerSig: string | null
+  @column()
+  declare sellerUserId: number | null
   @column()
   declare state: string
   @column()

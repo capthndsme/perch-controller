@@ -209,11 +209,14 @@ export default defineAlertTypes([
     subjects: ['portal'],
     owner: 'alerts',
     label: 'Payment received',
-    description: 'A guest paid at a coin terminal.',
+    description: 'A guest paid at a coin terminal, or a code was sold at the desk.',
     defaults: { enabled: false, groupSeconds: 600 },
     render: (a) => ({
       title: `Payment on "${pStr(a.payload, 'portalName', a.label)}"`,
-      body: `${amountText(a.payload)}${pStr(a.payload, 'terminalName') ? ` at ${pStr(a.payload, 'terminalName')}` : ''}.`,
+      body:
+        pStr(a.payload, 'channel') === 'desk'
+          ? `${amountText(a.payload)} at the desk${pStr(a.payload, 'sellerName') ? ` (${pStr(a.payload, 'sellerName')})` : ''}.`
+          : `${amountText(a.payload)}${pStr(a.payload, 'terminalName') ? ` at ${pStr(a.payload, 'terminalName')}` : ''}.`,
       path: '/portal/payments',
     }),
     renderGroup: (alerts) => ({

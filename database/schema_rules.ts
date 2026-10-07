@@ -107,6 +107,7 @@ export default {
         'active_network',
         'payment',
         'click_through',
+        'desk',
       ],
     },
     // Paid Hotspot (migrations 100–101): JSON text columns and the

@@ -3092,3 +3092,35 @@ Setup friction it showed (for "install the controller, install the daemons, done
 4. Plain HTTP leaves Web Push (the browser wants HTTPS) and every write (Wi-Fi plane, gateway config) unavailable.
    Small installs need an easy TLS path (an internal CA the agents trust) or pairing.
 5. Scripted installs: `POST /setup/admin` wants `passwordConfirmation` (the dashboard sends it).
+
+## 2026-10-06 — Sell Mode: desk sales of portal codes (branch `sell-mode`, not committed, not live)
+
+Owner: front-desk staff sell Wi-Fi codes for cash on a phone ("vending", not the coin box; the owner has ESP32 boards
+and a universal coin acceptor on order for that). Contract: `docs/gateway/portal.md` section 15.
+
+- **Role `wifi_vendor`** ("Wi-Fi vendor"). `middleware.auth()` now takes `{roles}` and defaults to the dashboard roles
+  (admin, operator, viewer), so every existing route refuses a vendor (403 `role_forbidden`) unless it opts in: only
+  `/account/*` (all roles) and `/sell/*` (admin + vendor) do. Admins invite vendors in Settings → Users.
+- **Desk method on portals**: `methods.desk` + `portals.desk` `{priceTableId, codeLength 8–16 = 8}` (migration 175).
+  One price-table entry per sale (no coin-style greedy sum); the desk table is chosen separately from the coin box's.
+  The router learns nothing new: the configure wire sends `voucher = voucher || desk`, desk codes are voucher codes.
+- **A sale** = a one-voucher `payment` batch + a `hotspot_checkouts` row with `channel` desk and `seller_user_id`, in
+  one transaction, then the `vouchers` push (offline list). `clientRef` makes retries and double taps idempotent;
+  `priceRevision` refuses a stale price (409 `price_changed` with the fresh menu). A vendor sees only their own sales and
+  may show the code again or void only while it is unused; admins anything. Desk sales sit in Payments beside coin
+  payments (`?channel=`), and the `hotspot.payment` alert names the desk and the seller.
+- **Dashboard**: `/sell` outside the shell, phone-first (price grid → confirm → big `XXXX-XXXX` code, Copy/Share,
+  today's sales with totals, Show code, Void); admins get a back button to `/`, vendors Sign out and are always routed to
+  `/sell`. "Enter Sell Mode" in the sidebar footer, the phone More sheet and the Guest portal page. Settings → This
+  device: preferred start page per browser (localStorage), applied only when the app opens at `/`, so back from `/sell`
+  reaches the dashboard. Portal form: Desk sales method; Payments: Channel filter, "Desk · seller".
+- Codes stay ≥ 8 Crockford symbols: a redeemed code stays live (it moves, decision 23), so every unexpired sale is a
+  guessing target; 6 digits would fall within hours at the per-portal failure cap.
+
+Verified: `tests/functional/portal/sell.spec.ts` (6 tests: role gate, desk method, sale/retry/price lock, a desk code
+redeemed through the fake router then admin-only void, sales list scoping and totals, ledger + alert); full suite
+1787/1787 after adding `desk: false` to three existing methods assertions. Real dashboard against the real API on the
+test DB (temporary seeding spec, vite proxy, headless Firefox at 390 px and 1280 px): vendor login → `/sell`, a sale
+with its code, vendor `/devices` → `/sell`, admin Enter Sell Mode / back / start page, Payments desk row. The main
+checkout's `node_modules` lacked `web-push` and `standardwebhooks` (four-area deps): `npm install` from the unchanged
+lockfile.

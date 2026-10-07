@@ -52,6 +52,7 @@ export const controllers = {
   Profile: () => import('#controllers/profile_controller'),
   Qos: () => import('#controllers/qos_controller'),
   Router: () => import('#controllers/router_controller'),
+  Sell: () => import('#controllers/sell_controller'),
   Services: () => import('#controllers/services_controller'),
   Settings: () => import('#controllers/settings_controller'),
   Setup: () => import('#controllers/setup_controller'),

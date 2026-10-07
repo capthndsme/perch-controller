@@ -147,7 +147,7 @@ export function mapGatewayEvent(row: Row): EmitInput | null {
   }
 }
 
-/** `hotspot_checkouts` → unclaimed coins and payments (events.md section 3.7). No guest MAC. */
+/** `hotspot_checkouts` → unclaimed coins and payments, coin or desk (events.md section 3.7). No guest MAC. */
 export function mapCheckout(row: Row): EmitInput | null {
   const terminalId = toNumberOrNull(row.terminalId)
   const portalId = toNumberOrNull(row.portalId)
@@ -187,6 +187,9 @@ export function mapCheckout(row: Row): EmitInput | null {
         portalId,
         portalName: common.portalName,
         terminalName: common.terminalName,
+        // Sell Mode desk sales (docs/gateway/portal.md section 15).
+        channel: row.channel === 'desk' ? 'desk' : 'coin',
+        sellerName: text(row.sellerName, 120),
         amount: common.amount,
         currency: common.currency,
         amountText: common.amountText,
@@ -326,13 +329,15 @@ const SOURCES: IdSource[] = [
     select: async (afterId) =>
       rawRows<Row>(
         await db.rawQuery(
-          `SELECT c.id, c.kind, c.terminal_id AS terminalId, c.terminal_name AS terminalName,
+          `SELECT c.id, c.kind, c.channel, c.terminal_id AS terminalId, c.terminal_name AS terminalName,
                   c.portal_id AS portalId, p.name AS portalName,
                   c.amount, c.currency, c.decimals, c.reason,
-                  t.id IS NOT NULL AS terminalExists
+                  t.id IS NOT NULL AS terminalExists,
+                  COALESCE(u.full_name, u.email) AS sellerName
              FROM hotspot_checkouts c
              LEFT JOIN hotspot_terminals t ON t.id = c.terminal_id
              LEFT JOIN portals p ON p.id = c.portal_id
+             LEFT JOIN users u ON u.id = c.seller_user_id
             WHERE c.id > ? ORDER BY c.id LIMIT ${BATCH}`,
           [afterId]
         )

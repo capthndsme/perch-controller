@@ -14,10 +14,12 @@ import type { HttpContext } from '@adonisjs/core/http'
 import { middleware } from '#start/kernel'
 import router from '@adonisjs/core/services/router'
 import { controllers } from '#generated/controllers'
+import { USER_ROLES } from '#models/user'
 /** Area route files (design lanes 2026-09-30). Imports run before this file's body, so their groups
  *  register before the SPA catch-all at the end of this file. */
 import '#start/routes/gateway_sync'
 import '#start/routes/alerts'
+import '#start/routes/sell'
 import { registerWifiRoutes } from '#start/routes/wifi'
 import '#start/routes/agent_updates'
 
@@ -174,7 +176,8 @@ router
       })
       .prefix('account')
       .as('profile')
-      .use(middleware.auth())
+      // Every role, Wi-Fi vendors included (section 15.2 of docs/gateway/portal.md).
+      .use(middleware.auth({ roles: USER_ROLES }))
 
     router
       .group(() => {

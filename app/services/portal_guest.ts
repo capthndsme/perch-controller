@@ -1,4 +1,4 @@
-import Portal from '#models/portal'
+import Portal, { takesVoucherCodes } from '#models/portal'
 import PortalGrant from '#models/portal_grant'
 import PortalUser from '#models/portal_user'
 import Voucher from '#models/voucher'
@@ -334,9 +334,9 @@ export async function redeemVoucherOnline(
   const code = str(raw.code, 64)
   if (!code) throw guestRefusal('invalid_code')
   const portal = await guestPortal(gatewayId, client.portalId)
-  // A payment's reference code is a voucher code: codes are taken while
-  // either method is on (section 14.6).
-  if (!portal.methods?.voucher && !portal.methods?.payment) throw guestRefusal('disabled')
+  // A payment's reference code and a desk-sold code are voucher codes: codes
+  // are taken while any of those methods is on (sections 14.6, 15).
+  if (!takesVoucherCodes(portal.methods)) throw guestRefusal('disabled')
 
   const settings = await getPortalSettings()
   const deviceKey = `d:${portal.id}|${client.mac}`

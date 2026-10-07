@@ -2,8 +2,10 @@ import type Portal from '#models/portal'
 import { portalMethods } from '#models/portal'
 import {
   type ClickThroughSettings,
+  type DeskSettings,
   type PaymentSettings,
   normalizeClickThroughSettings,
+  normalizeDeskSettings,
   normalizePaymentSettings,
 } from '#services/portal/hotspot'
 import type PortalApiClient from '#models/portal_api_client'
@@ -56,9 +58,17 @@ export type PortalView = {
   name: string
   gateway: PortalGatewayRef | null
   network: PortalNetworkRef
-  methods: { voucher: boolean; password: boolean; payment: boolean; clickThrough: boolean }
+  methods: {
+    voucher: boolean
+    password: boolean
+    payment: boolean
+    clickThrough: boolean
+    desk: boolean
+  }
   /** Coin-terminal checkout settings (section 14.3), shown even while the method is off. */
   payment: PaymentSettings
+  /** Sell Mode desk sales (section 15), shown even while the method is off. */
+  desk: DeskSettings
   /** Click-through limits (section 14.7), shown even while the method is off. */
   clickThrough: ClickThroughSettings
   templateId: number | null
@@ -100,6 +110,7 @@ export function portalView(
     network: refs.network,
     methods: portalMethods(p.methods),
     payment: normalizePaymentSettings(p.payment),
+    desk: normalizeDeskSettings(p.desk),
     clickThrough: normalizeClickThroughSettings(p.clickThrough),
     templateId: p.templateId,
     cspConnectSrc: p.cspConnectSrc ?? [],

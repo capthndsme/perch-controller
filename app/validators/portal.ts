@@ -34,6 +34,7 @@ const methods = () =>
     password: vine.boolean().optional(),
     payment: vine.boolean().optional(),
     clickThrough: vine.boolean().optional(),
+    desk: vine.boolean().optional(),
   })
 
 /** The payment method's settings (section 14.3). */
@@ -55,12 +56,20 @@ const clickThroughSettings = () =>
     terms: vine.string().trim().maxLength(4000).optional(),
   })
 
+/** Sell Mode desk sales (section 15). */
+const deskSettings = () =>
+  vine.object({
+    priceTableId: id().nullable().optional(),
+    codeLength: vine.number().withoutDecimals().min(8).max(16).optional(),
+  })
+
 const portalFields = {
   name: vine.string().trim().minLength(1).maxLength(80),
   networkPerchId: vine.string().trim().regex(NETWORK_PERCH_ID_REGEX),
   methods: methods().optional(),
   payment: paymentSettings().optional(),
   clickThrough: clickThroughSettings().optional(),
+  desk: deskSettings().optional(),
   templateId: id().nullable().optional(),
   cspConnectSrc: vine
     .array(vine.string().trim().toLowerCase().maxLength(255).regex(CSP_ORIGIN_REGEX))
@@ -340,6 +349,7 @@ export const checkoutListQueryValidator = vine.compile(
     gatewayId: id().optional(),
     terminalId: id().optional(),
     kind: vine.enum(['payment', 'unclaimed'] as const).optional(),
+    channel: vine.enum(['coin', 'desk'] as const).optional(),
     state: vine.enum(['paid', 'voided', 'unclaimed', 'credited', 'dismissed'] as const).optional(),
     mac: vine.string().trim().maxLength(32).optional(),
     from: vine.string().trim().maxLength(40).optional(),

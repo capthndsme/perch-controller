@@ -1,18 +1,20 @@
 import { PortalSchema } from '#database/schema'
 import { jsonColumn } from '#models/json_column'
-import type { ClickThroughSettings, PaymentSettings } from '#services/portal/hotspot'
+import type { ClickThroughSettings, DeskSettings, PaymentSettings } from '#services/portal/hotspot'
 
 /**
  * The sign-in methods a portal offers. `payment` = checkout at a coin
  * terminal (Paid Hotspot, section 14); `clickThrough` = free access after
- * accepting the terms (decision 32). Rows written before those existed lack
- * the two keys: read them with `portalMethods()`.
+ * accepting the terms (decision 32); `desk` = codes sold by hand in Sell Mode
+ * (section 15). Rows written before those existed lack the keys: read them
+ * with `portalMethods()`.
  */
 export type PortalMethods = {
   voucher: boolean
   password: boolean
   payment?: boolean
   clickThrough?: boolean
+  desk?: boolean
 }
 
 /** A portal's methods with every key present. */
@@ -22,7 +24,18 @@ export function portalMethods(value: Partial<PortalMethods> | null | undefined) 
     password: Boolean(value?.password),
     payment: Boolean(value?.payment),
     clickThrough: Boolean(value?.clickThrough),
+    desk: Boolean(value?.desk),
   }
+}
+
+/**
+ * Whether the portal takes codes on its voucher form: printed vouchers, a
+ * payment's reference code (section 14.6) and desk-sold codes (section 15)
+ * are all voucher codes.
+ */
+export function takesVoucherCodes(value: Partial<PortalMethods> | null | undefined): boolean {
+  const m = portalMethods(value)
+  return m.voucher || m.payment || m.desk
 }
 
 /**
@@ -67,4 +80,8 @@ export default class Portal extends PortalSchema {
   /** The click-through method's limits (read with `normalizeClickThroughSettings`). */
   @jsonColumn('click_through')
   declare clickThrough: Partial<ClickThroughSettings> | null
+
+  /** The desk method's settings (read with `normalizeDeskSettings`). */
+  @jsonColumn('desk')
+  declare desk: Partial<DeskSettings> | null
 }
