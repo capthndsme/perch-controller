@@ -3124,3 +3124,25 @@ test DB (temporary seeding spec, vite proxy, headless Firefox at 390 px and 1280
 with its code, vendor `/devices` → `/sell`, admin Enter Sell Mode / back / start page, Payments desk row. The main
 checkout's `node_modules` lacked `web-push` and `standardwebhooks` (four-area deps): `npm install` from the unchanged
 lockfile.
+
+## 2026-10-07 — Sell Mode live (controller 1.1.0-pre.6), the 1.1.0-pre line pushed to `main`
+
+**Live.** Controller 1.1.0-pre.6 (Sell Mode, migration 175) deployed with `docker compose up -d --build`; rollback image
+`perch-controller:rollback-pre5-2026-10-07` and a DB dump taken first. The three AP agents were back within seconds.
+
+**The gateway's collector did not come back** (6 min): its TLS check failed with "certificate has expired". The
+router's own DNS (AdGuard Home in front of dnsmasq; dnsmasq, on port 54, holds the split-horizon `address=` record
+but AdGuard only hands it bare names) answers the controller's host name with the public address, and a connection the router makes to its own
+WAN address lands on its own web server, not on the port forward. The collector's last-good address (section 4.2 of
+the gateway plan) only steps in when the name does not resolve, which is how the previous session had come up after
+the router's reboot. Fix on the router: one `/etc/hosts` line mapping the controller's name to its LAN address (router
+lookups only; LAN clients still ask AdGuard), backup of the old file beside it. Lesson for the collector: a name that
+resolves but leads to the wrong TLS endpoint is worse than one that does not resolve; trying the last-good address
+after a TLS failure on a fresh answer would have covered it.
+
+**Pushed** (owner: "merge all of our features to main branch + push"): every repo's `main` fast-forwarded to the live
+line and pushed, branches only (no `v*` tags, so no releases): perch-controller, perch-collector, perch-apd, and
+perch-agentkit with tags `v0.3.0-pre.1` and `v0.4.0-pre.1` (kit tags carry no release). Both daemons now require kit
+`v0.4.0-pre.1` (`GOWORK=off go get` + `go mod tidy`), so CI builds without the local `go.work`. One flaky race in the
+collector's portal test (the fake listener's `closed` flag, not the daemon) fixed first. Pre-push scan of the outgoing
+history (secrets, domains, LAN and container subnets, host names, MACs, hex-encoded addresses): clean.
