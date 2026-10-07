@@ -360,6 +360,17 @@ const ERROR_TEXT: Record<string, string> = {
   already_resolved: 'Someone already credited or dismissed these coins.',
   below_minimum: 'This amount buys nothing under the terminal’s price table: give minutes instead.',
   invalid_range: 'The start date is after the end date.',
+  // Sell Mode (portal.md §15)
+  desk_price_table_required: 'Desk sales need a price table to sell from.',
+  desk_sales_off: 'This portal no longer sells at the desk.',
+  price_changed: 'The prices changed. Check the new price with the guest, then sell again.',
+  not_on_menu: 'That price is not on the menu any more.',
+  client_ref_used: 'That sale was already recorded differently. Tap the price again.',
+  sale_not_found: 'That sale no longer exists.',
+  sale_voided: 'This sale is already voided.',
+  code_used: 'The guest already used this code, so it is not shown again.',
+  sale_used: 'The guest already used this code: ask an admin to void it.',
+  role_forbidden: 'Your account cannot open this.',
 }
 
 /** A sentence for a failed portal call: the known code's wording, else the server's message. */
@@ -606,6 +617,7 @@ export function methodLabels(methods: Portal['methods']): string[] {
     methods.password ? 'Username + password' : null,
     methods.payment ? 'Paid access' : null,
     methods.clickThrough ? 'Click-through' : null,
+    methods.desk ? 'Desk sales' : null,
   ].filter((m): m is string => m !== null)
 }
 

@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useLogout, useProfile } from '@/hooks/use-auth'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { useAppStore, type Theme } from '@/stores/app-store'
+import { roleLabel } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 
 const THEME_ORDER: Theme[] = ['light', 'dark', 'system']
@@ -51,7 +52,7 @@ function UserMenu() {
         <div className="px-2 py-2">
           <p className="truncate text-[13px] font-medium">{displayName}</p>
           {profile?.role ? (
-            <p className="text-[11px] capitalize text-muted-foreground">{profile.role}</p>
+            <p className="text-[11px] text-muted-foreground">{roleLabel(profile.role)}</p>
           ) : null}
         </div>
         <div className="my-1 h-px bg-border" />

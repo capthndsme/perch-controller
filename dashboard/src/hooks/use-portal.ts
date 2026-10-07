@@ -3,6 +3,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { useProfile } from '@/hooks/use-auth'
 import { useGateways } from '@/hooks/use-gateways'
 import { useGatewayNetworks } from '@/hooks/use-networks'
+import { sellQueryKey } from '@/hooks/use-sell-mode'
 import { API_URL, ApiError, apiFetch } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 import type {
@@ -72,6 +73,8 @@ export function usePortalMutation<TVars, TResult>(fn: (vars: TVars) => Promise<T
     mutationFn: fn,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: portalQueryKey })
+      // Desk sales and price tables shape Sell Mode's menu (and whether it is offered).
+      void queryClient.invalidateQueries({ queryKey: sellQueryKey })
     },
   })
 }

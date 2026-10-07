@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input'
 import { fieldErrorsFromApi, useLogin } from '@/hooks/use-auth'
 import { ApiError } from '@/lib/api'
+import { armStartPage } from '@/lib/start-page'
 
 export function LoginPage() {
   const navigate = useNavigate()
@@ -27,6 +28,8 @@ export function LoginPage() {
 
     try {
       await login.mutateAsync({ email: email.trim(), password })
+      // Landing on `/` right after signing in opens this browser's start page (Settings → This device).
+      if (from === '/') armStartPage()
       navigate(from, { replace: true })
     } catch (error) {
       if (error instanceof ApiError && error.status !== 422) {

@@ -55,10 +55,40 @@ import {
 } from '@/lib/hotspot'
 import { formatDateTime, selectClassName, toMinutes, vineFieldErrors, type DurationUnit } from '@/lib/portal'
 import { cn } from '@/lib/utils'
-import type { CheckoutFilters, CheckoutState, HotspotCheckout, HotspotTerminal, Portal, PortalDelivery } from '@/types/api'
+import type {
+  CheckoutChannel,
+  CheckoutFilters,
+  CheckoutState,
+  HotspotCheckout,
+  HotspotTerminal,
+  Portal,
+  PortalDelivery,
+} from '@/types/api'
 
 const PAGE_SIZE = 50
 const STATES: CheckoutState[] = ['paid', 'unclaimed', 'voided', 'credited', 'dismissed']
+const CHANNELS: ReadonlyArray<{ id: CheckoutChannel; label: string }> = [
+  { id: 'coin', label: 'Coin terminals' },
+  { id: 'desk', label: 'Desk (Sell Mode)' },
+]
+
+/** A desk sale (Sell Mode, portal.md §15) rather than a coin checkout. */
+function isDesk(c: Pick<HotspotCheckout, 'channel'>): boolean {
+  return c.channel === 'desk'
+}
+
+function sellerName(c: HotspotCheckout): string | null {
+  return c.seller ? c.seller.fullName || c.seller.email : null
+}
+
+/** The terminal column: the coin box, or the desk and who sold. */
+function sourceLabel(c: HotspotCheckout): string {
+  if (isDesk(c)) {
+    const seller = sellerName(c)
+    return seller ? `Desk · ${seller}` : 'Desk'
+  }
+  return c.terminal.name ?? 'Terminal removed'
+}
 
 /** `/portal/payments`: the Paid Hotspot ledger (portal.md §14.5). */
 export function PortalPaymentsPage() {
@@ -71,6 +101,7 @@ export function PortalPaymentsPage() {
   const portalId = Number(search.get('portalId')) || undefined
   const terminalId = Number(search.get('terminalId')) || undefined
   const state = (STATES as string[]).includes(search.get('state') ?? '') ? (search.get('state') as CheckoutState) : undefined
+  const channel = CHANNELS.find((c) => c.id === search.get('channel'))?.id
   const fromDay = search.get('from') ?? ''
   const toDay = search.get('to') ?? ''
   const mac = search.get('mac') ?? ''
@@ -81,6 +112,7 @@ export function PortalPaymentsPage() {
     portalId,
     terminalId,
     state,
+    channel,
     from: dayBound(fromDay, false),
     to: dayBound(toDay, true),
     mac: mac || undefined,
@@ -105,7 +137,7 @@ export function PortalPaymentsPage() {
 
   const portalList = portals.data ?? []
   const terminalList = terminals.data ?? []
-  const filtered = Boolean(portalId || terminalId || state || fromDay || toDay || mac)
+  const filtered = Boolean(portalId || terminalId || state || channel || fromDay || toDay || mac)
   const pendingCount = unclaimed.data?.total ?? 0
 
   return (
@@ -113,7 +145,7 @@ export function PortalPaymentsPage() {
       <PageHeader
         title="Payments"
         crumbs={[{ label: 'Guest portal', to: '/portal' }, { label: 'Payments' }]}
-        description="Every paid checkout the gateways reported, and coins that could not be credited to anyone."
+        description="Every paid checkout the gateways reported, codes sold at the desk, and coins that could not be credited to anyone."
       />
       <PortalSectionNav />
 
@@ -155,7 +187,9 @@ export function PortalPaymentsPage() {
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => setParam({ portalId: null, terminalId: null, state: null, from: null, to: null, mac: null })}
+                  onClick={() =>
+                    setParam({ portalId: null, terminalId: null, state: null, channel: null, from: null, to: null, mac: null })
+                  }
                 >
                   <X className="size-3.5" />
                   Clear filters
@@ -163,7 +197,7 @@ export function PortalPaymentsPage() {
               ) : null
             }
           >
-            <div className="grid grid-cols-2 gap-2 border-b border-border px-4 pb-3 sm:grid-cols-3 lg:grid-cols-6">
+            <div className="grid grid-cols-2 gap-2 border-b border-border px-4 pb-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7">
               <select
                 aria-label="Portal"
                 className={selectClassName}
@@ -178,9 +212,23 @@ export function PortalPaymentsPage() {
                 ))}
               </select>
               <select
+                aria-label="Channel"
+                className={selectClassName}
+                value={channel ?? ''}
+                onChange={(e) => setParam({ channel: e.target.value, ...(e.target.value === 'desk' ? { terminalId: null } : {}) })}
+              >
+                <option value="">Coin and desk</option>
+                {CHANNELS.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+              <select
                 aria-label="Terminal"
                 className={selectClassName}
                 value={terminalId ?? ''}
+                disabled={channel === 'desk'}
                 onChange={(e) => setParam({ terminalId: e.target.value })}
               >
                 <option value="">All terminals</option>
@@ -235,7 +283,7 @@ export function PortalPaymentsPage() {
                   description={
                     filtered
                       ? 'Try a wider date range or fewer filters.'
-                      : 'Payments appear here when a guest pays at a coin terminal of a paid portal.'
+                      : 'Payments appear here when a guest pays at a coin terminal, or a code is sold at the desk in Sell Mode.'
                   }
                 />
               </div>
@@ -250,7 +298,7 @@ export function PortalPaymentsPage() {
                   <span className="text-right">Amount</span>
                   <span>Status</span>
                   <span>Bought</span>
-                  <span>Terminal</span>
+                  <span>Terminal or desk</span>
                   <span>Device</span>
                 </div>
                 <ul className="divide-y divide-border">
@@ -368,6 +416,7 @@ function Totals({
 function deviceLabel(c: HotspotCheckout): string {
   if (c.hostname) return c.hostname
   if (c.mac) return c.mac
+  if (isDesk(c)) return 'Code (no device)'
   return c.kind === 'unclaimed' ? 'Nobody (unclaimed)' : 'Removed (retention)'
 }
 
@@ -413,7 +462,7 @@ function LedgerRow({
           {c.voucher ? <span className="ml-1.5 hidden font-mono text-[11px] text-muted-foreground lg:inline">··{c.voucher.hint}</span> : null}
         </span>
         <span className="col-span-2 truncate text-[11px] text-muted-foreground lg:col-span-1 lg:text-xs">
-          {c.terminal.name ?? 'Terminal removed'}
+          {sourceLabel(c)}
           {portal ? <span className="lg:hidden"> · {portal.name}</span> : null}
           <span className="lg:hidden"> · {deviceLabel(c)}</span>
         </span>
@@ -480,7 +529,8 @@ function CheckoutDrawer({
           </DialogTitle>
           {c ? (
             <DialogDescription>
-              {c.kind === 'payment' ? 'Payment' : 'Unclaimed coins'} · {formatDateTime(c.finalizedAt ?? c.createdAt)}
+              {isDesk(c) ? 'Desk sale' : c.kind === 'payment' ? 'Payment' : 'Unclaimed coins'} ·{' '}
+              {formatDateTime(c.finalizedAt ?? c.createdAt)}
             </DialogDescription>
           ) : null}
         </DialogHeader>
@@ -527,9 +577,17 @@ function CheckoutDrawer({
                     '—'
                   )}
                 </Fact>
-                <Fact label="Terminal">{terminal?.name ?? c.terminal.name ?? 'Removed'}</Fact>
+                {isDesk(c) ? (
+                  <Fact label="Sold by">{sellerName(c) ?? 'Account removed'}</Fact>
+                ) : (
+                  <Fact label="Terminal">{terminal?.name ?? c.terminal.name ?? 'Removed'}</Fact>
+                )}
                 <Fact label="Bought">{checkoutBought(c) ?? '—'}</Fact>
-                <Fact label="How it ended">{c.reason ? CHECKOUT_REASON_LABELS[c.reason] : '—'}</Fact>
+                {isDesk(c) ? (
+                  <Fact label="Where">Desk (Sell Mode)</Fact>
+                ) : (
+                  <Fact label="How it ended">{c.reason ? CHECKOUT_REASON_LABELS[c.reason] : '—'}</Fact>
+                )}
                 {c.unusedAmount > 0 ? (
                   <Fact label="Unused (below the cheapest rate)">{moneyText(c.unusedAmount, c.currency, c.decimals)}</Fact>
                 ) : null}
@@ -542,7 +600,7 @@ function CheckoutDrawer({
 
               <ReferenceSection checkout={c} />
               <DeviceSection checkout={c} />
-              <CoinsTimeline checkout={c} />
+              {isDesk(c) ? null : <CoinsTimeline checkout={c} />}
               <PriceSnapshot checkout={c} />
               <ResolutionSection checkout={c} />
 
@@ -585,15 +643,17 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function ReferenceSection({ checkout: c }: { checkout: HotspotCheckout }) {
   if (!c.voucher) return null
   return (
-    <Section title={c.kind === 'payment' ? 'Reference code' : 'Credit code'}>
+    <Section title={isDesk(c) ? 'Code' : c.kind === 'payment' ? 'Reference code' : 'Credit code'}>
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-sm font-medium">·····-·{c.voucher.hint}</span>
         <VoucherStatusBadge status={c.voucher.status} />
       </div>
       <p className="text-[11px] leading-relaxed text-muted-foreground">
-        {c.kind === 'payment'
-          ? 'The guest saw this code after paying. Perch never shows the whole code again: ask the guest for it. Entering it on another phone moves what is left there.'
-          : 'Handed to the guest when the coins were credited.'}{' '}
+        {isDesk(c)
+          ? 'Handed to the guest at the desk. While it is unused the seller can show it again in Sell Mode. Entering it on another phone moves what is left there.'
+          : c.kind === 'payment'
+            ? 'The guest saw this code after paying. Perch never shows the whole code again: ask the guest for it. Entering it on another phone moves what is left there.'
+            : 'Handed to the guest when the coins were credited.'}{' '}
         Look a code up under{' '}
         <Link to="/portal/vouchers" className="underline underline-offset-2">
           Vouchers
@@ -619,9 +679,11 @@ function DeviceSection({ checkout: c }: { checkout: HotspotCheckout }) {
         </dl>
       ) : (
         <p className="text-[11px] text-muted-foreground">
-          {c.kind === 'unclaimed'
-            ? 'No device: the money reached the terminal while no checkout was open.'
-            : 'Removed after the session retention (the amount stays).'}
+          {isDesk(c)
+            ? 'A desk sale is a code, not a device: whoever signs in with it shows under the portal’s guests.'
+            : c.kind === 'unclaimed'
+              ? 'No device: the money reached the terminal while no checkout was open.'
+              : 'Removed after the session retention (the amount stays).'}
         </p>
       )}
     </Section>
@@ -675,11 +737,11 @@ function PriceSnapshot({ checkout: c }: { checkout: HotspotCheckout }) {
   const snap = c.price?.snapshot
   if (!c.price) return null
   return (
-    <Section title="Price at checkout">
+    <Section title={isDesk(c) ? 'Price when sold' : 'Price at checkout'}>
       {snap ? (
         <>
           <p className="text-[11px] text-muted-foreground">
-            {snap.name}, revision {snap.revision} · locked when the guest started paying
+            {snap.name}, revision {snap.revision} · {isDesk(c) ? 'as sold' : 'locked when the guest started paying'}
           </p>
           <ul className="divide-y divide-border rounded-md border border-border">
             {[...snap.entries]

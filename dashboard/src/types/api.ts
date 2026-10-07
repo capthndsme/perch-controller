@@ -1,10 +1,16 @@
 import type { GatewayApply } from '@/types/gateway-config'
 
+/**
+ * Account roles. `wifi_vendor` sells Wi-Fi codes in Sell Mode (`/sell`,
+ * docs/gateway/portal.md §15) and can open nothing else.
+ */
+export type UserRole = 'admin' | 'operator' | 'viewer' | 'wifi_vendor'
+
 export type User = {
   id: number
   fullName: string | null
   email: string
-  role: string
+  role: UserRole
   mustChangePassword?: boolean
   createdAt?: string
   updatedAt?: string
@@ -2182,7 +2188,15 @@ export type PortalStatus = {
 
 export type PortalEnforcement = 'opennds' | 'perch_nft'
 
-export type PortalMethods = { voucher: boolean; password: boolean; payment: boolean; clickThrough: boolean }
+/** `desk` = codes sold by hand in Sell Mode (§15); a desk portal takes codes like `voucher` does. */
+export type PortalMethods = { voucher: boolean; password: boolean; payment: boolean; clickThrough: boolean; desk: boolean }
+
+/** Desk sales (Sell Mode, portal.md §15.4): the menu the desk sells from and how long its codes are. */
+export type PortalDeskSettings = {
+  priceTableId: number | null
+  /** 8–16 Crockford symbols, default 8. */
+  codeLength: number
+}
 
 export type PortalPaymentSettings = {
   /** The portal's default price table; a terminal may override it. */
@@ -2215,6 +2229,8 @@ export type Portal = {
   payment: PortalPaymentSettings
   /** The click-through method's limits (§14.7), kept while the method is off. */
   clickThrough: PortalClickThroughSettings
+  /** Desk sales (§15.4), kept while the method is off. */
+  desk: PortalDeskSettings
   templateId: number | null
   cspConnectSrc: string[]
   privacyNotice: string | null
@@ -2231,6 +2247,7 @@ export type PortalPayload = {
   methods?: PortalMethods
   payment?: Partial<PortalPaymentSettings>
   clickThrough?: Partial<PortalClickThroughSettings>
+  desk?: Partial<PortalDeskSettings>
   templateId?: number | null
   cspConnectSrc?: string[]
   privacyNotice?: string | null
@@ -3042,12 +3059,16 @@ export type HotspotTerminalPayload = {
 export type HotspotTerminalWithToken = { terminal: HotspotTerminal; token: string; delivery: PortalDelivery }
 
 export type CheckoutKind = 'payment' | 'unclaimed'
+/** Where the money was taken: a coin terminal, or the desk in Sell Mode (§15). */
+export type CheckoutChannel = 'coin' | 'desk'
 export type CheckoutState = 'paid' | 'voided' | 'unclaimed' | 'credited' | 'dismissed'
 export type CheckoutReason = 'done' | 'timeout' | 'terminal' | 'late' | 'full' | 'below_minimum'
 
 export type HotspotCheckout = {
   id: number
   kind: CheckoutKind
+  /** Absent from a controller older than Sell Mode: read it as `coin`. */
+  channel?: CheckoutChannel
   state: CheckoutState
   gatewayId: number
   portalId: number | null
@@ -3082,6 +3103,8 @@ export type HotspotCheckout = {
   note: string | null
   resolvedAt: string | null
   resolvedBy: { id: number; email: string } | null
+  /** Who sold it at the desk (`channel` desk). */
+  seller?: { id: number; email: string; fullName: string | null } | null
   createdAt: string | null
 }
 
@@ -3090,6 +3113,7 @@ export type CheckoutFilters = {
   gatewayId?: number
   terminalId?: number
   kind?: CheckoutKind
+  channel?: CheckoutChannel
   state?: CheckoutState
   mac?: string
   from?: string

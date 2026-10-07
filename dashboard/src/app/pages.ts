@@ -54,6 +54,7 @@ export const pages = {
   portalVoucherBatch: lazyPage(() =>
     import('@/pages/portal-voucher-batch-page').then((m) => m.PortalVoucherBatchPage),
   ),
+  sell: lazyPage(() => import('@/pages/sell-page').then((m) => m.SellPage)),
   portalVoucherPrint: lazyPage(() =>
     import('@/pages/portal-voucher-print-page').then((m) => m.PortalVoucherPrintPage),
   ),

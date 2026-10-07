@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Outlet, ScrollRestoration, useLocation, type Location } from 'react-router-dom'
 import { GatewayApplyBanner } from '@/components/gateway-config/apply-banner'
 import { BottomNav } from '@/components/layout/bottom-nav'
@@ -9,6 +9,7 @@ import { WifiRolloutBanner } from '@/components/wifi-config/rollout-banner'
 import { WifiSectionNav } from '@/components/wifi-config/section-nav'
 import { Topbar } from '@/components/layout/topbar'
 import { inGatewaySection, inWifiSection } from '@/lib/nav'
+import { disarmStartPage } from '@/lib/start-page'
 import { cn } from '@/lib/utils'
 
 const COLLAPSED_KEY = 'metricsfe-sidebar-collapsed'
@@ -39,6 +40,9 @@ const scrollKey = (location: Location) => location.pathname
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(readCollapsed)
   const { pathname } = useLocation()
+
+  // A page is on screen: from now on `/` is the dashboard, not this browser's start page.
+  useEffect(() => disarmStartPage(), [])
 
   const toggleCollapsed = useCallback(() => {
     setCollapsed((value) => {

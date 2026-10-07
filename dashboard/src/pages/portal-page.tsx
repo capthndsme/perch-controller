@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { DoorOpen, Plus, Users } from '@phosphor-icons/react'
+import { CashRegister, DoorOpen, Plus, Users } from '@phosphor-icons/react'
 import { PageHeader } from '@/components/layout/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,7 @@ import { PortalFormDialog } from '@/components/portal/portal-form-dialog'
 import { PortalHealthBadge } from '@/components/portal/portal-status'
 import { DeliveryBadge, ErrorNote, PortalSectionNav } from '@/components/portal/portal-ui'
 import { useIsPortalAdmin, usePortals } from '@/hooks/use-portal'
+import { useCanEnterSellMode } from '@/hooks/use-sell-mode'
 import { methodLabels } from '@/lib/portal'
 import type { Portal } from '@/types/api'
 
@@ -17,6 +18,7 @@ import type { Portal } from '@/types/api'
 export function PortalPage() {
   const { isAdmin } = useIsPortalAdmin()
   const portals = usePortals()
+  const canSell = useCanEnterSellMode()
   const [creating, setCreating] = useState(false)
 
   return (
@@ -26,10 +28,20 @@ export function PortalPage() {
         description="Sign-in pages in front of guest networks: vouchers, portal users, coin terminals and click-through."
         actions={
           isAdmin ? (
-            <Button size="sm" onClick={() => setCreating(true)}>
-              <Plus className="size-3.5" />
-              New portal
-            </Button>
+            <>
+              {canSell ? (
+                <Button asChild size="sm" variant="outline">
+                  <Link to="/sell">
+                    <CashRegister className="size-3.5" />
+                    Enter Sell Mode
+                  </Link>
+                </Button>
+              ) : null}
+              <Button size="sm" onClick={() => setCreating(true)}>
+                <Plus className="size-3.5" />
+                New portal
+              </Button>
+            </>
           ) : null
         }
       />

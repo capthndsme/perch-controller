@@ -12,6 +12,9 @@ import { useCollectors } from '@/hooks/use-collectors'
 import { controllerVersionLabel, useVersion } from '@/hooks/use-version'
 import { useAppStore, type Theme } from '@/stores/app-store'
 import { ApiError } from '@/lib/api'
+import { selectClassName } from '@/lib/portal'
+import { cn } from '@/lib/utils'
+import { readStartPage, startPagesFor, writeStartPage, type StartPageId } from '@/lib/start-page'
 
 const THEMES: Theme[] = ['light', 'dark', 'system']
 
@@ -62,6 +65,8 @@ export function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <ThisDeviceCard />
 
       <Card className="rounded-xl shadow-sm">
         <CardHeader className="border-b">
@@ -138,7 +143,7 @@ export function SettingsPage() {
                 <div className="space-y-1">
                   <p className="text-sm font-medium">User accounts</p>
                   <p className="text-xs text-muted-foreground">
-                    Manage admin and viewer user credentials and roles.
+                    Manage admin, viewer and Wi-Fi vendor accounts and their roles.
                   </p>
                 </div>
                 <Button asChild variant="outline" size="sm">
@@ -390,6 +395,51 @@ function ChangePasswordCard() {
           </Button>
         </CardFooter>
       </form>
+    </Card>
+  )
+}
+
+/**
+ * Per-browser preferences (lib/start-page.ts): the page Perch opens on here.
+ * A front-desk phone can open straight into Sell Mode.
+ */
+function ThisDeviceCard() {
+  const profile = useProfile()
+  const choices = startPagesFor(profile.data)
+  const [startPage, setStartPage] = useState<StartPageId>(readStartPage)
+  const value = choices.some((page) => page.id === startPage) ? startPage : 'dashboard'
+
+  return (
+    <Card className="rounded-xl shadow-sm">
+      <CardHeader className="border-b">
+        <CardTitle className="text-lg">This device</CardTitle>
+        <CardDescription>Kept in this browser only; other phones and computers keep their own.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2 pt-6">
+        <label htmlFor="start-page" className="block text-xs font-medium">
+          Start page
+        </label>
+        <select
+          id="start-page"
+          className={cn(selectClassName, 'max-w-xs')}
+          value={value}
+          onChange={(event) => {
+            const next = event.target.value as StartPageId
+            setStartPage(next)
+            writeStartPage(next)
+          }}
+        >
+          {choices.map((page) => (
+            <option key={page.id} value={page.id}>
+              {page.label}
+            </option>
+          ))}
+        </select>
+        <p className="text-[11px] text-muted-foreground">
+          What Perch opens when it starts at its home address (a bookmark, the home-screen icon) or right after you
+          sign in. Going back to the dashboard from inside Perch still shows the dashboard.
+        </p>
+      </CardContent>
     </Card>
   )
 }

@@ -1,8 +1,9 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { DotsThreeOutline, X } from '@phosphor-icons/react'
+import { CashRegister, DotsThreeOutline, X } from '@phosphor-icons/react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useMediaQuery } from '@/hooks/use-media-query'
+import { useCanEnterSellMode } from '@/hooks/use-sell-mode'
 import { MOBILE_TAB_PATHS, NAV_ITEMS, navItemActive, type NavItem } from '@/lib/nav'
 import { prefersReducedMotion } from '@/lib/motion'
 import { cn } from '@/lib/utils'
@@ -205,8 +206,9 @@ function TabIcon({ icon: Icon, active, filled = active }: { icon: NavItem['icon'
   )
 }
 
-/** The sections that are not tabs, as a grid of tiles. */
+/** The sections that are not tabs, as a grid of tiles; Sell Mode (an admin's, once a portal sells at the desk) under them. */
 function MoreSheetBody({ pathname, onNavigate }: { pathname: string; onNavigate: () => void }) {
+  const canSell = useCanEnterSellMode()
   return (
     <>
       <div className="flex items-center justify-between px-4 pb-3">
@@ -242,6 +244,18 @@ function MoreSheetBody({ pathname, onNavigate }: { pathname: string; onNavigate:
           )
         })}
       </div>
+      {canSell ? (
+        <div className="px-4 pt-3">
+          <NavLink
+            to="/sell"
+            onClick={onNavigate}
+            className="flex min-h-12 select-none items-center justify-center gap-2 rounded-xl border border-brand/40 bg-brand/10 px-3 text-[13px] font-medium text-brand transition-colors duration-base active:bg-brand/20 active:duration-0 [-webkit-touch-callout:none]"
+          >
+            <CashRegister className="size-5" />
+            Enter Sell Mode
+          </NavLink>
+        </div>
+      ) : null}
     </>
   )
 }

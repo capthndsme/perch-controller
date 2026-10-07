@@ -1,9 +1,12 @@
 import { Suspense, useEffect } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 import type { LazyPage } from '@/app/lazy-page'
 import { pages } from '@/app/pages'
 import { prefetchCommonPagesWhenIdle } from '@/app/prefetch'
+import { AppLayout } from '@/components/layout/app-layout'
 import { PageSpinner } from '@/components/ui/spinner'
+import { useProfile } from '@/hooks/use-auth'
+import { startPageRedirect } from '@/lib/start-page'
 import { useAuthStore } from '@/stores/auth-store'
 
 type PageRouteProps = {
@@ -41,4 +44,18 @@ export function LoginRoute() {
   const token = useAuthStore((state) => state.token)
   if (token) return <Navigate to="/" replace />
   return <PageRoute page={pages.login} fullScreen />
+}
+
+/**
+ * The app shell, unless the app has just opened at `/` and this browser starts
+ * on another page (Settings → This device, lib/start-page.ts): then straight
+ * there, without a frame of the dashboard. The shell disarms the start page
+ * once it is on screen, so a later `/` is the dashboard.
+ */
+export function ShellRoute() {
+  const { pathname } = useLocation()
+  const { data: profile } = useProfile()
+  const target = pathname === '/' ? startPageRedirect(profile) : null
+  if (target) return <Navigate to={target} replace />
+  return <AppLayout />
 }

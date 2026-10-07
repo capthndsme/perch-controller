@@ -1,6 +1,8 @@
 import { matchRoutes, type RouteObject } from 'react-router-dom'
 import type { LazyPage } from '@/app/lazy-page'
 import { pages, type PageName } from '@/app/pages'
+import { isVendor } from '@/lib/roles'
+import { startPagePathForPrefetch } from '@/lib/start-page'
 import { useAuthStore } from '@/stores/auth-store'
 
 /** Route `handle` of a page route: the page whose chunk a link to it should fetch. */
@@ -34,10 +36,14 @@ export function preloadPath(routes: RouteObject[], pathname: string) {
  */
 export function preloadInitialPage(routes: RouteObject[]) {
   const { pathname } = window.location
-  const signedIn = Boolean(useAuthStore.getState().token)
+  const { token, user } = useAuthStore.getState()
+  const signedIn = Boolean(token)
   let target = pathname
   if (!signedIn && pathname !== '/setup') target = '/login'
   else if (signedIn && pathname === '/login') target = '/'
+  // A Wi-Fi vendor only ever gets Sell Mode; `/` opens this browser's start page.
+  if (signedIn && isVendor(user)) target = '/sell'
+  else if (signedIn && target === '/') target = startPagePathForPrefetch()
   preloadPath(routes, target)
 }
 
@@ -77,6 +83,8 @@ let commonPagesScheduled = false
 export function prefetchCommonPagesWhenIdle() {
   if (commonPagesScheduled) return
   commonPagesScheduled = true
+  // A Wi-Fi vendor never opens them.
+  if (isVendor(useAuthStore.getState().user)) return
   const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection
   if (connection?.saveData) return
   const run = () => COMMON_PAGES.forEach((name) => preload(pages[name]))

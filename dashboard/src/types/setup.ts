@@ -1,4 +1,4 @@
-import type { Collector, CollectorStatus } from '@/types/api'
+import type { Collector, CollectorStatus, UserRole } from '@/types/api'
 
 export type SetupStep = 'admin' | 'instance' | 'collector' | 'complete'
 
@@ -44,7 +44,7 @@ export type UserSummary = {
   id: number
   fullName: string | null
   email: string
-  role: string
+  role: UserRole
 }
 
 export type CollectorProbe = {

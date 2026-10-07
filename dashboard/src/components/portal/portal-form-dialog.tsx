@@ -38,9 +38,16 @@ import {
   type DurationUnit,
   type QuotaUnit,
 } from '@/lib/portal'
-import type { Portal, PortalClickThroughSettings, PortalPayload, PortalPaymentSettings } from '@/types/api'
+import type {
+  Portal,
+  PortalClickThroughSettings,
+  PortalDeskSettings,
+  PortalPayload,
+  PortalPaymentSettings,
+} from '@/types/api'
 
 const PAYMENT_DEFAULTS: PortalPaymentSettings = { priceTableId: null, idleTimeoutSeconds: 60 }
+const DESK_DEFAULTS: PortalDeskSettings = { priceTableId: null, codeLength: 8 }
 const CLICK_THROUGH_DEFAULTS: PortalClickThroughSettings = {
   minutes: 30,
   quotaBytes: null,
@@ -85,6 +92,10 @@ export function PortalFormDialog({ portal, onClose }: PortalFormDialogProps) {
   const [password, setPassword] = useState(portal?.methods.password ?? false)
   const [payment, setPayment] = useState(portal?.methods.payment ?? false)
   const [clickThrough, setClickThrough] = useState(portal?.methods.clickThrough ?? false)
+  const [desk, setDesk] = useState(portal?.methods.desk ?? false)
+  const deskSettings = portal?.desk ?? DESK_DEFAULTS
+  const [deskTableId, setDeskTableId] = useState(deskSettings.priceTableId ? String(deskSettings.priceTableId) : '')
+  const [deskCodeLength, setDeskCodeLength] = useState(String(deskSettings.codeLength))
   const paymentSettings = portal?.payment ?? PAYMENT_DEFAULTS
   const [priceTableId, setPriceTableId] = useState(paymentSettings.priceTableId ? String(paymentSettings.priceTableId) : '')
   const [idleTimeout, setIdleTimeout] = useState(String(paymentSettings.idleTimeoutSeconds))
@@ -133,7 +144,7 @@ export function PortalFormDialog({ portal, onClose }: PortalFormDialogProps) {
     const body: PortalPayload = {
       name: name.trim(),
       networkPerchId: networkText.trim(),
-      methods: { voucher, password, payment, clickThrough },
+      methods: { voucher, password, payment, clickThrough, desk },
       cspConnectSrc: origins,
       privacyNotice: privacy.trim() || null,
     }
@@ -150,9 +161,14 @@ export function PortalFormDialog({ portal, onClose }: PortalFormDialogProps) {
       perWindow: Number(ctPerWindow),
       terms: ctTerms.trim(),
     }
+    const deskBody: PortalDeskSettings = {
+      priceTableId: deskTableId ? Number(deskTableId) : null,
+      codeLength: Number(deskCodeLength),
+    }
     // A method's settings travel when it is on (or were changed while off, in an edit).
     if (payment || (portal && JSON.stringify(paymentBody) !== JSON.stringify(portal.payment))) body.payment = paymentBody
     if (clickThrough) body.clickThrough = clickBody
+    if (desk || (portal?.desk && JSON.stringify(deskBody) !== JSON.stringify(portal.desk))) body.desk = deskBody
     if (!editing) body.gatewayId = gatewayId ?? undefined
     if (templateId === 'none') body.templateId = null
     else if (templateId !== 'default') body.templateId = Number(templateId)
@@ -164,11 +180,13 @@ export function PortalFormDialog({ portal, onClose }: PortalFormDialogProps) {
         body.methods?.voucher === portal.methods.voucher &&
         body.methods?.password === portal.methods.password &&
         body.methods?.payment === portal.methods.payment &&
-        body.methods?.clickThrough === portal.methods.clickThrough
+        body.methods?.clickThrough === portal.methods.clickThrough &&
+        body.methods?.desk === Boolean(portal.methods.desk)
       ) {
         delete body.methods
       }
       if (JSON.stringify(body.payment) === JSON.stringify(portal.payment)) delete body.payment
+      if (JSON.stringify(body.desk) === JSON.stringify(portal.desk)) delete body.desk
       if (JSON.stringify(body.clickThrough) === JSON.stringify(portal.clickThrough)) delete body.clickThrough
       if (JSON.stringify(body.cspConnectSrc) === JSON.stringify(portal.cspConnectSrc)) delete body.cspConnectSrc
       if (body.privacyNotice === portal.privacyNotice) delete body.privacyNotice
@@ -188,13 +206,24 @@ export function PortalFormDialog({ portal, onClose }: PortalFormDialogProps) {
       setLocalError('Choose the network the portal sits on.')
       return
     }
-    if (!voucher && !password && !payment && !clickThrough) {
+    if (!voucher && !password && !payment && !clickThrough && !desk) {
       setLocalError('Offer at least one way to get online.')
       return
     }
     if (payment && !priceTableId) {
       setLocalError('Paid access needs a price table.')
       return
+    }
+    if (desk) {
+      if (!deskTableId) {
+        setLocalError('Desk sales need a price table to sell from.')
+        return
+      }
+      const length = Number(deskCodeLength)
+      if (!Number.isInteger(length) || length < 8 || length > 16) {
+        setLocalError('Desk codes are 8 to 16 characters long.')
+        return
+      }
     }
     if (clickThrough) {
       const minutes = toMinutes(ctDuration.amount, ctDuration.unit)
@@ -359,6 +388,13 @@ export function PortalFormDialog({ portal, onClose }: PortalFormDialogProps) {
                 label="Free access after accepting terms (click-through)"
                 description="A short, capped session for anyone who accepts the terms, a limited number of times per device."
               />
+              <Checkbox
+                id="portal-desk"
+                checked={desk}
+                onChange={setDesk}
+                label="Desk sales (Sell Mode)"
+                description="Front-desk staff sell codes for cash from a phone (Sell Mode). Guests type the code on the page, like a voucher."
+              />
             </fieldset>
 
             {payment ? (
@@ -418,6 +454,67 @@ export function PortalFormDialog({ portal, onClose }: PortalFormDialogProps) {
                     Terminals
                   </Link>
                   . After paying, guests get a reference code that moves their time to another phone.
+                </p>
+              </fieldset>
+            ) : null}
+
+            {desk ? (
+              <fieldset className="space-y-3 rounded-md border border-border p-3">
+                <legend className="px-1 text-xs font-medium">Desk sales</legend>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField
+                    label="Price table"
+                    htmlFor="portal-desk-table"
+                    error={fieldErrors['desk.priceTableId']}
+                    hint={
+                      priceTables.data && priceTables.data.length === 0 ? (
+                        <>
+                          No price table yet:{' '}
+                          <Link to="/portal/price-tables" className="underline underline-offset-2" onClick={onClose}>
+                            create one first
+                          </Link>
+                          .
+                        </>
+                      ) : (
+                        'Each rate is one button in Sell Mode. It can differ from the coin terminals’ table.'
+                      )
+                    }
+                  >
+                    <select
+                      id="portal-desk-table"
+                      className={selectClassName}
+                      value={deskTableId}
+                      onChange={(e) => setDeskTableId(e.target.value)}
+                    >
+                      <option value="">Choose…</option>
+                      {(priceTables.data ?? []).map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} · {t.currency}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+                  <FormField
+                    label="Code length"
+                    htmlFor="portal-desk-length"
+                    error={fieldErrors['desk.codeLength']}
+                    hint="8–16 characters (8 reads as XXXX-XXXX). Not shorter: a code stays valid until its time runs out, so every sold code can be guessed at."
+                  >
+                    <Input
+                      id="portal-desk-length"
+                      inputMode="numeric"
+                      value={deskCodeLength}
+                      onChange={(e) => setDeskCodeLength(e.target.value)}
+                      className="rounded-md"
+                    />
+                  </FormField>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Admins and Wi-Fi vendors (Settings → Users) sell from{' '}
+                  <Link to="/sell" className="underline underline-offset-2" onClick={onClose}>
+                    Sell Mode
+                  </Link>
+                  . Sales show up under Payments with the seller’s name.
                 </p>
               </fieldset>
             ) : null}

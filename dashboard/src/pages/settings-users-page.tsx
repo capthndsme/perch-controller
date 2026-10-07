@@ -10,6 +10,14 @@ import { PageSpinner } from '@/components/ui/spinner'
 import { useProfile, fieldErrorsFromApi } from '@/hooks/use-auth'
 import { useCreateUser, useDeleteUser, useUpdateUserRole, useUsers } from '@/hooks/use-users'
 import { ApiError } from '@/lib/api'
+import { roleLabel } from '@/lib/roles'
+
+/** One line under the role picker. */
+const ROLE_HINTS: Record<string, string> = {
+  viewer: 'Viewers have read-only access to all dashboards.',
+  wifi_vendor: 'Sells Wi-Fi codes in Sell Mode (front desk) and sees nothing else of Perch.',
+  admin: 'Admins can change everything, including other accounts.',
+}
 
 export function SettingsUsersPage() {
   const profile = useProfile()
@@ -147,7 +155,7 @@ export function SettingsUsersPage() {
                 />
               </Field>
 
-              <Field label="Role" htmlFor="role" error={fieldErrors.role} hint="Viewers have read-only access to all dashboards.">
+              <Field label="Role" htmlFor="role" error={fieldErrors.role} hint={ROLE_HINTS[role] ?? ROLE_HINTS.viewer}>
                 <select
                   id="role"
                   value={role}
@@ -155,6 +163,7 @@ export function SettingsUsersPage() {
                   className="h-8 w-full rounded-md border border-input bg-transparent px-2.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50 dark:bg-input/30"
                 >
                   <option value="viewer">Viewer (Read-only)</option>
+                  <option value="wifi_vendor">Wi-Fi vendor (Sell Mode only)</option>
                   <option value="admin">Admin (Full Access)</option>
                 </select>
               </Field>
@@ -202,12 +211,15 @@ export function SettingsUsersPage() {
                     <div className="flex items-center gap-2">
                       <select
                         value={user.role}
+                        aria-label={`Role of ${user.fullName || user.email}`}
                         onChange={(e) => updateRole.mutate({ id: user.id, role: e.target.value })}
                         disabled={isSelf || updateRole.isPending}
                         className="h-8 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50 dark:bg-input/30"
                       >
                         <option value="viewer">Viewer</option>
+                        <option value="wifi_vendor">Wi-Fi vendor</option>
                         <option value="admin">Admin</option>
+                        {user.role === 'operator' ? <option value="operator">{roleLabel('operator')}</option> : null}
                       </select>
                     </div>
                   </CardHeader>

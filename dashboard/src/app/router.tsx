@@ -1,9 +1,8 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { pages, type PageName } from '@/app/pages'
 import type { PageRouteHandle } from '@/app/prefetch'
-import { LoginRoute, PageRoute } from '@/app/route-elements'
+import { LoginRoute, PageRoute, ShellRoute } from '@/app/route-elements'
 import { AuthGate } from '@/components/auth/auth-gate'
-import { AppLayout } from '@/components/layout/app-layout'
 import { RouteError } from '@/components/layout/route-error'
 import { SetupGate } from '@/components/setup/setup-gate'
 
@@ -48,11 +47,24 @@ export const router = createBrowserRouter([
     errorElement: <RouteError fullScreen />,
   },
   {
+    // Sell Mode (docs/gateway/portal.md §15): signed in, outside the shell, phone-first; the one page a Wi-Fi vendor has.
+    path: '/sell',
+    element: (
+      <SetupGate>
+        <AuthGate allowVendor>
+          <PageRoute key="sell" page={pages.sell} fullScreen />
+        </AuthGate>
+      </SetupGate>
+    ),
+    handle: { page: pages.sell } satisfies PageRouteHandle,
+    errorElement: <RouteError fullScreen />,
+  },
+  {
     path: '/',
     element: (
       <SetupGate>
         <AuthGate>
-          <AppLayout />
+          <ShellRoute />
         </AuthGate>
       </SetupGate>
     ),

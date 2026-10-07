@@ -1,5 +1,6 @@
-import { NavLink, useLocation } from 'react-router-dom'
-import { SidebarSimple } from '@phosphor-icons/react'
+import { Link, NavLink, useLocation } from 'react-router-dom'
+import { CashRegister, SidebarSimple } from '@phosphor-icons/react'
+import { useCanEnterSellMode } from '@/hooks/use-sell-mode'
 import { NAV_ITEMS, navItemActive } from '@/lib/nav'
 import { cn } from '@/lib/utils'
 
@@ -17,6 +18,7 @@ type SidebarProps = {
  */
 export function Sidebar({ collapsed, onToggleCollapsed, siteName }: SidebarProps) {
   const { pathname } = useLocation()
+  const canSell = useCanEnterSellMode()
   return (
     <aside
       className={cn(
@@ -78,6 +80,24 @@ export function Sidebar({ collapsed, onToggleCollapsed, siteName }: SidebarProps
       </nav>
 
       <div className="hidden border-t border-sidebar-border p-2 lg:block">
+        {canSell ? (
+          // Sell Mode (portal.md §15) leaves the shell: a full-screen page with its own back button.
+          <Link
+            to="/sell"
+            title={collapsed ? 'Enter Sell Mode' : undefined}
+            className="mb-0.5 flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium text-brand transition-colors hover:bg-brand/10"
+          >
+            <CashRegister className="size-[18px] shrink-0" />
+            <span
+              className={cn(
+                'whitespace-nowrap transition-opacity duration-fast ease-out motion-reduce:transition-none',
+                collapsed && 'opacity-0',
+              )}
+            >
+              Enter Sell Mode
+            </span>
+          </Link>
+        ) : null}
         <button
           type="button"
           onClick={onToggleCollapsed}

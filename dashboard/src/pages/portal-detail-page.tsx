@@ -11,6 +11,7 @@ import { GrantsPanel } from '@/components/portal/grants-panel'
 import { PortalFormDialog } from '@/components/portal/portal-form-dialog'
 import { PortalHealthBadge, PortalNotices, PortalStatusFacts } from '@/components/portal/portal-status'
 import { ConfirmDialog, ErrorNote, Fact } from '@/components/portal/portal-ui'
+import { DeskSalesPanel } from '@/components/portal/desk-sales-panel'
 import { PaidAccessPanel } from '@/components/portal/paid-access-panel'
 import { SessionsPanel } from '@/components/portal/sessions-panel'
 import { useDeletePortal, useIsPortalAdmin, usePortal, usePortalTemplates } from '@/hooks/use-portal'
@@ -178,6 +179,8 @@ function PortalSetupPanel({ portal, isAdmin, onEdit }: { portal: Portal; isAdmin
       {portal.methods.payment || portal.methods.clickThrough ? (
         <PaidAccessPanel portal={portal} isAdmin={isAdmin} onEdit={onEdit} />
       ) : null}
+
+      {portal.methods.desk && portal.desk ? <DeskSalesPanel portal={portal} isAdmin={isAdmin} onEdit={onEdit} /> : null}
     </div>
   )
 }
